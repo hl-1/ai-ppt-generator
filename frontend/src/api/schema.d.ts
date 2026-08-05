@@ -354,6 +354,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/deck/quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Deck Quality
+         * @description 导出前质量报告：分级 issues 与是否允许导出。检查逻辑见 build_quality_report。
+         */
+        get: operations["get_deck_quality_api_v1_projects__project_id__deck_quality_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/deck/generate": {
         parameters: {
             query?: never;
@@ -783,6 +803,21 @@ export interface components {
             block_id: string;
             /** Reason */
             reason: string;
+        };
+        /**
+         * ExportCheckReport
+         * @description 导出前分级报告。
+         */
+        ExportCheckReport: {
+            /** Issues */
+            issues?: components["schemas"]["StructureIssue"][];
+            /** Export Allowed */
+            export_allowed: boolean;
+            /**
+             * Fonts Precise
+             * @default true
+             */
+            fonts_precise: boolean;
         };
         /**
          * FontFamily
@@ -2268,6 +2303,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeckPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_deck_quality_api_v1_projects__project_id__deck_quality_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportCheckReport"];
                 };
             };
             /** @description Validation Error */

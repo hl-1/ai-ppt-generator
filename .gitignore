@@ -108,6 +108,11 @@ htmlcov/
 # 本地对象存储驱动的落盘目录
 backend/var/
 
+# 文字度量字体（本地下载，不提交仓库；见 make fonts）
+backend/fonts/*
+!backend/fonts/.gitkeep
+
+
 # 其他
 *.local
 .history/

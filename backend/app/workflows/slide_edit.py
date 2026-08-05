@@ -26,6 +26,7 @@ class SlideEditWorkflowState(TypedDict, total=False):
     input: SlideEditInput
     slide_id: str
     layout_id: str
+    theme_id: str
     original_blocks: list[Block]
     operations: list[BlockPatch]
     discarded: list[DiscardedPatch]
@@ -53,7 +54,7 @@ def build_slide_edit_workflow(generator: SlideEditGenerator):
             "operations": filtered.accepted,
             "discarded": filtered.discarded,
             "patched_blocks": patched,
-            "issues": validate_slide(slide),
+            "issues": validate_slide(slide, theme_id=state.get("theme_id")),
         }
 
     async def repair(state: SlideEditWorkflowState) -> dict:
@@ -87,12 +88,14 @@ async def run_slide_edit_workflow(
     slide_id: str,
     layout_id: str,
     blocks: list[Block],
+    theme_id: str | None = None,
 ) -> tuple[list[BlockPatch], list[DiscardedPatch], list[StructureIssue], list[Block]]:
     result = await workflow.ainvoke(
         {
             "input": payload,
             "slide_id": slide_id,
             "layout_id": layout_id,
+            "theme_id": theme_id or "ivory",
             "original_blocks": blocks,
             "repairs": 0,
         }

@@ -102,7 +102,9 @@ async def _generate_one(
     )
 
     try:
-        slide, issues = await run_slide_workflow(workflow, payload, slide_id)
+        slide, issues = await run_slide_workflow(
+            workflow, payload, slide_id, theme_id=context.theme_id
+        )
     except Exception as error:
         await _save_failed(slide_id, _public_error(error))
         await _publish(project_id, "slide_failed", f"第 {page.position} 页生成失败", slide_id, page)
@@ -130,6 +132,7 @@ class DeckContext:
         title: str,
         audience: str | None,
         tone: str,
+        theme_id: str,
         sections: dict[str, OutlineSourceSection],
         pages: dict[uuid.UUID, "SlideTarget"],
         ordered_titles: list[str],
@@ -138,6 +141,7 @@ class DeckContext:
         self.title = title
         self.audience = audience
         self.tone = tone
+        self.theme_id = theme_id
         self.sections = sections
         self.pages = pages
         self.total = len(ordered_titles)
@@ -192,6 +196,7 @@ async def _load_context(project_id: uuid.UUID) -> DeckContext | None:
             title=project.title,
             audience=project.audience,
             tone=project.tone,
+            theme_id=project.theme_id,
             sections=sections,
             pages=targets,
             ordered_titles=[page.title for page in pages],

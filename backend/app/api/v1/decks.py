@@ -21,6 +21,7 @@ from app.api.deps import get_queue
 from app.api.sse import event_stream_response
 from app.api.v1.projects import OwnedProject
 from app.core.db import get_session
+from app.domain.export_check import ExportCheckReport
 from app.domain.layout import get_layout
 from app.domain.layout_switch import (
     LayoutSwitchOk,
@@ -66,6 +67,7 @@ from app.services.deck import (
     to_deck_public,
 )
 from app.services.media import media_url, store_image
+from app.services.quality import build_quality_report
 from app.worker.context import create_slide_edit_generator
 from app.workflows.slide_edit import (
     build_slide_edit_workflow,
@@ -144,6 +146,13 @@ async def _enqueue(
 async def get_deck(project: OwnedProject, session: SessionDep) -> DeckPublic:
     slides = await load_slides(session, project.id)
     return to_deck_public(project, slides)
+
+
+@router.get("/quality", response_model=ExportCheckReport)
+async def get_deck_quality(project: OwnedProject, session: SessionDep) -> ExportCheckReport:
+    """导出前质量报告：分级 issues 与是否允许导出。检查逻辑见 build_quality_report。"""
+    slides = await load_slides(session, project.id)
+    return build_quality_report(project, slides)
 
 
 @router.post(
@@ -331,7 +340,7 @@ async def update_slide_block(
         updated["rows"] = body.rows
 
     slide.blocks = [updated if block.get("id") == block_id else block for block in slide.blocks]
-    refresh_slide_issues(slide)
+    refresh_slide_issues(slide, theme_id=project.theme_id)
     slide.revision += 1
     await session.commit()
     await session.refresh(slide)
@@ -421,7 +430,7 @@ async def switch_slide_layout(
     # 只改槽位归属，不改块内容与 locked
     slide.blocks = [{**block, "slot_id": result.mapping[block["id"]]} for block in slide.blocks]
     slide.layout_id = body.layout_id
-    refresh_slide_issues(slide)
+    refresh_slide_issues(slide, theme_id=project.theme_id)
     slide.revision += 1
     await session.commit()
     await session.refresh(slide)
@@ -472,6 +481,7 @@ async def propose_slide_ai_edit(
             slide_id=str(slide.id),
             layout_id=slide.layout_id,
             blocks=blocks,
+            theme_id=project.theme_id,
         )
     except LLMNotConfiguredError as error:
         raise HTTPException(
@@ -529,7 +539,7 @@ async def apply_slide_ai_edit(
     # AI 改过的块不置 locked：locked 表示「人工修改过」；若 AI 也置位，
     # 一页被 AI 改过后就再也改不动了。
     slide.blocks = [block.model_dump(mode="json") for block in patched]
-    refresh_slide_issues(slide)
+    refresh_slide_issues(slide, theme_id=project.theme_id)
     slide.revision += 1
     await session.commit()
     await session.refresh(slide)

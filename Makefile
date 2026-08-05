@@ -1,4 +1,4 @@
-.PHONY: up down install dev-api dev-worker dev-web migrate migration test lint gen-api
+.PHONY: up down install fonts dev-api dev-worker dev-web migrate migration test lint gen-api
 
 up:
 	docker compose up -d
@@ -9,6 +9,10 @@ down:
 install:
 	cd backend && uv sync
 	cd frontend && npm install
+
+# 文字溢出度量字体：本地下载，不进仓库。已存在则跳过。
+fonts:
+	cd backend && uv run python scripts/fetch_fonts.py
 
 dev-api:
 	cd backend && uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 39800

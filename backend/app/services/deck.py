@@ -33,8 +33,8 @@ async def load_slides(session: AsyncSession, project_id: uuid.UUID) -> list[Slid
     return list(result.scalars())
 
 
-def refresh_slide_issues(slide: Slide) -> None:
-    """按当前 blocks/layout 重算结构告警并写回 JSONB。"""
+def refresh_slide_issues(slide: Slide, *, theme_id: str) -> None:
+    """按当前 blocks/layout/主题重算结构与溢出告警并写回 JSONB。"""
     content = ContentSlide(
         id=str(slide.id),
         layout_id=slide.layout_id,
@@ -42,7 +42,7 @@ def refresh_slide_issues(slide: Slide) -> None:
         speaker_notes=slide.speaker_notes,
         revision=slide.revision,
     )
-    slide.issues = [issue.model_dump() for issue in validate_slide(content)]
+    slide.issues = [issue.model_dump() for issue in validate_slide(content, theme_id=theme_id)]
 
 
 async def sync_slides(

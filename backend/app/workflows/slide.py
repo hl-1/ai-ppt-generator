@@ -22,6 +22,7 @@ MAX_TOTAL_SOURCE_CHARS = 6_000
 class SlideWorkflowState(TypedDict, total=False):
     input: SlideGenerationInput
     slide_id: str
+    theme_id: str
     draft: SlideDraft
     slide: Slide
     issues: list[StructureIssue]
@@ -71,7 +72,10 @@ def build_slide_workflow(generator: SlideGenerator):
     async def check(state: SlideWorkflowState) -> dict:
         slide_id = uuid.UUID(state["slide_id"])
         slide = draft_to_slide(slide_id, state["input"].layout_id, state["draft"])
-        return {"slide": slide, "issues": validate_slide(slide)}
+        return {
+            "slide": slide,
+            "issues": validate_slide(slide, theme_id=state.get("theme_id")),
+        }
 
     async def repair(state: SlideWorkflowState) -> dict:
         messages = [_describe(issue) for issue in state["issues"]]
@@ -102,8 +106,12 @@ async def run_slide_workflow(
     workflow,
     payload: SlideGenerationInput,
     slide_id: uuid.UUID,
+    *,
+    theme_id: str | None = None,
 ) -> tuple[Slide, list[StructureIssue]]:
-    result = await workflow.ainvoke({"input": payload, "slide_id": str(slide_id)})
+    result = await workflow.ainvoke(
+        {"input": payload, "slide_id": str(slide_id), "theme_id": theme_id or "ivory"}
+    )
     slide = result.get("slide")
     if not isinstance(slide, Slide):
         raise InvalidSlideOutputError("页面工作流未产出内容")
