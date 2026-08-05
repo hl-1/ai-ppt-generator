@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router'
 import { AppShell } from '@/components/AppShell'
 import { useAuthStore } from '@/features/auth/store'
 import AuthPage from '@/pages/AuthPage'
 import DashboardPage from '@/pages/DashboardPage'
+import DeckPreviewPage from '@/pages/DeckPreviewPage'
 import { RequireAuth } from '@/routes/RequireAuth'
 
 export default function App() {
@@ -18,15 +19,17 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<AuthPage />} />
         <Route
-          path="/"
           element={
             <RequireAuth>
               <AppShell>
-                <DashboardPage />
+                <Outlet />
               </AppShell>
             </RequireAuth>
           }
-        />
+        >
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/preview" element={<DeckPreviewPage />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
