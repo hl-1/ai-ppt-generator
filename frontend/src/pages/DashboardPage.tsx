@@ -1,3 +1,4 @@
+import { Link } from 'react-router'
 import { StatusRow } from '@/components/StatusRow'
 import { useAuthStore } from '@/features/auth/store'
 import { useHealth } from '@/features/system/api'
@@ -27,8 +28,14 @@ export default function DashboardPage() {
           欢迎回来，{user?.email.split('@')[0]}。
         </h1>
         <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-ink-soft">
-          演示文稿创建能力将在后续里程碑接入。当前版本已完成账号体系与依赖服务打通。
+          现在可以创建演示文稿并录入材料了。大纲生成会在下一个里程碑接入。
         </p>
+        <Link
+          to="/projects"
+          className="mt-8 inline-block border-b border-accent pb-1 text-sm text-accent"
+        >
+          进入演示文稿列表
+        </Link>
       </section>
 
       <div className="grid gap-16 py-16 md:grid-cols-[1fr_1.1fr]">

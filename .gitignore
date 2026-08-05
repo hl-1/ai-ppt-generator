@@ -105,6 +105,9 @@ htmlcov/
 .coverage
 .coverage.*
 
+# 本地对象存储驱动的落盘目录
+backend/var/
+
 # 其他
 *.local
 .history/

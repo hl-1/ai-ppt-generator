@@ -1,4 +1,4 @@
-.PHONY: up down install dev-api dev-web migrate test lint gen-api
+.PHONY: up down install dev-api dev-web migrate migration test lint gen-api
 
 up:
 	docker compose up -d
@@ -18,6 +18,13 @@ dev-web:
 
 migrate:
 	cd backend && uv run alembic upgrade head
+
+# 用法：make migration m="描述"
+# autogenerate 产出的代码不满足行宽约束，顺手格式化，免得每次手动收拾
+migration:
+	cd backend && uv run alembic revision --autogenerate -m "$(m)" \
+		&& uv run ruff format alembic/versions \
+		&& uv run ruff check --fix alembic/versions
 
 # 前端接口类型由后端 OpenAPI 生成，两端类型不会各写一份而分叉。
 # 直接从应用对象导出 schema，因此不需要先把服务跑起来。

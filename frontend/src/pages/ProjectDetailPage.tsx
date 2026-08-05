@@ -1,0 +1,132 @@
+import { type FormEvent, useState } from 'react'
+import { Link, useParams } from 'react-router'
+import { Button } from '@/components/ui/Button'
+import { Select } from '@/components/ui/Select'
+import { TextField } from '@/components/ui/TextField'
+import { useProject, useUpdateProject } from '@/features/projects/api'
+import { SourceComposer } from '@/features/projects/SourceComposer'
+import { SourceList } from '@/features/projects/SourceList'
+import { PAGE_COUNT_OPTIONS, THEME_OPTIONS, TONE_OPTIONS } from '@/features/projects/options'
+import { STATUS_LABEL, type ProjectDetail, type Tone } from '@/features/projects/types'
+
+export default function ProjectDetailPage() {
+  const { projectId = '' } = useParams()
+  const project = useProject(projectId)
+
+  if (project.isPending) {
+    return <p className="py-24 text-sm text-ink-muted">正在加载…</p>
+  }
+
+  if (project.isError || !project.data) {
+    return (
+      <div className="py-24">
+        <p className="text-sm text-negative">项目不存在，或你没有访问权限。</p>
+        <Link to="/projects" className="mt-4 inline-block text-sm text-accent underline">
+          返回列表
+        </Link>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <section className="border-b border-line py-14">
+        <Link to="/projects" className="text-xs text-ink-muted transition-colors hover:text-accent">
+          ← 演示文稿
+        </Link>
+        <h1 className="mt-5 font-display text-[clamp(1.75rem,3.5vw,2.5rem)] leading-[1.3]">
+          {project.data.title}
+        </h1>
+        <p className="mt-4 text-sm text-ink-muted">
+          {STATUS_LABEL[project.data.status]} · 目标 {project.data.page_count} 页
+        </p>
+      </section>
+
+      {/* min-w-0：栅格子项默认 min-width:auto，内部 truncate 的 nowrap 文本
+          会把整列顶宽，进而撑出横向滚动条 */}
+      <div className="grid gap-16 py-16 lg:grid-cols-[1fr_1.4fr] [&>*]:min-w-0">
+        <SettingsForm project={project.data} />
+        <div className="flex flex-col gap-16">
+          <SourceComposer projectId={projectId} />
+          <SourceList projectId={projectId} sources={project.data.sources} />
+        </div>
+      </div>
+    </>
+  )
+}
+
+function SettingsForm({ project }: { project: ProjectDetail }) {
+  const update = useUpdateProject(project.id)
+  const [title, setTitle] = useState(project.title)
+  const [audience, setAudience] = useState(project.audience ?? '')
+  const [tone, setTone] = useState<Tone>(project.tone)
+  const [pageCount, setPageCount] = useState(project.page_count)
+  const [themeId, setThemeId] = useState(project.theme_id)
+
+  const dirty =
+    title !== project.title ||
+    audience !== (project.audience ?? '') ||
+    tone !== project.tone ||
+    pageCount !== project.page_count ||
+    themeId !== project.theme_id
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    update.mutate({
+      title: title.trim(),
+      audience: audience.trim() || null,
+      tone,
+      page_count: pageCount,
+      theme_id: themeId,
+    })
+  }
+
+  return (
+    <section>
+      <h2 className="mb-1 text-sm font-semibold tracking-wide">生成设置</h2>
+      <p className="mb-6 text-sm text-ink-muted">大纲生成时读取这里的取值。</p>
+
+      <form onSubmit={submit} className="flex flex-col gap-7">
+        <TextField
+          label="标题"
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          maxLength={200}
+          required
+        />
+        <TextField
+          label="受众（可选）"
+          value={audience}
+          onChange={(event) => setAudience(event.target.value)}
+          maxLength={100}
+          placeholder="例如：管理层"
+        />
+        <Select
+          label="语气"
+          value={tone ?? 'professional'}
+          onChange={(event) => setTone(event.target.value as Tone)}
+          options={TONE_OPTIONS}
+        />
+        <Select
+          label="页数"
+          value={pageCount}
+          onChange={(event) => setPageCount(Number(event.target.value))}
+          options={PAGE_COUNT_OPTIONS}
+        />
+        <Select
+          label="主题"
+          value={themeId}
+          onChange={(event) => setThemeId(event.target.value)}
+          options={THEME_OPTIONS}
+        />
+
+        <div className="flex items-center gap-5">
+          <Button type="submit" disabled={!dirty || update.isPending || !title.trim()}>
+            {update.isPending ? '保存中…' : '保存设置'}
+          </Button>
+          {update.isError && <span className="text-sm text-negative">保存失败。</span>}
+        </div>
+      </form>
+    </section>
+  )
+}
