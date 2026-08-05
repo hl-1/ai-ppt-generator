@@ -1,0 +1,56 @@
+@import 'tailwindcss';
+
+@import '@fontsource/instrument-serif/400.css';
+@import '@fontsource/instrument-serif/400-italic.css';
+@import '@fontsource-variable/manrope';
+
+/* 应用外壳的设计令牌。注意：这一套只服务于产品界面本身，
+   幻灯片主题的令牌另有一套（shared/themes），两者不可混用，
+   否则切换 PPT 主题时会连带改变编辑器界面。 */
+@theme {
+  --font-display: 'Instrument Serif', 'Songti SC', serif;
+  --font-sans: 'Manrope Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  --color-canvas: #fbfaf6;
+  --color-surface: #ffffff;
+  --color-ink: #171614;
+  --color-ink-soft: #4a463e;
+  --color-ink-muted: #8a8478;
+  --color-line: #e7e2d7;
+  --color-line-strong: #d6cfc0;
+  --color-accent: #c8442a;
+  --color-accent-soft: #f3e3de;
+  --color-positive: #3f7d5c;
+  --color-negative: #b23b2e;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: var(--color-canvas);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* 纸张质感的细网格底纹，用于大面积留白区域，避免纯色显得单薄 */
+@utility bg-grid {
+  background-image: linear-gradient(var(--color-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
+  background-size: 72px 72px;
+  background-position: center;
+}
