@@ -137,7 +137,16 @@ export function DeckPanel({
             ready={progress.event?.ready ?? deck.ready}
             failed={progress.event?.failed ?? deck.failed}
             total={progress.event?.total ?? deck.total}
-            message={progress.event?.message}
+            message={
+              progress.event?.message ??
+              (generating
+                ? undefined
+                : deck.status === 'ready'
+                  ? '全部页面已生成'
+                  : deck.status === 'partial'
+                    ? '部分页面待继续生成'
+                    : undefined)
+            }
             connectionError={progress.connectionError}
           />
 

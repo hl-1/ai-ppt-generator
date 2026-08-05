@@ -44,7 +44,15 @@ export function AiEditPanel({
 
   const generating = slide.status === 'generating'
   const busy = propose.isPending || apply.isPending
-  const canPropose = !generating && !busy
+  const editableUnlocked = slide.blocks.some(
+    (block) =>
+      !block.locked &&
+      (block.type === 'text' ||
+        block.type === 'bullets' ||
+        block.type === 'kpi' ||
+        block.type === 'table'),
+  )
+  const canPropose = !generating && !busy && editableUnlocked
 
   useEffect(() => {
     // 换页时清掉上一次提案，避免把旧页操作套到新页
@@ -166,6 +174,12 @@ export function AiEditPanel({
 
         {generating && (
           <p className="text-xs text-ink-muted">页面生成中，暂不可发起 AI 修改</p>
+        )}
+
+        {!generating && !editableUnlocked && (
+          <p className="border border-dashed border-line px-3 py-3 text-xs leading-relaxed text-ink-muted">
+            本页可编辑块均已人工锁定，AI 不会覆盖；如需改写请先解除锁定或换一页。
+          </p>
         )}
 
         {propose.isPending && (

@@ -28,7 +28,7 @@ export default function DashboardPage() {
           欢迎回来，{user?.email.split('@')[0]}。
         </h1>
         <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-ink-soft">
-          现在可以创建 PPT 并录入材料了。大纲生成会在下一个里程碑接入。
+          创建 PPT、录入材料、确认大纲、生成页面，并在线编辑后导出原生可编辑 PPTX。
         </p>
         <Link
           to="/projects"

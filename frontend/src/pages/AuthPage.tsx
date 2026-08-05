@@ -87,8 +87,9 @@ export default function AuthPage() {
         <p className="text-xs text-ink-muted">固定 16:9 画幅 · 导出为原生可编辑 PPTX</p>
       </section>
 
-      <section className="flex items-center justify-center px-8 py-16">
-        <div className="w-full max-w-sm">
+      {/* my-auto + overflow：矮视口可滚动，高视口仍垂直居中，避免登录按钮被裁切 */}
+      <section className="flex justify-center overflow-y-auto px-8 py-16">
+        <div className="my-auto w-full max-w-sm">
           <h2 className="font-display text-3xl">{copy.title}</h2>
           <p className="mt-2 mb-10 text-sm text-ink-muted">
             项目、素材与成品按账号隔离，不会跨账号可见。
