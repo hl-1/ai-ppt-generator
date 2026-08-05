@@ -1,11 +1,19 @@
 import { BlockView } from '@/render/BlockView'
 import { getLayout } from '@/render/design'
 import { pt, rectToStyle, resolveColor } from '@/render/style'
-import { CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, type Slide, type Theme } from '@/render/types'
+import {
+  CANVAS_HEIGHT_PT,
+  CANVAS_WIDTH_PT,
+  type EditableBlockCommit,
+  type Slide,
+  type Theme,
+} from '@/render/types'
 
 interface SlideViewProps {
   slide: Slide
   theme: Theme
+  editable?: boolean
+  onCommit?: (blockId: string, body: EditableBlockCommit) => void
 }
 
 /**
@@ -14,8 +22,10 @@ interface SlideViewProps {
  * 它不认识任何具体布局，只按布局数据把内容块摆到槽位里。
  * PPTX 渲染器做的是同一件事，两端因此天然一致：
  * 新增布局只需增加一份 JSON，两端都不用改代码。
+ *
+ * 编辑态复用同一棵渲染树：仅把可写字段换成受约束的 contenteditable。
  */
-export function SlideView({ slide, theme }: SlideViewProps) {
+export function SlideView({ slide, theme, editable = false, onCommit }: SlideViewProps) {
   const layout = getLayout(slide.layout_id)
 
   return (
@@ -45,8 +55,33 @@ export function SlideView({ slide, theme }: SlideViewProps) {
         if (!slot) return null
 
         return (
-          <div key={block.id} style={{ ...rectToStyle(slot.rect), overflow: 'hidden' }}>
-            <BlockView block={block} slot={slot} theme={theme} />
+          <div
+            key={block.id}
+            style={{ ...rectToStyle(slot.rect), overflow: 'hidden' }}
+          >
+            {editable && block.locked && (
+              <span
+                role="img"
+                title="已人工修改，AI 不会覆盖"
+                aria-label="已人工修改，AI 不会覆盖"
+                style={{
+                  position: 'absolute',
+                  top: pt(4),
+                  right: pt(4),
+                  zIndex: 2,
+                  width: pt(6),
+                  height: pt(6),
+                  background: resolveColor(theme, 'accent'),
+                }}
+              />
+            )}
+            <BlockView
+              block={block}
+              slot={slot}
+              theme={theme}
+              editable={editable}
+              onCommit={onCommit}
+            />
           </div>
         )
       })}

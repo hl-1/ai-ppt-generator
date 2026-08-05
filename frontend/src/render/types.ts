@@ -25,3 +25,11 @@ export type ColorToken = TextStyle['color']
 /** 16:9 基准画布，单位 pt。必须与后端 app/domain/geometry.py 保持一致 */
 export const CANVAS_WIDTH_PT = 960
 export const CANVAS_HEIGHT_PT = 540
+
+/** 就地编辑的字段级变更；多字段块由保存队列合并，避免并发丢字 */
+export type EditableBlockCommit =
+  | { type: 'text'; text: string }
+  | { type: 'bullets'; index: number; text: string }
+  | { type: 'kpi'; field: 'value' | 'label' | 'note'; text: string }
+  | { type: 'table'; kind: 'header'; index: number; text: string }
+  | { type: 'table'; kind: 'cell'; row: number; col: number; text: string }

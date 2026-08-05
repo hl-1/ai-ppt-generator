@@ -1,6 +1,13 @@
+import { type DragEvent, useState } from 'react'
 import { Button } from '@/components/ui/Button'
-import { useCancelDeck, useDeck, useGenerateDeck } from '@/features/deck/api'
+import {
+  useCancelDeck,
+  useDeck,
+  useGenerateDeck,
+  useReorderSlides,
+} from '@/features/deck/api'
 import { SlideCard } from '@/features/deck/SlideCard'
+import { SlideEditor } from '@/features/deck/SlideEditor'
 import { useDeckProgress } from '@/features/deck/useDeckProgress'
 import { errorMessage } from '@/lib/errors'
 import { getTheme } from '@/render/design'
@@ -17,13 +24,52 @@ export function DeckPanel({
   const deckQuery = useDeck(projectId, outlineConfirmed)
   const generate = useGenerateDeck(projectId)
   const cancel = useCancelDeck(projectId)
+  const reorder = useReorderSlides(projectId)
   const deck = deckQuery.data
   const generating = deck?.status === 'generating'
   const progress = useDeckProgress(projectId, outlineConfirmed && generating)
   const theme = getTheme(themeId)
+  const [editingSlideId, setEditingSlideId] = useState<string | null>(null)
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
 
   const started = (deck?.total ?? 0) > 0
-  const actionError = generate.error ?? cancel.error
+  const actionError = generate.error ?? cancel.error ?? reorder.error
+  const editingSlide = deck?.slides.find((slide) => slide.id === editingSlideId)
+
+  const moveSlide = (index: number, direction: -1 | 1) => {
+    if (!deck || generating || reorder.isPending) return
+    const target = index + direction
+    if (target < 0 || target >= deck.slides.length) return
+    const ids = deck.slides.map((slide) => slide.id)
+    ;[ids[index], ids[target]] = [ids[target]!, ids[index]!]
+    reorder.mutate(ids)
+  }
+
+  const onCardDragStart = (slideId: string, event: DragEvent<HTMLLIElement>) => {
+    if (generating) {
+      event.preventDefault()
+      return
+    }
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', slideId)
+    setDragId(slideId)
+  }
+
+  const onCardDrop = (targetId: string, event: DragEvent<HTMLLIElement>) => {
+    event.preventDefault()
+    const sourceId = dragId ?? event.dataTransfer.getData('text/plain')
+    setDragId(null)
+    setDragOverId(null)
+    if (!deck || !sourceId || sourceId === targetId || generating) return
+    const ids = deck.slides.map((slide) => slide.id)
+    const from = ids.indexOf(sourceId)
+    const to = ids.indexOf(targetId)
+    if (from < 0 || to < 0) return
+    ids.splice(from, 1)
+    ids.splice(to, 0, sourceId)
+    reorder.mutate(ids)
+  }
 
   return (
     <section className="border-t border-line py-16">
@@ -95,11 +141,43 @@ export function DeckPanel({
           />
 
           <ol className="mt-12 grid gap-10 md:grid-cols-2 xl:grid-cols-3">
-            {deck.slides.map((slide) => (
-              <SlideCard key={slide.id} projectId={projectId} slide={slide} theme={theme} />
+            {deck.slides.map((slide, index) => (
+              <SlideCard
+                key={slide.id}
+                projectId={projectId}
+                slide={slide}
+                theme={theme}
+                index={index}
+                count={deck.slides.length}
+                deckGenerating={generating}
+                onEdit={() => setEditingSlideId(slide.id)}
+                onMove={(direction) => moveSlide(index, direction)}
+                onDragStart={(event) => onCardDragStart(slide.id, event)}
+                onDragOver={(event) => {
+                  if (generating || !dragId || dragId === slide.id) return
+                  event.preventDefault()
+                  setDragOverId(slide.id)
+                }}
+                onDrop={(event) => onCardDrop(slide.id, event)}
+                onDragEnd={() => {
+                  setDragId(null)
+                  setDragOverId(null)
+                }}
+                dragging={dragId === slide.id}
+                dragOver={dragOverId === slide.id}
+              />
             ))}
           </ol>
         </>
+      )}
+
+      {editingSlide && (
+        <SlideEditor
+          projectId={projectId}
+          slide={editingSlide}
+          theme={theme}
+          onClose={() => setEditingSlideId(null)}
+        />
       )}
     </section>
   )

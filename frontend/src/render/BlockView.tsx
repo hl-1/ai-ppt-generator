@@ -1,26 +1,49 @@
 import type { CSSProperties } from 'react'
 import { ChartView } from '@/render/ChartView'
+import { EditableText } from '@/render/EditableText'
 import { pt, resolveColor, textStyleToCss } from '@/render/style'
 import type {
   Block,
   BulletsBlock,
+  EditableBlockCommit,
   ImageBlock,
   KpiBlock,
   Slot,
   TableBlock,
   TextBlock,
+  TextStyleName,
   Theme,
 } from '@/render/types'
+
+/** 标题类与单元格按单行约束；正文允许换行 */
+const MULTILINE_STYLES = new Set<TextStyleName>(['body', 'bullet'])
 
 interface BlockProps<T> {
   block: T
   slot: Slot
   theme: Theme
+  editable?: boolean
+  onCommit?: (blockId: string, body: EditableBlockCommit) => void
 }
 
-function TextView({ block, slot, theme }: BlockProps<TextBlock>) {
+function TextView({ block, slot, theme, editable, onCommit }: BlockProps<TextBlock>) {
+  const styleName = slot.text_style ?? 'body'
+  const style = textStyleToCss(theme, styleName)
+
+  if (!editable || !onCommit) {
+    return <p style={{ ...style, margin: 0 }}>{block.text}</p>
+  }
+
   return (
-    <p style={{ ...textStyleToCss(theme, slot.text_style ?? 'body'), margin: 0 }}>{block.text}</p>
+    <p style={{ ...style, margin: 0 }}>
+      <EditableText
+        value={block.text}
+        ariaLabel="编辑文字"
+        multiline={MULTILINE_STYLES.has(styleName)}
+        style={style}
+        onCommit={(text) => onCommit(block.id, { type: 'text', text })}
+      />
+    </p>
   )
 }
 
@@ -72,7 +95,7 @@ function BulletMarker({ theme, index }: { theme: Theme; index: number }) {
   )
 }
 
-function BulletsView({ block, slot, theme }: BlockProps<BulletsBlock>) {
+function BulletsView({ block, slot, theme, editable, onCommit }: BlockProps<BulletsBlock>) {
   const textStyle = textStyleToCss(theme, slot.text_style ?? 'bullet')
 
   return (
@@ -88,9 +111,18 @@ function BulletsView({ block, slot, theme }: BlockProps<BulletsBlock>) {
       }}
     >
       {block.items.map((item, index) => (
-        <li key={item} style={{ display: 'flex', alignItems: 'flex-start' }}>
+        <li key={`${block.id}-${index}`} style={{ display: 'flex', alignItems: 'flex-start' }}>
           <BulletMarker theme={theme} index={index} />
-          <span>{item}</span>
+          {editable && onCommit ? (
+            <EditableText
+              value={item}
+              ariaLabel={`编辑要点 ${index + 1}`}
+              style={{ ...textStyle, flex: 1 }}
+              onCommit={(text) => onCommit(block.id, { type: 'bullets', index, text })}
+            />
+          ) : (
+            <span>{item}</span>
+          )}
         </li>
       ))}
     </ul>
@@ -110,7 +142,11 @@ function ImagePlaceholder({ theme, alt }: { theme: Theme; alt: string }) {
       <rect width="100" height="100" fill={resolveColor(theme, 'accent_soft')} />
       <circle cx="74" cy="28" r="30" fill={resolveColor(theme, 'accent')} opacity="0.22" />
       <circle cx="74" cy="28" r="18" fill={resolveColor(theme, 'accent')} opacity="0.3" />
-      <path d="M0 78 L34 52 L58 70 L100 40 L100 100 L0 100 Z" fill={resolveColor(theme, 'accent')} opacity="0.16" />
+      <path
+        d="M0 78 L34 52 L58 70 L100 40 L100 100 L0 100 Z"
+        fill={resolveColor(theme, 'accent')}
+        opacity="0.16"
+      />
       <rect x="8" y="86" width="18" height="1.2" fill={resolveColor(theme, 'accent')} />
     </svg>
   )
@@ -129,7 +165,7 @@ function ImageView({ block, theme }: BlockProps<ImageBlock>) {
   )
 }
 
-function TableView({ block, theme }: BlockProps<TableBlock>) {
+function TableView({ block, theme, editable, onCommit }: BlockProps<TableBlock>) {
   const headerStyle = textStyleToCss(theme, 'table_header')
   const cellStyle = textStyleToCss(theme, 'table_cell')
   const border = `${pt(theme.shape.border_width_pt)} solid ${resolveColor(theme, 'line')}`
@@ -139,22 +175,57 @@ function TableView({ block, theme }: BlockProps<TableBlock>) {
     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
       <thead>
         <tr>
-          {block.header.map((cell) => (
+          {block.header.map((cell, index) => (
             <th
-              key={cell}
-              style={{ ...headerStyle, ...cellPadding, borderBottom: `${pt(1.5)} solid ${resolveColor(theme, 'accent')}` }}
+              key={`h-${index}`}
+              style={{
+                ...headerStyle,
+                ...cellPadding,
+                borderBottom: `${pt(1.5)} solid ${resolveColor(theme, 'accent')}`,
+              }}
             >
-              {cell}
+              {editable && onCommit ? (
+                <EditableText
+                  value={cell}
+                  ariaLabel={`编辑表头 ${index + 1}`}
+                  style={headerStyle}
+                  onCommit={(text) =>
+                    onCommit(block.id, { type: 'table', kind: 'header', index, text })
+                  }
+                />
+              ) : (
+                cell
+              )}
             </th>
           ))}
         </tr>
       </thead>
       <tbody>
         {block.rows.map((row, rowIndex) => (
-          <tr key={row.join('|') || rowIndex}>
+          <tr key={`r-${rowIndex}`}>
             {row.map((cell, cellIndex) => (
-              <td key={`${cellIndex}-${cell}`} style={{ ...cellStyle, ...cellPadding, borderBottom: border }}>
-                {cell}
+              <td
+                key={`c-${rowIndex}-${cellIndex}`}
+                style={{ ...cellStyle, ...cellPadding, borderBottom: border }}
+              >
+                {editable && onCommit ? (
+                  <EditableText
+                    value={cell}
+                    ariaLabel={`编辑单元格 ${rowIndex + 1}-${cellIndex + 1}`}
+                    style={cellStyle}
+                    onCommit={(text) =>
+                      onCommit(block.id, {
+                        type: 'table',
+                        kind: 'cell',
+                        row: rowIndex,
+                        col: cellIndex,
+                        text,
+                      })
+                    }
+                  />
+                ) : (
+                  cell
+                )}
               </td>
             ))}
           </tr>
@@ -164,31 +235,90 @@ function TableView({ block, theme }: BlockProps<TableBlock>) {
   )
 }
 
-function KpiView({ block, theme }: BlockProps<KpiBlock>) {
+function KpiView({ block, theme, editable, onCommit }: BlockProps<KpiBlock>) {
+  const valueStyle = textStyleToCss(theme, 'kpi_value')
+  const labelStyle = textStyleToCss(theme, 'kpi_label')
+  const noteStyle = textStyleToCss(theme, 'kpi_note')
+
+  if (!editable || !onCommit) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: pt(8) }}>
+        <span style={{ ...valueStyle, whiteSpace: 'nowrap' }}>{block.value}</span>
+        <span style={labelStyle}>{block.label}</span>
+        {block.note && <span style={noteStyle}>{block.note}</span>}
+      </div>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: pt(8) }}>
-      <span style={{ ...textStyleToCss(theme, 'kpi_value'), whiteSpace: 'nowrap' }}>
-        {block.value}
-      </span>
-      <span style={textStyleToCss(theme, 'kpi_label')}>{block.label}</span>
-      {block.note && <span style={textStyleToCss(theme, 'kpi_note')}>{block.note}</span>}
+      <EditableText
+        value={block.value}
+        ariaLabel="编辑指标数值"
+        style={{ ...valueStyle, whiteSpace: 'nowrap' }}
+        onCommit={(text) => onCommit(block.id, { type: 'kpi', field: 'value', text })}
+      />
+      <EditableText
+        value={block.label}
+        ariaLabel="编辑指标标签"
+        style={labelStyle}
+        onCommit={(text) => onCommit(block.id, { type: 'kpi', field: 'label', text })}
+      />
+      <EditableText
+        value={block.note ?? ''}
+        ariaLabel="编辑指标备注"
+        style={noteStyle}
+        onCommit={(text) => onCommit(block.id, { type: 'kpi', field: 'note', text })}
+      />
     </div>
   )
 }
 
-export function BlockView({ block, slot, theme }: BlockProps<Block>) {
+export function BlockView({ block, slot, theme, editable, onCommit }: BlockProps<Block>) {
   switch (block.type) {
     case 'text':
-      return <TextView block={block} slot={slot} theme={theme} />
+      return (
+        <TextView
+          block={block}
+          slot={slot}
+          theme={theme}
+          editable={editable}
+          onCommit={onCommit}
+        />
+      )
     case 'bullets':
-      return <BulletsView block={block} slot={slot} theme={theme} />
+      return (
+        <BulletsView
+          block={block}
+          slot={slot}
+          theme={theme}
+          editable={editable}
+          onCommit={onCommit}
+        />
+      )
     case 'image':
       return <ImageView block={block} slot={slot} theme={theme} />
     case 'chart':
       return <ChartView block={block} slot={slot} theme={theme} />
     case 'table':
-      return <TableView block={block} slot={slot} theme={theme} />
+      return (
+        <TableView
+          block={block}
+          slot={slot}
+          theme={theme}
+          editable={editable}
+          onCommit={onCommit}
+        />
+      )
     case 'kpi':
-      return <KpiView block={block} slot={slot} theme={theme} />
+      return (
+        <KpiView
+          block={block}
+          slot={slot}
+          theme={theme}
+          editable={editable}
+          onCommit={onCommit}
+        />
+      )
   }
 }

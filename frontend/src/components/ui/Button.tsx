@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from 'react'
+import type { ButtonHTMLAttributes, Ref } from 'react'
 import { cn } from '@/lib/utils'
 
 type Variant = 'primary' | 'accent' | 'ghost'
@@ -12,6 +12,7 @@ const VARIANT_STYLE: Record<Variant, string> = {
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant
+  ref?: Ref<HTMLButtonElement>
 }
 
 export function Button({ variant = 'primary', className, ...props }: ButtonProps) {

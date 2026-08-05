@@ -1,10 +1,14 @@
 import uuid
 
+from pydantic import TypeAdapter
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis import get_redis
+from app.domain.content import Block
+from app.domain.content import Slide as ContentSlide
 from app.domain.outline import OutlinePage
+from app.domain.validation import validate_slide
 from app.models.project import Project
 from app.models.slide import Slide
 from app.schemas.deck import DeckEvent, DeckPublic, DeckStatus, SlidePublic
@@ -13,6 +17,7 @@ from app.services.events import EventStream
 deck_events: EventStream[DeckEvent] = EventStream("deck", DeckEvent)
 
 CANCEL_TTL_SECONDS = 60 * 30
+_blocks_adapter = TypeAdapter(list[Block])
 
 
 def outline_pages(project: Project) -> list[OutlinePage]:
@@ -26,6 +31,18 @@ async def load_slides(session: AsyncSession, project_id: uuid.UUID) -> list[Slid
         select(Slide).where(Slide.project_id == project_id).order_by(Slide.position)
     )
     return list(result.scalars())
+
+
+def refresh_slide_issues(slide: Slide) -> None:
+    """按当前 blocks/layout 重算结构告警并写回 JSONB。"""
+    content = ContentSlide(
+        id=str(slide.id),
+        layout_id=slide.layout_id,
+        blocks=_blocks_adapter.validate_python(slide.blocks),
+        speaker_notes=slide.speaker_notes,
+        revision=slide.revision,
+    )
+    slide.issues = [issue.model_dump() for issue in validate_slide(content)]
 
 
 async def sync_slides(

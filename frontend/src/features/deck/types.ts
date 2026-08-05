@@ -10,6 +10,18 @@ export type DeckSlide = Schemas['SlidePublic']
 export type DeckStatus = Deck['status']
 export type SlideStatus = DeckSlide['status']
 export type DeckGenerateAccepted = Schemas['DeckGenerateAccepted']
+export type LayoutCandidate = Schemas['LayoutCandidatePublic']
+export type BlockUpdate =
+  | Schemas['TextBlockUpdate']
+  | Schemas['BulletsBlockUpdate']
+  | Schemas['KpiBlockUpdate']
+  | Schemas['TableBlockUpdate']
+/** Omit 不会自动分发联合类型，需逐个剥掉 revision */
+export type BlockUpdateBody =
+  | Omit<Schemas['TextBlockUpdate'], 'revision'>
+  | Omit<Schemas['BulletsBlockUpdate'], 'revision'>
+  | Omit<Schemas['KpiBlockUpdate'], 'revision'>
+  | Omit<Schemas['TableBlockUpdate'], 'revision'>
 
 export interface DeckProgressEvent {
   type:

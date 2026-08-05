@@ -422,6 +422,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/blocks/{block_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Slide Block */
+        patch: operations["update_slide_block_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Reorder Slides */
+        put: operations["reorder_slides_api_v1_projects__project_id__deck_slides_order_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/layouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Slide Layouts */
+        get: operations["list_slide_layouts_api_v1_projects__project_id__deck_slides__slide_id__layouts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Switch Slide Layout */
+        put: operations["switch_slide_layout_api_v1_projects__project_id__deck_slides__slide_id__layout_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/deck/events": {
         parameters: {
             query?: never;
@@ -488,6 +556,18 @@ export interface components {
              * @enum {string}
              */
             type: "bullets";
+            /** Items */
+            items: string[];
+        };
+        /** BulletsBlockUpdate */
+        BulletsBlockUpdate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "bullets";
+            /** Revision */
+            revision: number;
             /** Items */
             items: string[];
         };
@@ -703,6 +783,22 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** KpiBlockUpdate */
+        KpiBlockUpdate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "kpi";
+            /** Revision */
+            revision: number;
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+            /** Note */
+            note?: string | null;
+        };
         /** Layout */
         Layout: {
             /** Id */
@@ -718,6 +814,31 @@ export interface components {
              * @default []
              */
             decorations: components["schemas"]["Decoration"][];
+        };
+        /** LayoutCandidatePublic */
+        LayoutCandidatePublic: {
+            /** Layout Id */
+            layout_id: string;
+            /** Name */
+            name: string;
+            /** Usage */
+            usage: string;
+            /** Compatible */
+            compatible: boolean;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Current
+             * @default false
+             */
+            current: boolean;
+        };
+        /** LayoutSwitchRequest */
+        LayoutSwitchRequest: {
+            /** Layout Id */
+            layout_id: string;
+            /** Revision */
+            revision: number;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -994,6 +1115,11 @@ export interface components {
              */
             revision: number;
         };
+        /** SlideOrderRequest */
+        SlideOrderRequest: {
+            /** Slide Ids */
+            slide_ids: string[];
+        };
         /** SlidePublic */
         SlidePublic: {
             /**
@@ -1166,6 +1292,20 @@ export interface components {
             /** Rows */
             rows: string[][];
         };
+        /** TableBlockUpdate */
+        TableBlockUpdate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "table";
+            /** Revision */
+            revision: number;
+            /** Header */
+            header: string[];
+            /** Rows */
+            rows: string[][];
+        };
         /** TextBlock */
         TextBlock: {
             /** Id */
@@ -1182,6 +1322,18 @@ export interface components {
              * @enum {string}
              */
             type: "text";
+            /** Text */
+            text: string;
+        };
+        /** TextBlockUpdate */
+        TextBlockUpdate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "text";
+            /** Revision */
+            revision: number;
             /** Text */
             text: string;
         };
@@ -2100,6 +2252,146 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_replace_slide_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_slide_block_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                block_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TextBlockUpdate"] | components["schemas"]["BulletsBlockUpdate"] | components["schemas"]["KpiBlockUpdate"] | components["schemas"]["TableBlockUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_slides_api_v1_projects__project_id__deck_slides_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlideOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_slide_layouts_api_v1_projects__project_id__deck_slides__slide_id__layouts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayoutCandidatePublic"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    switch_slide_layout_api_v1_projects__project_id__deck_slides__slide_id__layout_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LayoutSwitchRequest"];
             };
         };
         responses: {

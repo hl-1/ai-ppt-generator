@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -71,3 +71,54 @@ class DeckEvent(BaseModel):
     ready: int = 0
     failed: int = 0
     total: int = 0
+
+
+class TextBlockUpdate(BaseModel):
+    type: Literal["text"]
+    revision: int
+    text: str
+
+
+class BulletsBlockUpdate(BaseModel):
+    type: Literal["bullets"]
+    revision: int
+    items: list[str]
+
+
+class KpiBlockUpdate(BaseModel):
+    type: Literal["kpi"]
+    revision: int
+    value: str
+    label: str
+    note: str | None = None
+
+
+class TableBlockUpdate(BaseModel):
+    type: Literal["table"]
+    revision: int
+    header: list[str]
+    rows: list[list[str]]
+
+
+BlockUpdate = Annotated[
+    TextBlockUpdate | BulletsBlockUpdate | KpiBlockUpdate | TableBlockUpdate,
+    Field(discriminator="type"),
+]
+
+
+class SlideOrderRequest(BaseModel):
+    slide_ids: list[uuid.UUID]
+
+
+class LayoutSwitchRequest(BaseModel):
+    layout_id: str
+    revision: int
+
+
+class LayoutCandidatePublic(BaseModel):
+    layout_id: str
+    name: str
+    usage: str
+    compatible: bool
+    reason: str | None = None
+    current: bool = False

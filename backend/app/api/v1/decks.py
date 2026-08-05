@@ -21,14 +21,24 @@ from app.api.deps import get_queue
 from app.api.sse import event_stream_response
 from app.api.v1.projects import OwnedProject
 from app.core.db import get_session
+from app.domain.layout import get_layout
+from app.domain.layout_switch import (
+    LayoutSwitchOk,
+    list_layout_candidates,
+    plan_layout_switch,
+)
 from app.images.validate import ImageRejected, validate_image
 from app.models.project import Project
 from app.models.slide import Slide
 from app.schemas.deck import (
+    BlockUpdate,
     DeckEvent,
     DeckGenerateAccepted,
     DeckGenerateRequest,
     DeckPublic,
+    LayoutCandidatePublic,
+    LayoutSwitchRequest,
+    SlideOrderRequest,
     SlidePublic,
 )
 from app.services.deck import (
@@ -36,6 +46,7 @@ from app.services.deck import (
     deck_events,
     deck_status,
     load_slides,
+    refresh_slide_issues,
     request_cancel,
     sync_slides,
     to_deck_public,
@@ -58,6 +69,27 @@ def _ensure_confirmed(project: Project) -> None:
 def _ensure_idle(slides: list[Slide]) -> None:
     if any(slide.status == "generating" for slide in slides):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="页面正在生成中")
+
+
+def _find_slide(slides: list[Slide], slide_id: uuid.UUID) -> Slide:
+    slide = next((item for item in slides if item.id == slide_id), None)
+    if slide is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="页面不存在")
+    return slide
+
+
+def _ensure_editable(slide: Slide, revision: int) -> None:
+    # 页面生成完成时会整块覆盖 blocks，此时编辑会被无声冲掉
+    if slide.status == "generating":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="页面正在生成中，请稍后再编辑",
+        )
+    if slide.revision != revision:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="页面已被其他操作更新，请刷新后重试",
+        )
 
 
 async def _enqueue(
@@ -233,6 +265,143 @@ async def replace_slide_image(
     }
     # JSONB 就地改 dict 不会被 SQLAlchemy 感知，必须赋新列表
     slide.blocks = [updated if block.get("id") == block_id else block for block in slide.blocks]
+    slide.revision += 1
+    await session.commit()
+    await session.refresh(slide)
+    return SlidePublic.model_validate(slide)
+
+
+@router.patch(
+    "/slides/{slide_id}/blocks/{block_id}",
+    response_model=SlidePublic,
+)
+async def update_slide_block(
+    slide_id: uuid.UUID,
+    block_id: str,
+    body: BlockUpdate,
+    project: OwnedProject,
+    session: SessionDep,
+) -> SlidePublic:
+    slides = await load_slides(session, project.id)
+    slide = _find_slide(slides, slide_id)
+    target = next((block for block in slide.blocks if block.get("id") == block_id), None)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="内容块不存在")
+
+    _ensure_editable(slide, body.revision)
+
+    # 请求体按 type 判别；与存量块类型不符说明前端状态已过期
+    if target.get("type") != body.type:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"块类型不匹配，当前为 {target.get('type')}，不能按 {body.type} 保存",
+        )
+
+    updated = {**target, "locked": True}
+    if body.type == "text":
+        updated["text"] = body.text
+    elif body.type == "bullets":
+        updated["items"] = body.items
+    elif body.type == "kpi":
+        updated["value"] = body.value
+        updated["label"] = body.label
+        updated["note"] = body.note
+    else:
+        updated["header"] = body.header
+        updated["rows"] = body.rows
+
+    slide.blocks = [updated if block.get("id") == block_id else block for block in slide.blocks]
+    refresh_slide_issues(slide)
+    slide.revision += 1
+    await session.commit()
+    await session.refresh(slide)
+    return SlidePublic.model_validate(slide)
+
+
+@router.put("/slides/order", response_model=list[SlidePublic])
+async def reorder_slides(
+    body: SlideOrderRequest,
+    project: OwnedProject,
+    session: SessionDep,
+) -> list[SlidePublic]:
+    slides = await load_slides(session, project.id)
+    if any(slide.status == "generating" for slide in slides):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="页面正在生成中，请稍后再调整顺序",
+        )
+
+    current_ids = {slide.id for slide in slides}
+    requested = body.slide_ids
+    if len(requested) != len(set(requested)) or set(requested) != current_ids:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="页面列表已变化，请刷新后重试",
+        )
+
+    by_id = {slide.id: slide for slide in slides}
+    # position 无唯一约束，可直接按目标下标重写
+    for position, slide_id in enumerate(requested, start=1):
+        slide = by_id[slide_id]
+        slide.position = position
+        slide.revision += 1
+
+    await session.commit()
+    ordered = await load_slides(session, project.id)
+    return [SlidePublic.model_validate(slide) for slide in ordered]
+
+
+@router.get(
+    "/slides/{slide_id}/layouts",
+    response_model=list[LayoutCandidatePublic],
+)
+async def list_slide_layouts(
+    slide_id: uuid.UUID,
+    project: OwnedProject,
+    session: SessionDep,
+) -> list[LayoutCandidatePublic]:
+    slides = await load_slides(session, project.id)
+    slide = _find_slide(slides, slide_id)
+    return [
+        LayoutCandidatePublic(
+            layout_id=item.layout_id,
+            name=item.name,
+            usage=item.usage,
+            compatible=item.compatible,
+            reason=item.reason,
+            current=item.current,
+        )
+        for item in list_layout_candidates(slide.blocks, slide.layout_id)
+    ]
+
+
+@router.put("/slides/{slide_id}/layout", response_model=SlidePublic)
+async def switch_slide_layout(
+    slide_id: uuid.UUID,
+    body: LayoutSwitchRequest,
+    project: OwnedProject,
+    session: SessionDep,
+) -> SlidePublic:
+    slides = await load_slides(session, project.id)
+    slide = _find_slide(slides, slide_id)
+    _ensure_editable(slide, body.revision)
+
+    try:
+        get_layout(body.layout_id)
+    except KeyError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="布局不存在",
+        ) from error
+
+    result = plan_layout_switch(slide.blocks, slide.layout_id, body.layout_id)
+    if not isinstance(result, LayoutSwitchOk):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.reason)
+
+    # 只改槽位归属，不改块内容与 locked
+    slide.blocks = [{**block, "slot_id": result.mapping[block["id"]]} for block in slide.blocks]
+    slide.layout_id = body.layout_id
+    refresh_slide_issues(slide)
     slide.revision += 1
     await session.commit()
     await session.refresh(slide)
