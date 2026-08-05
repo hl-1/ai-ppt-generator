@@ -21,6 +21,8 @@
   --color-accent: #c8442a;
   --color-accent-soft: #f3e3de;
   --color-positive: #3f7d5c;
+  /* 警告与错误必须能一眼分开：前者只是内容偏长，不阻断导出 */
+  --color-warning: #a2751f;
   --color-negative: #b23b2e;
 }
 

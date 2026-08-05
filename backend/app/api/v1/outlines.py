@@ -1,6 +1,4 @@
-import asyncio
 import uuid
-from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from arq.connections import ArqRedis
@@ -10,9 +8,9 @@ from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_queue
+from app.api.sse import event_stream_response
 from app.api.v1.projects import OwnedProject
 from app.core.db import get_session
-from app.core.redis import get_redis
 from app.domain.layout import load_layouts
 from app.models.project import Project, ProjectOutline
 from app.schemas.outline import (
@@ -23,11 +21,7 @@ from app.schemas.outline import (
     OutlineUpdate,
 )
 from app.services.outline_inputs import project_input_signature
-from app.services.outline_progress import (
-    latest_outline_event,
-    outline_channel,
-    publish_outline_event,
-)
+from app.services.outline_progress import outline_events, publish_outline_event
 
 router = APIRouter(prefix="/projects/{project_id}/outline", tags=["outline"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -209,46 +203,17 @@ async def stream_outline_events(
     project: OwnedProject,
 ) -> StreamingResponse:
     outline = _outline_or_404(project)
-    project_id = project.id
-    fallback = OutlineEvent(
-        type="snapshot",
-        status=outline.status,
-        progress=100 if outline.status in {"draft", "confirmed"} else 0,
-        message="大纲已就绪" if outline.status in {"draft", "confirmed"} else "等待任务进度",
-        revision=outline.revision,
+    settled = outline.status in {"draft", "confirmed"}
+    return event_stream_response(
+        request,
+        stream=outline_events,
+        key=project.id,
+        fallback=OutlineEvent(
+            type="snapshot",
+            status=outline.status,
+            progress=100 if settled else 0,
+            message="大纲已就绪" if settled else "等待任务进度",
+            revision=outline.revision,
+        ),
+        terminal_types={"completed", "failed"},
     )
-
-    async def events() -> AsyncGenerator[str, None]:
-        initial = await latest_outline_event(project_id) or fallback
-        yield _encode_sse(initial)
-
-        pubsub = get_redis().pubsub()
-        await pubsub.subscribe(outline_channel(project_id))
-        try:
-            while not await request.is_disconnected():
-                message = await pubsub.get_message(
-                    ignore_subscribe_messages=True,
-                    timeout=15,
-                )
-                if message is None:
-                    yield ": heartbeat\n\n"
-                    continue
-
-                event = OutlineEvent.model_validate_json(message["data"])
-                yield _encode_sse(event)
-                if event.type in {"completed", "failed"}:
-                    return
-                await asyncio.sleep(0)
-        finally:
-            await pubsub.unsubscribe(outline_channel(project_id))
-            await pubsub.aclose()
-
-    return StreamingResponse(
-        events(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-def _encode_sse(event: OutlineEvent) -> str:
-    return f"event: {event.type}\ndata: {event.model_dump_json()}\n\n"

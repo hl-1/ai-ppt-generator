@@ -32,9 +32,7 @@ def _tokens_to_sections(tokens: list[Token]) -> list[SourceSection]:
         if heading is None and not body:
             texts = []
             return
-        sections.append(
-            SourceSection(level=level, heading=heading, text=body, locator=locator)
-        )
+        sections.append(SourceSection(level=level, heading=heading, text=body, locator=locator))
         heading = None
         level = 0
         texts = []

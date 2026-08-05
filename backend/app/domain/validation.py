@@ -27,9 +27,7 @@ def _capacity_issues(slide_id: str, slot: Slot, block: Block) -> list[StructureI
 
     def warn(message: str) -> None:
         issues.append(
-            StructureIssue(
-                severity="warning", slide_id=slide_id, slot_id=slot.id, message=message
-            )
+            StructureIssue(severity="warning", slide_id=slide_id, slot_id=slot.id, message=message)
         )
 
     if block.type == "text" and capacity.max_chars is not None:
@@ -61,9 +59,7 @@ def validate_slide(slide: Slide) -> list[StructureIssue]:
         layout = get_layout(slide.layout_id)
     except KeyError as error:
         return [
-            StructureIssue(
-                severity="error", slide_id=slide.id, slot_id=None, message=str(error)
-            )
+            StructureIssue(severity="error", slide_id=slide.id, slot_id=None, message=str(error))
         ]
 
     issues: list[StructureIssue] = []

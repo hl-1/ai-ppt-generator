@@ -44,9 +44,7 @@ def set_cell_borders(cell: _Cell, bottom: tuple[float, str] | None = None) -> No
             line.set("w", str(round(width_pt * 12700)))
             line.set("cap", "flat")
             fill = tc_pr.makeelement(qn("a:solidFill"), {})
-            fill.append(
-                tc_pr.makeelement(qn("a:srgbClr"), {"val": color.lstrip("#").upper()})
-            )
+            fill.append(tc_pr.makeelement(qn("a:srgbClr"), {"val": color.lstrip("#").upper()}))
             line.append(fill)
         else:
             line.append(tc_pr.makeelement(qn("a:noFill"), {}))

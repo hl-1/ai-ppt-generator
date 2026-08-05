@@ -337,6 +337,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/deck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Deck */
+        get: operations["get_deck_api_v1_projects__project_id__deck_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Deck */
+        post: operations["generate_deck_api_v1_projects__project_id__deck_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Slide */
+        post: operations["retry_slide_api_v1_projects__project_id__deck_slides__slide_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Deck */
+        post: operations["cancel_deck_api_v1_projects__project_id__deck_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream Deck Events */
+        get: operations["stream_deck_events_api_v1_projects__project_id__deck_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -416,6 +501,54 @@ export interface components {
             theme_id: string;
             /** Slides */
             slides: components["schemas"]["Slide"][];
+        };
+        /** DeckGenerateAccepted */
+        DeckGenerateAccepted: {
+            /** Job Id */
+            job_id: string;
+            /**
+             * Status
+             * @default generating
+             * @constant
+             */
+            status: "generating";
+            /** Total */
+            total: number;
+            /** Pending */
+            pending: number;
+        };
+        /** DeckGenerateRequest */
+        DeckGenerateRequest: {
+            /**
+             * Regenerate All
+             * @default false
+             */
+            regenerate_all: boolean;
+        };
+        /** DeckPublic */
+        DeckPublic: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Title */
+            title: string;
+            /** Theme Id */
+            theme_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "idle" | "generating" | "ready" | "partial";
+            /** Total */
+            total: number;
+            /** Ready */
+            ready: number;
+            /** Failed */
+            failed: number;
+            /** Slides */
+            slides: components["schemas"]["SlidePublic"][];
         };
         /**
          * Decoration
@@ -817,6 +950,45 @@ export interface components {
              * @default 1
              */
             revision: number;
+        };
+        /** SlidePublic */
+        SlidePublic: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Outline Page Id
+             * Format: uuid
+             */
+            outline_page_id: string;
+            /** Position */
+            position: number;
+            /** Layout Id */
+            layout_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "generating" | "ready" | "failed";
+            /** Blocks */
+            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"])[];
+            /** Speaker Notes */
+            speaker_notes: string | null;
+            /** Issues */
+            issues: components["schemas"]["StructureIssue"][];
+            /** Error */
+            error: string | null;
+            /** Revision */
+            revision: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** Slot */
         Slot: {
@@ -1708,6 +1880,166 @@ export interface operations {
         };
     };
     stream_outline_events_api_v1_projects__project_id__outline_events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_deck_api_v1_projects__project_id__deck_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeckPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_deck_api_v1_projects__project_id__deck_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeckGenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeckGenerateAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_slide_api_v1_projects__project_id__deck_slides__slide_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeckGenerateAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_deck_api_v1_projects__project_id__deck_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_deck_events_api_v1_projects__project_id__deck_events_get: {
         parameters: {
             query?: never;
             header?: never;

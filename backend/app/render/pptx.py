@@ -65,9 +65,7 @@ class PptxRenderer:
 
     def _render_slide(self, presentation: PresentationType, slide: Slide) -> None:
         layout = get_layout(slide.layout_id)
-        pptx_slide = presentation.slides.add_slide(
-            presentation.slide_layouts[BLANK_LAYOUT_INDEX]
-        )
+        pptx_slide = presentation.slides.add_slide(presentation.slide_layouts[BLANK_LAYOUT_INDEX])
 
         self._fill_background(pptx_slide)
 

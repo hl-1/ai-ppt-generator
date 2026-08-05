@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # 遇到复杂主题时可通过环境变量开启，不把供应商参数写死在工作流里。
     llm_thinking_enabled: bool = False
     llm_timeout_seconds: float = 60
+    # 单份 PPT 同时生成的页数。调高能缩短总时长，但容易触发供应商限流，
+    # 且失败会成片出现；3 是延迟与稳定性之间比较稳妥的取值。
+    slide_concurrency: int = 3
     jwt_secret: str = "dev-only-insecure-secret-change-me"
     jwt_algorithm: str = "HS256"
     # 本项目不做 refresh token，access token 默认 7 天

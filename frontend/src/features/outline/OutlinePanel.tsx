@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ApiError } from '@/api/client'
 import { Button } from '@/components/ui/Button'
 import {
   useConfirmOutline,
@@ -10,6 +9,7 @@ import {
 } from '@/features/outline/api'
 import type { Outline, OutlinePage } from '@/features/outline/types'
 import { useOutlineProgress } from '@/features/outline/useOutlineProgress'
+import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { layouts } from '@/render/design'
 
@@ -380,8 +380,4 @@ function newOutlinePage(index: number): OutlinePage {
     source_refs: [],
     layout_id: 'bullets',
   }
-}
-
-function errorMessage(error: Error): string {
-  return error instanceof ApiError ? error.detail : '操作失败，请稍后重试。'
 }

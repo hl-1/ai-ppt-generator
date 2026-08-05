@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_queue
-from app.api.v1.outlines import _encode_sse
+from app.api.sse import _encode
 from app.core.db import async_session_factory
 from app.domain.outline import OutlineDraft, OutlinePageDraft
 from app.llm.base import OutlineGenerationInput
@@ -292,7 +292,7 @@ async def test_outline_is_isolated_between_users(
 
 
 def test_sse_encoding_has_event_and_json_data() -> None:
-    encoded = _encode_sse(
+    encoded = _encode(
         OutlineEvent(
             type="progress",
             status="generating",

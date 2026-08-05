@@ -3,6 +3,8 @@ import { Link, useParams } from 'react-router'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { TextField } from '@/components/ui/TextField'
+import { DeckPanel } from '@/features/deck/DeckPanel'
+import { useOutline } from '@/features/outline/api'
 import { OutlinePanel } from '@/features/outline/OutlinePanel'
 import { useProject, useUpdateProject } from '@/features/projects/api'
 import { SourceComposer } from '@/features/projects/SourceComposer'
@@ -13,6 +15,10 @@ import { STATUS_LABEL, type ProjectDetail, type Tone } from '@/features/projects
 export default function ProjectDetailPage() {
   const { projectId = '' } = useParams()
   const project = useProject(projectId)
+  // 锁定以大纲状态为准而不是项目状态：页面开始生成后项目状态会变成
+  // generating/ready，但设置和输入材料同样不该再改
+  const outline = useOutline(projectId)
+  const outlineConfirmed = outline.data?.status === 'confirmed'
 
   if (project.isPending) {
     return <p className="py-24 text-sm text-ink-muted">正在加载…</p>
@@ -46,9 +52,9 @@ export default function ProjectDetailPage() {
       {/* min-w-0：栅格子项默认 min-width:auto，内部 truncate 的 nowrap 文本
           会把整列顶宽，进而撑出横向滚动条 */}
       <div className="grid gap-16 py-16 lg:grid-cols-[1fr_1.4fr] [&>*]:min-w-0">
-        <SettingsForm project={project.data} locked={project.data.status === 'outline_ready'} />
+        <SettingsForm project={project.data} locked={outlineConfirmed} />
         <div className="flex flex-col gap-16">
-          {project.data.status === 'outline_ready' ? (
+          {outlineConfirmed ? (
             <p className="border-l-2 border-accent py-2 pl-4 text-sm text-ink-soft">
               大纲已确认。取消确认后才能修改设置和输入材料。
             </p>
@@ -58,7 +64,7 @@ export default function ProjectDetailPage() {
           <SourceList
             projectId={projectId}
             sources={project.data.sources}
-            locked={project.data.status === 'outline_ready'}
+            locked={outlineConfirmed}
           />
         </div>
       </div>
@@ -66,6 +72,11 @@ export default function ProjectDetailPage() {
         projectId={projectId}
         pageCount={project.data.page_count}
         hasSources={project.data.sources.some((source) => source.char_count > 0)}
+      />
+      <DeckPanel
+        projectId={projectId}
+        themeId={project.data.theme_id}
+        outlineConfirmed={outlineConfirmed}
       />
     </>
   )

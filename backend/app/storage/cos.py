@@ -20,9 +20,7 @@ class CosStorage:
         try:
             from qcloud_cos import CosConfig, CosS3Client
         except ImportError as error:
-            raise RuntimeError(
-                "未安装 COS SDK，请执行：uv add cos-python-sdk-v5"
-            ) from error
+            raise RuntimeError("未安装 COS SDK，请执行：uv add cos-python-sdk-v5") from error
 
         config = CosConfig(Region=region, SecretId=secret_id, SecretKey=secret_key)
         return CosS3Client(config)

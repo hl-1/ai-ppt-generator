@@ -1,53 +1,21 @@
 import uuid
 from typing import Any
 
-from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.core.config import get_settings
 from app.core.db import async_session_factory
 from app.domain.outline import OutlinePage
 from app.llm.base import OutlineGenerationInput, OutlineGenerator, OutlineSourceSection
-from app.llm.deepseek import DeepSeekOutlineGenerator, LLMNotConfiguredError
+from app.llm.errors import LLMNotConfiguredError
 from app.models.project import Project
 from app.schemas.outline import OutlineEvent
 from app.services.outline_inputs import project_input_signature
 from app.services.outline_progress import publish_outline_event
+from app.worker.context import create_outline_generator
 from app.workflows.outline import build_outline_workflow, run_outline_workflow
 
-
-def create_llm_client() -> AsyncOpenAI:
-    settings = get_settings()
-    return AsyncOpenAI(
-        api_key=settings.llm_api_key or "not-configured",
-        base_url=settings.llm_base_url,
-        timeout=settings.llm_timeout_seconds,
-        max_retries=2,
-    )
-
-
-def create_outline_generator(client: AsyncOpenAI | None = None) -> OutlineGenerator:
-    settings = get_settings()
-    return DeepSeekOutlineGenerator(
-        client=client or create_llm_client(),
-        model=settings.llm_model,
-        api_key=settings.llm_api_key,
-        thinking_enabled=settings.llm_thinking_enabled,
-        timeout_seconds=settings.llm_timeout_seconds,
-    )
-
-
-async def startup(ctx: dict[str, Any]) -> None:
-    client = create_llm_client()
-    ctx["llm_client"] = client
-    ctx["outline_generator"] = create_outline_generator(client)
-
-
-async def shutdown(ctx: dict[str, Any]) -> None:
-    client = ctx.get("llm_client")
-    if client is not None:
-        await client.close()
+__all__ = ["create_outline_generator", "generate_outline"]
 
 
 async def generate_outline(ctx: dict[str, Any], project_id: str, job_id: str) -> None:

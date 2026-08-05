@@ -154,9 +154,7 @@ async def upload_source(
     "/{project_id}/sources/{source_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def remove_source(
-    source_id: uuid.UUID, project: OwnedProject, session: SessionDep
-) -> None:
+async def remove_source(source_id: uuid.UUID, project: OwnedProject, session: SessionDep) -> None:
     _ensure_outline_unlocked(project)
     result = await session.execute(
         select(ProjectSource).where(

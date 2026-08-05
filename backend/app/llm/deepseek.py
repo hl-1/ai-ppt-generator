@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from openai import AsyncOpenAI
 from pydantic import ValidationError
@@ -9,14 +8,17 @@ from pydantic import ValidationError
 from app.domain.layout import load_layouts
 from app.domain.outline import OutlineDraft
 from app.llm.base import OutlineGenerationInput
+from app.llm.client import JsonChatClient
+from app.llm.errors import (
+    InvalidOutlineOutputError,
+    LLMNotConfiguredError,
+)
 
-
-class LLMNotConfiguredError(RuntimeError):
-    """未配置可用的 LLM 凭证。上层应提示用户配置，禁止伪造大纲。"""
-
-
-class InvalidOutlineOutputError(ValueError):
-    """模型返回内容无法通过大纲契约校验。"""
+__all__ = [
+    "DeepSeekOutlineGenerator",
+    "InvalidOutlineOutputError",
+    "LLMNotConfiguredError",
+]
 
 
 class DeepSeekOutlineGenerator:
@@ -30,42 +32,28 @@ class DeepSeekOutlineGenerator:
         timeout_seconds: float = 60,
         layout_ids: frozenset[str] | None = None,
     ) -> None:
-        self._client = client
-        self._model = model
-        self._api_key = api_key
-        self._thinking_enabled = thinking_enabled
-        self._timeout_seconds = timeout_seconds
+        self._chat = JsonChatClient(
+            client=client,
+            model=model,
+            api_key=api_key,
+            thinking_enabled=thinking_enabled,
+            timeout_seconds=timeout_seconds,
+        )
         self._layout_ids = layout_ids if layout_ids is not None else frozenset(load_layouts())
 
     async def generate(self, payload: OutlineGenerationInput) -> OutlineDraft:
-        if not self._api_key.strip():
-            raise LLMNotConfiguredError("未配置 LLM API Key，无法生成大纲")
-
-        allowed_refs = {section.ref for section in payload.sections}
-        messages = [
-            {"role": "system", "content": self._system_prompt()},
-            {"role": "user", "content": self._user_prompt(payload)},
-        ]
-        create_kwargs: dict[str, Any] = {
-            "model": self._model,
-            "messages": messages,
-            "response_format": {"type": "json_object"},
-            "timeout": self._timeout_seconds,
-        }
-        # DeepSeek 思考模式默认关闭；关闭时不要传 thinking，避免无谓地拉长延迟
-        if self._thinking_enabled:
-            create_kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
-
-        response = await self._client.chat.completions.create(**create_kwargs)
-        content = response.choices[0].message.content
-        if not content:
-            raise InvalidOutlineOutputError("模型返回空内容")
+        content = await self._chat.complete_json(
+            system=self._system_prompt(),
+            user=self._user_prompt(payload),
+            purpose="生成大纲",
+        )
 
         try:
             draft = OutlineDraft.model_validate_json(content)
         except ValidationError as error:
             raise InvalidOutlineOutputError("模型返回的大纲 JSON 不符合约定结构") from error
 
+        allowed_refs = {section.ref for section in payload.sections}
         self._validate_draft(draft, page_count=payload.page_count, allowed_refs=allowed_refs)
         return draft
 
@@ -115,8 +103,7 @@ class DeepSeekOutlineGenerator:
             "sections": sections_payload,
         }
         return (
-            "请根据以下项目参数与来源小节生成大纲 JSON。\n"
-            f"{json.dumps(body, ensure_ascii=False)}"
+            f"请根据以下项目参数与来源小节生成大纲 JSON。\n{json.dumps(body, ensure_ascii=False)}"
         )
 
     def _validate_draft(

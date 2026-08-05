@@ -3,6 +3,7 @@ from typing import Protocol
 from pydantic import BaseModel, Field
 
 from app.domain.outline import OutlineDraft
+from app.domain.slide_draft import SlideDraft
 
 
 class OutlineSourceSection(BaseModel):
@@ -31,3 +32,32 @@ class OutlineGenerationInput(BaseModel):
 class OutlineGenerator(Protocol):
     async def generate(self, payload: OutlineGenerationInput) -> OutlineDraft:
         """根据项目参数与来源小节生成大纲草稿。"""
+
+
+class SlideGenerationInput(BaseModel):
+    """单页正文生成的输入。
+
+    只带这一页需要的上下文：整份 PPT 的基调、本页在大纲里的定位，
+    以及本页引用到的来源片段。页面之间因此互不依赖，可以并发生成。
+    """
+
+    deck_title: str
+    audience: str | None = None
+    tone: str
+    position: int = Field(ge=1)
+    total_pages: int = Field(ge=1)
+
+    page_title: str
+    objective: str
+    key_points: list[str]
+    layout_id: str
+    sections: list[OutlineSourceSection] = Field(default_factory=list)
+    # 相邻页标题，用来避免内容重复或衔接断裂
+    neighbor_titles: list[str] = Field(default_factory=list)
+    # 修复轮次带上上一轮的结构问题，让模型定向改而不是从头重来
+    issues: list[str] = Field(default_factory=list)
+
+
+class SlideGenerator(Protocol):
+    async def generate(self, payload: SlideGenerationInput) -> SlideDraft:
+        """根据大纲页与布局槽位生成单页正文草稿。"""

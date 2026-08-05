@@ -49,6 +49,11 @@ class Project(Base):
         lazy="selectin",
         uselist=False,
     )
+    slides: Mapped[list["Slide"]] = relationship(  # noqa: F821
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="Slide.position",
+    )
 
 
 class ProjectSource(Base):

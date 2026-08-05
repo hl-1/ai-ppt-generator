@@ -169,10 +169,7 @@ async def test_workflow_prepare_and_page_count_flow() -> None:
 async def test_workflow_trims_long_input_before_generate() -> None:
     generator = FakeOutlineGenerator()
     workflow = build_outline_workflow(generator)
-    oversized = [
-        _section(f"S1:{index}", "X" * 3_000, heading=f"H{index}")
-        for index in range(1, 8)
-    ]
+    oversized = [_section(f"S1:{index}", "X" * 3_000, heading=f"H{index}") for index in range(1, 8)]
     payload = _input(page_count=5, sections=oversized)
 
     await run_outline_workflow(workflow, payload)

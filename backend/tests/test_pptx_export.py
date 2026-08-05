@@ -137,9 +137,7 @@ def test_table_uses_our_borders_not_powerpoint_defaults(presentation: Presentati
 def test_image_placeholder_is_made_of_shapes(presentation: Presentation) -> None:
     """占位图必须由形状拼出。一旦生成位图，这块区域在 PowerPoint 里就不可编辑"""
     freeforms = [
-        shape
-        for shape in _all_shapes(presentation)
-        if shape.shape_type == MSO_SHAPE_TYPE.FREEFORM
+        shape for shape in _all_shapes(presentation) if shape.shape_type == MSO_SHAPE_TYPE.FREEFORM
     ]
     image_blocks = [
         block
