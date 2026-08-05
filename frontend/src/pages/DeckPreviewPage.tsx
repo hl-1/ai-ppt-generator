@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { Button } from '@/components/ui/Button'
 import { useSampleDeck } from '@/features/design/api'
+import { useFileDownload } from '@/features/design/download'
 import { cn } from '@/lib/utils'
 import { getLayout, getTheme, themeList } from '@/render/design'
 import { SlideView } from '@/render/SlideView'
@@ -8,6 +10,7 @@ export default function DeckPreviewPage() {
   const deck = useSampleDeck()
   const [themeId, setThemeId] = useState<string>(themeList[0].id)
   const [activeIndex, setActiveIndex] = useState(0)
+  const exporter = useFileDownload()
 
   if (deck.isPending) {
     return <p className="py-24 text-sm text-ink-muted">正在载入示例文稿…</p>
@@ -40,27 +43,45 @@ export default function DeckPreviewPage() {
           </p>
         </div>
 
-        <div
-          role="radiogroup"
-          aria-label="主题"
-          className="flex divide-x divide-line border border-line"
-        >
-          {themeList.map((item) => (
-            <button
-              key={item.id}
-              role="radio"
-              aria-checked={item.id === themeId}
-              onClick={() => setThemeId(item.id)}
-              className={cn(
-                'px-4 py-2.5 text-sm transition-colors',
-                item.id === themeId
-                  ? 'bg-ink text-canvas'
-                  : 'text-ink-soft hover:bg-accent-soft hover:text-accent',
-              )}
+        <div className="flex flex-col items-end gap-3">
+          <div className="flex items-stretch gap-5">
+            <div
+              role="radiogroup"
+              aria-label="主题"
+              className="flex divide-x divide-line border border-line"
             >
-              {item.name}
-            </button>
-          ))}
+              {themeList.map((item) => (
+                <button
+                  key={item.id}
+                  role="radio"
+                  aria-checked={item.id === themeId}
+                  onClick={() => setThemeId(item.id)}
+                  className={cn(
+                    'px-4 text-sm transition-colors',
+                    item.id === themeId
+                      ? 'bg-ink text-canvas'
+                      : 'text-ink-soft hover:bg-accent-soft hover:text-accent',
+                  )}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
+
+            <Button
+              variant="accent"
+              disabled={exporter.pending}
+              onClick={() =>
+                exporter.download(
+                  `/design/sample-deck/pptx?theme_id=${themeId}`,
+                  `${deck.data.title}.pptx`,
+                )
+              }
+            >
+              {exporter.pending ? '正在导出…' : '导出 PPTX'}
+            </Button>
+          </div>
+          {exporter.error && <p className="text-sm text-negative">{exporter.error}</p>}
         </div>
       </section>
 

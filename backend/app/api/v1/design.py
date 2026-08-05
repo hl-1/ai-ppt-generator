@@ -1,10 +1,16 @@
+from urllib.parse import quote
+
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 
 from app.domain.content import Deck
 from app.domain.layout import Layout, load_layouts
 from app.domain.sample import load_sample_deck
 from app.domain.theme import Theme, load_themes
 from app.domain.validation import StructureIssue, validate_deck
+from app.render.pptx import render_deck_to_pptx
+
+PPTX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
 router = APIRouter(prefix="/design", tags=["design"])
 
@@ -43,3 +49,22 @@ def get_sample_deck(theme_id: str | None = Query(default=None)) -> Deck:
 @router.get("/sample-deck/issues", response_model=list[StructureIssue])
 def get_sample_deck_issues() -> list[StructureIssue]:
     return validate_deck(load_sample_deck())
+
+
+@router.get("/sample-deck/pptx")
+def export_sample_deck(theme_id: str | None = Query(default=None)) -> StreamingResponse:
+    deck = load_sample_deck()
+    if theme_id is not None and theme_id not in load_themes():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"未知主题：{theme_id}",
+        )
+
+    buffer = render_deck_to_pptx(deck, theme_id)
+    # 文件名含中文，必须用 RFC 5987 的 filename* 形式，否则部分浏览器会存成乱码
+    filename = quote(f"{deck.title}.pptx")
+    return StreamingResponse(
+        buffer,
+        media_type=PPTX_MEDIA_TYPE,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
