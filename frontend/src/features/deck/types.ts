@@ -21,6 +21,14 @@ export type AiEditPatch =
   | Schemas['TablePatch']
 export type DiscardedOperation = Schemas['DiscardedOperationPublic']
 export type StructureIssue = Schemas['StructureIssue']
+export type ExportCheckReport = Schemas['ExportCheckReport']
+/** 回读验证问题不在 OpenAPI schema 里，与后端 VerifyIssue 字段对齐 */
+export interface ExportVerifyIssue {
+  check: string
+  slide_index: number | null
+  shape: string | null
+  message: string
+}
 export type BlockUpdate =
   | Schemas['TextBlockUpdate']
   | Schemas['BulletsBlockUpdate']

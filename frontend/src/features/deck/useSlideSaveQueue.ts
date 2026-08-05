@@ -1,8 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '@/api/client'
-import { deckKey, updateSlideBlock } from '@/features/deck/api'
-import { replaceSlideInDeck } from '@/features/deck/cache'
+import { commitSlideToCache, deckKey, updateSlideBlock } from '@/features/deck/api'
 import { mergeBlockCommit } from '@/features/deck/mergeBlockCommit'
 import type { BlockUpdateBody, Deck, DeckSlide } from '@/features/deck/types'
 import { errorMessage } from '@/lib/errors'
@@ -64,9 +63,7 @@ export function useSlideSaveQueue(projectId: string, slideId: string) {
           ...body,
           revision: slide.revision,
         })
-        queryClient.setQueryData<Deck>(deckKey(projectId), (current) =>
-          replaceSlideInDeck(current, updated),
-        )
+        commitSlideToCache(queryClient, projectId, updated)
         if (!queueRef.current.some((item) => item.blockId === job.blockId)) {
           overridesRef.current.delete(job.blockId)
         }

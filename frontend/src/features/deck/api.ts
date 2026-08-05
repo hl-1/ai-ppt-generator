@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { request } from '@/api/client'
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { request, requestBinary } from '@/api/client'
 import { replaceSlideInDeck, replaceSlidesInDeck } from '@/features/deck/cache'
 import type {
   AiEditAction,
@@ -9,13 +9,34 @@ import type {
   Deck,
   DeckGenerateAccepted,
   DeckSlide,
+  ExportCheckReport,
   LayoutCandidate,
 } from '@/features/deck/types'
+import { filenameFromDisposition, saveBlob } from '@/lib/download'
 
 export const deckKey = (projectId: string) => ['projects', projectId, 'deck'] as const
 const projectKey = (projectId: string) => ['projects', projectId] as const
 const slideLayoutsKey = (projectId: string, slideId: string) =>
   ['projects', projectId, 'deck', 'slides', slideId, 'layouts'] as const
+export const deckQualityKey = (projectId: string) =>
+  ['projects', projectId, 'deck', 'quality'] as const
+
+/**
+ * 单页更新后写回 deck 缓存。
+ *
+ * 用 setQueryData 而不是 invalidate，是为了不冲掉正在编辑的 DOM；
+ * 但质量报告依赖页面内容，必须跟着失效，否则用户改完问题仍看到旧报告。
+ */
+export function commitSlideToCache(
+  queryClient: QueryClient,
+  projectId: string,
+  slide: DeckSlide,
+) {
+  queryClient.setQueryData<Deck>(deckKey(projectId), (current) =>
+    replaceSlideInDeck(current, slide),
+  )
+  void queryClient.invalidateQueries({ queryKey: deckQualityKey(projectId) })
+}
 
 export function useDeck(projectId: string, enabled = true) {
   return useQuery({
@@ -85,11 +106,7 @@ export function useReplaceSlideImage(projectId: string) {
         { method: 'PUT', body: form },
       )
     },
-    onSuccess: (slide) => {
-      queryClient.setQueryData<Deck>(deckKey(projectId), (current) =>
-        replaceSlideInDeck(current, slide),
-      )
-    },
+    onSuccess: (slide) => commitSlideToCache(queryClient, projectId, slide),
   })
 }
 
@@ -135,6 +152,8 @@ export function useReorderSlides(projectId: string) {
       queryClient.setQueryData<Deck>(deckKey(projectId), (current) =>
         replaceSlidesInDeck(current, slides),
       )
+      // 页序参与页面重复判定，排序后报告同样要重算
+      void queryClient.invalidateQueries({ queryKey: deckQualityKey(projectId) })
     },
   })
 }
@@ -157,9 +176,7 @@ export function useSwitchSlideLayout(projectId: string, slideId: string) {
         body: JSON.stringify(body),
       }),
     onSuccess: (slide) => {
-      queryClient.setQueryData<Deck>(deckKey(projectId), (current) =>
-        replaceSlideInDeck(current, slide),
-      )
+      commitSlideToCache(queryClient, projectId, slide)
       void queryClient.invalidateQueries({ queryKey: slideLayoutsKey(projectId, slideId) })
     },
   })
@@ -189,10 +206,29 @@ export function useApplyAiEdit(projectId: string, slideId: string) {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    onSuccess: (slide) => {
-      queryClient.setQueryData<Deck>(deckKey(projectId), (current) =>
-        replaceSlideInDeck(current, slide),
+    onSuccess: (slide) => commitSlideToCache(queryClient, projectId, slide),
+  })
+}
+
+/** 仅在页面生成结束后拉取；生成中不请求，避免刷接口 */
+export function useDeckQuality(projectId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: deckQualityKey(projectId),
+    queryFn: () => request<ExportCheckReport>(`/projects/${projectId}/deck/quality`),
+    enabled,
+  })
+}
+
+export function useExportDeck(projectId: string, fallbackName = 'export.pptx') {
+  return useMutation({
+    mutationFn: async () => {
+      const response = await requestBinary(`/projects/${projectId}/deck/export`)
+      const blob = await response.blob()
+      const filename = filenameFromDisposition(
+        response.headers.get('content-disposition'),
+        fallbackName,
       )
+      saveBlob(blob, filename)
     },
   })
 }

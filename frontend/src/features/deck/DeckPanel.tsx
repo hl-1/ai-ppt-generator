@@ -6,6 +6,7 @@ import {
   useGenerateDeck,
   useReorderSlides,
 } from '@/features/deck/api'
+import { QualityExportPanel } from '@/features/deck/QualityExportPanel'
 import { SlideCard } from '@/features/deck/SlideCard'
 import { SlideEditor } from '@/features/deck/SlideEditor'
 import { useDeckProgress } from '@/features/deck/useDeckProgress'
@@ -168,6 +169,10 @@ export function DeckPanel({
               />
             ))}
           </ol>
+
+          {!generating && (deck.status === 'ready' || deck.status === 'partial') && (
+            <QualityExportPanel projectId={projectId} deck={deck} />
+          )}
         </>
       )}
 

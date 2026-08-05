@@ -1,11 +1,14 @@
 import { tokenStore } from '@/features/auth/token'
 
+/** 后端 detail 可能是字符串、带 message 的对象，或 FastAPI 校验错误数组 */
+export type ApiErrorDetail = string | Record<string, unknown> | unknown[]
+
 export class ApiError extends Error {
   readonly status: number
-  readonly detail: string
+  readonly detail: ApiErrorDetail
 
-  constructor(status: number, detail: string) {
-    super(detail)
+  constructor(status: number, detail: ApiErrorDetail) {
+    super(typeof detail === 'string' ? detail : '请求失败')
     this.name = 'ApiError'
     this.status = status
     this.detail = detail
@@ -19,15 +22,13 @@ interface ValidationErrorBody {
   detail: Array<{ msg: string; loc: (string | number)[] }>
 }
 
-async function readErrorDetail(response: Response): Promise<string> {
+export async function readErrorDetail(response: Response): Promise<ApiErrorDetail> {
   const text = await response.text().catch(() => '')
-  if (!text) return response.statusText
+  if (!text) return response.statusText || '请求失败'
 
   try {
-    const body = JSON.parse(text) as { detail?: string } | ValidationErrorBody
-    const detail = body.detail
-    if (typeof detail === 'string') return detail
-    if (Array.isArray(detail) && detail.length > 0) return detail[0].msg
+    const body = JSON.parse(text) as { detail?: ApiErrorDetail } | ValidationErrorBody
+    if (body.detail !== undefined && body.detail !== null) return body.detail
   } catch {
     // 非 JSON 响应，原样返回
   }
@@ -65,4 +66,28 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   }
 
   return (await response.json()) as T
+}
+
+/**
+ * 拉取二进制响应。JSON 的 request() 会破坏文件流，导出类接口走这里。
+ * 成功返回 Response（调用方自行 .blob()）；失败抛 ApiError，detail 可能是对象。
+ */
+export async function requestBinary(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = tokenStore.get()
+  const response = await fetch(`${API_PREFIX}${path}`, {
+    ...init,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init.headers,
+    },
+  })
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      tokenStore.clear()
+    }
+    throw new ApiError(response.status, await readErrorDetail(response))
+  }
+
+  return response
 }

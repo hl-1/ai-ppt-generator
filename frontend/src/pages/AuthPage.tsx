@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
-import { ApiError } from '@/api/client'
+import { errorMessage } from '@/lib/errors'
 import { Button } from '@/components/ui/Button'
 import { TextField } from '@/components/ui/TextField'
 import { login, register } from '@/features/auth/api'
@@ -57,7 +57,7 @@ export default function AuthPage() {
       const from = (location.state as { from?: string } | null)?.from ?? '/'
       navigate(from, { replace: true })
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.detail : '网络异常，请稍后重试')
+      setError(errorMessage(cause instanceof Error ? cause : null, '网络异常，请稍后重试'))
     } finally {
       setSubmitting(false)
     }

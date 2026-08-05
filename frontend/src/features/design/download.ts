@@ -1,14 +1,7 @@
 import { useState } from 'react'
-import { ApiError } from '@/api/client'
-import { tokenStore } from '@/features/auth/token'
-
-const FILENAME_PATTERN = /filename\*=UTF-8''([^;]+)/i
-
-function filenameFromResponse(response: Response, fallback: string): string {
-  const disposition = response.headers.get('content-disposition') ?? ''
-  const matched = FILENAME_PATTERN.exec(disposition)
-  return matched ? decodeURIComponent(matched[1]) : fallback
-}
+import { ApiError, requestBinary } from '@/api/client'
+import { filenameFromDisposition, saveBlob } from '@/lib/download'
+import { errorMessage } from '@/lib/errors'
 
 /**
  * 文件下载走 fetch 而非直接跳转链接，是因为需要带上鉴权头，
@@ -22,24 +15,16 @@ export function useFileDownload() {
     setPending(true)
     setError(null)
 
-    const token = tokenStore.get()
     try {
-      const response = await fetch(`/api/v1${path}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-      if (!response.ok) {
-        throw new ApiError(response.status, await response.text())
-      }
-
+      const response = await requestBinary(path)
       const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = filenameFromResponse(response, fallbackName)
-      anchor.click()
-      URL.revokeObjectURL(url)
+      saveBlob(blob, filenameFromDisposition(response.headers.get('content-disposition'), fallbackName))
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.detail : '导出失败，请稍后重试')
+      setError(
+        cause instanceof ApiError
+          ? errorMessage(cause, '导出失败，请稍后重试')
+          : '导出失败，请稍后重试',
+      )
     } finally {
       setPending(false)
     }
