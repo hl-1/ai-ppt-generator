@@ -1,4 +1,4 @@
-.PHONY: up down install fonts dev-api dev-worker dev-web migrate migration test lint gen-api
+.PHONY: up down install fonts dev-api dev-worker dev-web migrate migration test lint gen-api regression
 
 up:
 	docker compose up -d
@@ -41,6 +41,10 @@ gen-api:
 
 test:
 	cd backend && uv run pytest
+
+# 固定回归集：语料 × 3 主题，可编辑性 100% 且溢出槽位比例 < 5%。
+regression:
+	cd backend && uv run python scripts/run_regression.py
 
 lint:
 	cd backend && uv run ruff check .
