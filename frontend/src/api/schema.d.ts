@@ -490,6 +490,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/ai-edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Propose Slide Ai Edit */
+        post: operations["propose_slide_ai_edit_api_v1_projects__project_id__deck_slides__slide_id__ai_edit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/ai-edit/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Slide Ai Edit */
+        post: operations["apply_slide_ai_edit_api_v1_projects__project_id__deck_slides__slide_id__ai_edit_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/deck/events": {
         parameters: {
             query?: never;
@@ -528,6 +562,52 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AiEditApplyRequest */
+        AiEditApplyRequest: {
+            /** Revision */
+            revision: number;
+            /** Operations */
+            operations: (components["schemas"]["TextPatch"] | components["schemas"]["BulletsPatch"] | components["schemas"]["KpiPatch"] | components["schemas"]["TablePatch"])[];
+        };
+        /** AiEditOperationPublic */
+        AiEditOperationPublic: {
+            /** Block Id */
+            block_id: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "text" | "bullets" | "kpi" | "table";
+            /** Before */
+            before: components["schemas"]["TextPatch"] | components["schemas"]["BulletsPatch"] | components["schemas"]["KpiPatch"] | components["schemas"]["TablePatch"];
+            /** After */
+            after: components["schemas"]["TextPatch"] | components["schemas"]["BulletsPatch"] | components["schemas"]["KpiPatch"] | components["schemas"]["TablePatch"];
+        };
+        /** AiEditProposalPublic */
+        AiEditProposalPublic: {
+            /** Revision */
+            revision: number;
+            /** Operations */
+            operations: components["schemas"]["AiEditOperationPublic"][];
+            /** Discarded */
+            discarded: components["schemas"]["DiscardedOperationPublic"][];
+            /** Warnings */
+            warnings: components["schemas"]["StructureIssue"][];
+        };
+        /** AiEditRequest */
+        AiEditRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "rewrite" | "condense" | "expand";
+            /** Instruction */
+            instruction?: string | null;
+            /** Revision */
+            revision: number;
+        };
         /** Body_replace_slide_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_put */
         Body_replace_slide_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_put: {
             /** File */
@@ -568,6 +648,18 @@ export interface components {
             type: "bullets";
             /** Revision */
             revision: number;
+            /** Items */
+            items: string[];
+        };
+        /** BulletsPatch */
+        BulletsPatch: {
+            /** Block Id */
+            block_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "bullets";
             /** Items */
             items: string[];
         };
@@ -685,6 +777,13 @@ export interface components {
             /** Color */
             color: string;
         };
+        /** DiscardedOperationPublic */
+        DiscardedOperationPublic: {
+            /** Block Id */
+            block_id: string;
+            /** Reason */
+            reason: string;
+        };
         /**
          * FontFamily
          * @description Web 与 PPTX 分别声明字体名。
@@ -792,6 +891,22 @@ export interface components {
             type: "kpi";
             /** Revision */
             revision: number;
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+            /** Note */
+            note?: string | null;
+        };
+        /** KpiPatch */
+        KpiPatch: {
+            /** Block Id */
+            block_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "kpi";
             /** Value */
             value: string;
             /** Label */
@@ -1306,6 +1421,20 @@ export interface components {
             /** Rows */
             rows: string[][];
         };
+        /** TablePatch */
+        TablePatch: {
+            /** Block Id */
+            block_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "table";
+            /** Header */
+            header: string[];
+            /** Rows */
+            rows: string[][];
+        };
         /** TextBlock */
         TextBlock: {
             /** Id */
@@ -1334,6 +1463,18 @@ export interface components {
             type: "text";
             /** Revision */
             revision: number;
+            /** Text */
+            text: string;
+        };
+        /** TextPatch */
+        TextPatch: {
+            /** Block Id */
+            block_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "text";
             /** Text */
             text: string;
         };
@@ -2392,6 +2533,78 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LayoutSwitchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_slide_ai_edit_api_v1_projects__project_id__deck_slides__slide_id__ai_edit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiEditRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiEditProposalPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_slide_ai_edit_api_v1_projects__project_id__deck_slides__slide_id__ai_edit_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiEditApplyRequest"];
             };
         };
         responses: {

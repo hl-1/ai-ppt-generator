@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.content import Block
+from app.domain.slide_patch import BlockPatch
 from app.domain.validation import StructureIssue
 
 SlideStatus = Literal["pending", "generating", "ready", "failed"]
@@ -122,3 +123,37 @@ class LayoutCandidatePublic(BaseModel):
     compatible: bool
     reason: str | None = None
     current: bool = False
+
+
+AiEditAction = Literal["rewrite", "condense", "expand"]
+
+
+class AiEditRequest(BaseModel):
+    action: AiEditAction
+    instruction: str | None = Field(default=None, max_length=500)
+    revision: int
+
+
+class AiEditOperationPublic(BaseModel):
+    block_id: str
+    slot_id: str
+    type: Literal["text", "bullets", "kpi", "table"]
+    before: BlockPatch
+    after: BlockPatch
+
+
+class DiscardedOperationPublic(BaseModel):
+    block_id: str
+    reason: str
+
+
+class AiEditProposalPublic(BaseModel):
+    revision: int
+    operations: list[AiEditOperationPublic]
+    discarded: list[DiscardedOperationPublic]
+    warnings: list[StructureIssue]
+
+
+class AiEditApplyRequest(BaseModel):
+    revision: int
+    operations: list[BlockPatch]

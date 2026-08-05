@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react'
 import { Button } from '@/components/ui/Button'
+import { AiEditPanel } from '@/features/deck/AiEditPanel'
 import { LayoutSwitcher } from '@/features/deck/LayoutSwitcher'
 import type { DeckSlide } from '@/features/deck/types'
 import { toRenderSlide } from '@/features/deck/types'
@@ -80,20 +81,24 @@ export function SlideEditor({
         </div>
       </header>
 
-      <div className="flex flex-1 items-center justify-center overflow-auto px-6 py-8 md:px-10">
-        <div className="w-full max-w-5xl border border-line">
-          <SlideView
-            slide={toRenderSlide(slide)}
-            theme={theme}
-            editable={status !== 'conflict'}
-            onCommit={commit}
-          />
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex flex-1 items-center justify-center overflow-auto px-6 py-8 md:px-10">
+            <div className="w-full max-w-5xl border border-line">
+              <SlideView
+                slide={toRenderSlide(slide)}
+                theme={theme}
+                editable={status !== 'conflict'}
+                onCommit={commit}
+              />
+            </div>
+          </div>
+          <footer className="border-t border-line px-6 py-3 text-[11px] text-ink-muted md:px-10">
+            Enter 提交单行字段 · Esc 撤销当前字段修改 · 色点标记表示该块已锁定
+          </footer>
         </div>
+        <AiEditPanel projectId={projectId} slide={slide} />
       </div>
-
-      <footer className="border-t border-line px-6 py-3 text-[11px] text-ink-muted md:px-10">
-        Enter 提交单行字段 · Esc 撤销当前字段修改 · 色点标记表示该块已锁定
-      </footer>
     </div>
   )
 }

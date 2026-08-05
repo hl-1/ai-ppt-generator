@@ -27,15 +27,29 @@ from app.domain.layout_switch import (
     list_layout_candidates,
     plan_layout_switch,
 )
+from app.domain.slide_patch import (
+    apply_patches,
+    content_snapshot,
+    filter_patches,
+    unlocked_editable_blocks,
+)
 from app.images.validate import ImageRejected, validate_image
+from app.llm.base import SlideEditInput
+from app.llm.errors import InvalidSlideEditOutputError, LLMNotConfiguredError
+from app.llm.slide_edit import block_to_edit_input
 from app.models.project import Project
 from app.models.slide import Slide
 from app.schemas.deck import (
+    AiEditApplyRequest,
+    AiEditOperationPublic,
+    AiEditProposalPublic,
+    AiEditRequest,
     BlockUpdate,
     DeckEvent,
     DeckGenerateAccepted,
     DeckGenerateRequest,
     DeckPublic,
+    DiscardedOperationPublic,
     LayoutCandidatePublic,
     LayoutSwitchRequest,
     SlideOrderRequest,
@@ -52,6 +66,12 @@ from app.services.deck import (
     to_deck_public,
 )
 from app.services.media import media_url, store_image
+from app.worker.context import create_slide_edit_generator
+from app.workflows.slide_edit import (
+    build_slide_edit_workflow,
+    parse_slide_blocks,
+    run_slide_edit_workflow,
+)
 
 router = APIRouter(prefix="/projects/{project_id}/deck", tags=["deck"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -401,6 +421,114 @@ async def switch_slide_layout(
     # 只改槽位归属，不改块内容与 locked
     slide.blocks = [{**block, "slot_id": result.mapping[block["id"]]} for block in slide.blocks]
     slide.layout_id = body.layout_id
+    refresh_slide_issues(slide)
+    slide.revision += 1
+    await session.commit()
+    await session.refresh(slide)
+    return SlidePublic.model_validate(slide)
+
+
+@router.post(
+    "/slides/{slide_id}/ai-edit",
+    response_model=AiEditProposalPublic,
+)
+async def propose_slide_ai_edit(
+    slide_id: uuid.UUID,
+    body: AiEditRequest,
+    project: OwnedProject,
+    session: SessionDep,
+) -> AiEditProposalPublic:
+    slides = await load_slides(session, project.id)
+    slide = _find_slide(slides, slide_id)
+    _ensure_editable(slide, body.revision)
+
+    blocks = parse_slide_blocks(slide.blocks)
+    editable = unlocked_editable_blocks(blocks)
+    if not editable:
+        return AiEditProposalPublic(
+            revision=slide.revision,
+            operations=[],
+            discarded=[],
+            warnings=[],
+        )
+
+    instruction = body.instruction.strip() if body.instruction else None
+    payload = SlideEditInput(
+        deck_title=project.title,
+        audience=project.audience,
+        tone=project.tone,
+        page_title=slide.title,
+        layout_id=slide.layout_id,
+        action=body.action,
+        instruction=instruction or None,
+        blocks=[block_to_edit_input(block) for block in editable],
+    )
+
+    workflow = build_slide_edit_workflow(create_slide_edit_generator())
+    try:
+        operations, discarded, issues, _patched = await run_slide_edit_workflow(
+            workflow,
+            payload=payload,
+            slide_id=str(slide.id),
+            layout_id=slide.layout_id,
+            blocks=blocks,
+        )
+    except LLMNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(error),
+        ) from error
+    except InvalidSlideEditOutputError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error
+
+    by_id = {block.id: block for block in blocks}
+    preview: list[AiEditOperationPublic] = []
+    for op in operations:
+        block = by_id[op.block_id]
+        preview.append(
+            AiEditOperationPublic(
+                block_id=op.block_id,
+                slot_id=block.slot_id,
+                type=op.type,
+                before=content_snapshot(block),
+                after=op,
+            )
+        )
+
+    return AiEditProposalPublic(
+        revision=slide.revision,
+        operations=preview,
+        discarded=[
+            DiscardedOperationPublic(block_id=item.block_id, reason=item.reason)
+            for item in discarded
+        ],
+        warnings=[issue for issue in issues if issue.severity == "warning"],
+    )
+
+
+@router.post(
+    "/slides/{slide_id}/ai-edit/apply",
+    response_model=SlidePublic,
+)
+async def apply_slide_ai_edit(
+    slide_id: uuid.UUID,
+    body: AiEditApplyRequest,
+    project: OwnedProject,
+    session: SessionDep,
+) -> SlidePublic:
+    slides = await load_slides(session, project.id)
+    slide = _find_slide(slides, slide_id)
+    _ensure_editable(slide, body.revision)
+
+    blocks = parse_slide_blocks(slide.blocks)
+    filtered = filter_patches(blocks, list(body.operations))
+    patched = apply_patches(blocks, filtered.accepted)
+    # AI 改过的块不置 locked：locked 表示「人工修改过」；若 AI 也置位，
+    # 一页被 AI 改过后就再也改不动了。
+    slide.blocks = [block.model_dump(mode="json") for block in patched]
     refresh_slide_issues(slide)
     slide.revision += 1
     await session.commit()

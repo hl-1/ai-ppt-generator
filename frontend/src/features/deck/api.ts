@@ -2,6 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { request } from '@/api/client'
 import { replaceSlideInDeck, replaceSlidesInDeck } from '@/features/deck/cache'
 import type {
+  AiEditAction,
+  AiEditPatch,
+  AiEditProposal,
   BlockUpdateBody,
   Deck,
   DeckGenerateAccepted,
@@ -158,6 +161,38 @@ export function useSwitchSlideLayout(projectId: string, slideId: string) {
         replaceSlideInDeck(current, slide),
       )
       void queryClient.invalidateQueries({ queryKey: slideLayoutsKey(projectId, slideId) })
+    },
+  })
+}
+
+export function useProposeAiEdit(projectId: string, slideId: string) {
+  return useMutation({
+    mutationFn: (body: { action: AiEditAction; revision: number; instruction?: string }) => {
+      const payload: { action: AiEditAction; revision: number; instruction?: string } = {
+        action: body.action,
+        revision: body.revision,
+      }
+      if (body.instruction) payload.instruction = body.instruction
+      return request<AiEditProposal>(
+        `/projects/${projectId}/deck/slides/${slideId}/ai-edit`,
+        { method: 'POST', body: JSON.stringify(payload) },
+      )
+    },
+  })
+}
+
+export function useApplyAiEdit(projectId: string, slideId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { revision: number; operations: AiEditPatch[] }) =>
+      request<DeckSlide>(`/projects/${projectId}/deck/slides/${slideId}/ai-edit/apply`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (slide) => {
+      queryClient.setQueryData<Deck>(deckKey(projectId), (current) =>
+        replaceSlideInDeck(current, slide),
+      )
     },
   })
 }

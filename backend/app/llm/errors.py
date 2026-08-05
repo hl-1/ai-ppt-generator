@@ -12,3 +12,7 @@ class InvalidOutlineOutputError(InvalidModelOutputError):
 
 class InvalidSlideOutputError(InvalidModelOutputError):
     pass
+
+
+class InvalidSlideEditOutputError(InvalidModelOutputError):
+    pass

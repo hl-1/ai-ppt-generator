@@ -1,9 +1,10 @@
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field
 
 from app.domain.outline import OutlineDraft
 from app.domain.slide_draft import SlideDraft
+from app.domain.slide_patch import BlockPatch
 
 
 class OutlineSourceSection(BaseModel):
@@ -61,3 +62,45 @@ class SlideGenerationInput(BaseModel):
 class SlideGenerator(Protocol):
     async def generate(self, payload: SlideGenerationInput) -> SlideDraft:
         """根据大纲页与布局槽位生成单页正文草稿。"""
+
+
+SlideEditAction = Literal["rewrite", "condense", "expand"]
+
+
+class SlideEditBlockInput(BaseModel):
+    """发给模型的可改块快照：不含 locked，也不含 image/chart。"""
+
+    block_id: str
+    slot_id: str
+    type: Literal["text", "bullets", "kpi", "table"]
+    text: str | None = None
+    items: list[str] | None = None
+    value: str | None = None
+    label: str | None = None
+    note: str | None = None
+    header: list[str] | None = None
+    rows: list[list[str]] | None = None
+
+
+class SlideEditInput(BaseModel):
+    """单页 AI 局部修改的输入。
+
+    只带当前页未锁定的可写块与槽位容量，模型返回块级操作清单，
+    而不是整页重写。
+    """
+
+    deck_title: str
+    audience: str | None = None
+    tone: str
+    page_title: str
+    layout_id: str
+    action: SlideEditAction
+    instruction: str | None = None
+    blocks: list[SlideEditBlockInput] = Field(default_factory=list)
+    # 修复轮次带上上一轮的结构问题，让模型定向改而不是从头重来
+    issues: list[str] = Field(default_factory=list)
+
+
+class SlideEditGenerator(Protocol):
+    async def generate(self, payload: SlideEditInput) -> list[BlockPatch]:
+        """根据动作与当前可改块生成块级操作清单。"""
