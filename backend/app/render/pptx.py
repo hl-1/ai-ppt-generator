@@ -1,8 +1,10 @@
+import logging
 from io import BytesIO
 
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR
+from pptx.parts.image import Image as PptxImage
 from pptx.presentation import Presentation as PresentationType
 from pptx.shapes.base import BaseShape
 from pptx.slide import Slide as PptxSlide
@@ -25,6 +27,9 @@ from app.domain.theme import Theme, get_theme
 from app.render.color import mix, to_rgb
 from app.render.table import set_cell_borders, use_plain_style
 from app.render.text import apply_bullet, apply_text_style, write_paragraph
+from app.services.media import load_image, media_key_from_url
+
+logger = logging.getLogger(__name__)
 
 # 空白版式。用空白版式而非内置的标题版式，是因为槽位几何完全由我们的
 # 布局数据决定，套用 PowerPoint 自带占位符反而会引入我们控制不了的位置。
@@ -198,11 +203,20 @@ class PptxRenderer:
         apply_text_style(run, self.theme, style)
 
     def _render_image(self, pptx_slide: PptxSlide, slot: Slot, block: ImageBlock) -> None:
-        """图源缺失时用形状拼出与 Web 端同构的占位图形。
+        """插入真实图片，或在缺失时用形状拼出与 Web 端同构的占位图形。
 
-        刻意不生成位图：一旦插入图片，这块区域在 PowerPoint 里就不可编辑了，
-        与"导出结果 100% 可编辑"的目标冲突。
+        真实图片本来就是位图对象，插入后在 PowerPoint 里仍可选中、移动和替换；
+        只有占位图用形状拼，避免把"没有图"这件事固化成一张不可编辑的图。
         """
+        if block.url:
+            key = media_key_from_url(block.url)
+            if key is not None:
+                try:
+                    self._add_cover_picture(pptx_slide, slot.rect, load_image(key))
+                    return
+                except Exception as error:
+                    logger.warning("图片读取或解码失败，回退占位图：key=%s error=%s", key, error)
+
         rect = slot.rect
         accent = self.theme.palette.accent
         base = self.theme.palette.accent_soft
@@ -232,6 +246,24 @@ class PptxRenderer:
             h=rect.h * 0.012,
         )
         self._add_filled_rect(pptx_slide, rule, accent)
+
+    def _add_cover_picture(self, pptx_slide: PptxSlide, rect: Rect, data: bytes) -> None:
+        """覆盖式裁切，等价于 CSS object-fit: cover，两端观感才一致。"""
+        left_pt, top_pt, width_pt, height_pt = rect.to_points()
+        left, top, width, height = (Pt(value) for value in (left_pt, top_pt, width_pt, height_pt))
+        px_w, px_h = PptxImage.from_blob(data).size
+        slot_ratio = width_pt / height_pt
+        img_ratio = px_w / px_h
+
+        picture = pptx_slide.shapes.add_picture(BytesIO(data), left, top, width, height)
+        if img_ratio > slot_ratio:
+            crop = (1 - slot_ratio / img_ratio) / 2
+            picture.crop_left = crop
+            picture.crop_right = crop
+        else:
+            crop = (1 - img_ratio / slot_ratio) / 2
+            picture.crop_top = crop
+            picture.crop_bottom = crop
 
     def _add_placeholder_ridge(self, pptx_slide: PptxSlide, rect: Rect, color: str) -> None:
         """占位图下半部的折线剪影，与 Web 端 SVG 用的是同一组顶点"""

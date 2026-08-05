@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { request } from '@/api/client'
-import type { Deck, DeckGenerateAccepted } from '@/features/deck/types'
+import type { Deck, DeckGenerateAccepted, DeckSlide } from '@/features/deck/types'
 
 export const deckKey = (projectId: string) => ['projects', projectId, 'deck'] as const
 const projectKey = (projectId: string) => ['projects', projectId] as const
@@ -51,4 +51,28 @@ export function useCancelDeck(projectId: string) {
   return useDeckMutation<void>(projectId, () => ({
     path: `/projects/${projectId}/deck/cancel`,
   }))
+}
+
+interface ReplaceImageInput {
+  slideId: string
+  blockId: string
+  revision: number
+  file: File
+}
+
+export function useReplaceSlideImage(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ slideId, blockId, revision, file }: ReplaceImageInput) => {
+      const form = new FormData()
+      form.append('file', file)
+      // 带上版本号：换图期间这一页可能刚被 AI 改过，冲突要由服务端判定
+      form.append('revision', String(revision))
+      return request<DeckSlide>(
+        `/projects/${projectId}/deck/slides/${slideId}/blocks/${blockId}/image`,
+        { method: 'PUT', body: form },
+      )
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: deckKey(projectId) }),
+  })
 }

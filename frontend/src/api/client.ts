@@ -40,11 +40,13 @@ async function readErrorDetail(response: Response): Promise<string> {
  */
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = tokenStore.get()
+  // multipart 的边界串必须由浏览器自己生成，预先写死 Content-Type 后端就解析不出字段
+  const multipart = init.body instanceof FormData
 
   const response = await fetch(`${API_PREFIX}${path}`, {
     ...init,
     headers: {
-      'Content-Type': 'application/json',
+      ...(multipart ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init.headers,
     },

@@ -2,7 +2,17 @@ import uuid
 from typing import Annotated
 
 from arq.connections import ArqRedis
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.responses import StreamingResponse
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +21,7 @@ from app.api.deps import get_queue
 from app.api.sse import event_stream_response
 from app.api.v1.projects import OwnedProject
 from app.core.db import get_session
+from app.images.validate import ImageRejected, validate_image
 from app.models.project import Project
 from app.models.slide import Slide
 from app.schemas.deck import (
@@ -18,6 +29,7 @@ from app.schemas.deck import (
     DeckGenerateAccepted,
     DeckGenerateRequest,
     DeckPublic,
+    SlidePublic,
 )
 from app.services.deck import (
     clear_cancel,
@@ -28,6 +40,7 @@ from app.services.deck import (
     sync_slides,
     to_deck_public,
 )
+from app.services.media import media_url, store_image
 
 router = APIRouter(prefix="/projects/{project_id}/deck", tags=["deck"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -159,6 +172,71 @@ async def cancel_deck(project: OwnedProject, session: SessionDep) -> Response:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="当前没有生成任务")
     await request_cancel(project.id)
     return Response(status_code=status.HTTP_202_ACCEPTED)
+
+
+@router.put(
+    "/slides/{slide_id}/blocks/{block_id}/image",
+    response_model=SlidePublic,
+)
+async def replace_slide_image(
+    slide_id: uuid.UUID,
+    block_id: str,
+    project: OwnedProject,
+    session: SessionDep,
+    file: Annotated[UploadFile, File()],
+    revision: Annotated[int, Form()],
+) -> Slide:
+    slides = await load_slides(session, project.id)
+    slide = next((item for item in slides if item.id == slide_id), None)
+    if slide is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="页面不存在")
+
+    target = next((block for block in slide.blocks if block.get("id") == block_id), None)
+    if target is None or target.get("type") != "image":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="图片块不存在")
+
+    # 页面生成完成时会整块覆盖 blocks，此时换图会被无声冲掉
+    if slide.status == "generating":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="页面正在生成中，请稍后再换图",
+        )
+
+    if slide.revision != revision:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="页面已被其他操作更新，请刷新后重试",
+        )
+
+    data = await file.read()
+    try:
+        extension, _content_type = validate_image(data)
+    except ImageRejected as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error
+
+    key = store_image(
+        user_id=project.user_id,
+        project_id=project.id,
+        data=data,
+        extension=extension,
+    )
+    # 人工换过的图属于人工修改，后续 AI 修改不得覆盖
+    updated = {
+        **target,
+        "url": media_url(key),
+        "source": "upload",
+        "credit": None,
+        "locked": True,
+    }
+    # JSONB 就地改 dict 不会被 SQLAlchemy 感知，必须赋新列表
+    slide.blocks = [updated if block.get("id") == block_id else block for block in slide.blocks]
+    slide.revision += 1
+    await session.commit()
+    await session.refresh(slide)
+    return SlidePublic.model_validate(slide)
 
 
 @router.get("/events")

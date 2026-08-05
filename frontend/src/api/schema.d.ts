@@ -405,6 +405,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/blocks/{block_id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace Slide Image */
+        put: operations["replace_slide_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/deck/events": {
         parameters: {
             query?: never;
@@ -422,10 +439,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/media/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Media */
+        get: operations["get_media_api_v1_media__key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Body_replace_slide_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_put */
+        Body_replace_slide_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_put: {
+            /** File */
+            file: string;
+            /** Revision */
+            revision: number;
+        };
         /** Body_upload_source_api_v1_projects__project_id__sources_upload_post */
         Body_upload_source_api_v1_projects__project_id__sources_upload_post: {
             /** File */
@@ -636,6 +677,8 @@ export interface components {
              * @enum {string}
              */
             source: "generated" | "stock" | "upload" | "placeholder";
+            /** Credit */
+            credit?: string | null;
         };
         /** KpiBlock */
         KpiBlock: {
@@ -2039,12 +2082,80 @@ export interface operations {
             };
         };
     };
+    replace_slide_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                block_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_replace_slide_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stream_deck_events_api_v1_projects__project_id__deck_events_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_media_api_v1_media__key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
             };
             cookie?: never;
         };

@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     # 本项目不做 refresh token，access token 默认 7 天
     jwt_expire_minutes: int = 60 * 24 * 7
 
+    # AI 生图与图库各自独立配置：两者是互相降级的关系，
+    # 只配一个也要能正常工作，因此不共用 LLM 的凭证。
+    image_api_key: str = ""
+    image_base_url: str = "https://api.openai.com/v1"
+    image_model: str = "gpt-image-1"
+    unsplash_access_key: str = ""
+    image_timeout_seconds: float = 60
+
     storage_driver: Literal["local", "cos"] = "local"
     storage_local_dir: str = str(REPO_ROOT / "backend" / "var" / "storage")
     cos_bucket: str = ""
@@ -39,10 +47,15 @@ class Settings(BaseSettings):
 
     # 上传体积上限。定得过大会让解析长时间占住请求线程
     max_upload_mb: int = 10
+    max_image_mb: int = 8
 
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def max_image_bytes(self) -> int:
+        return self.max_image_mb * 1024 * 1024
 
 
 @lru_cache

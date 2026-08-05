@@ -1,8 +1,10 @@
 from typing import Any
 
+import httpx
 from openai import AsyncOpenAI
 
 from app.core.config import get_settings
+from app.images.pipeline import create_image_pipeline
 from app.llm.base import OutlineGenerator, SlideGenerator
 from app.llm.deepseek import DeepSeekOutlineGenerator
 from app.llm.slide import DeepSeekSlideGenerator
@@ -47,8 +49,16 @@ async def startup(ctx: dict[str, Any]) -> None:
     ctx["outline_generator"] = create_outline_generator(client)
     ctx["slide_generator"] = create_slide_generator(client)
 
+    http_client = httpx.AsyncClient()
+    ctx["http_client"] = http_client
+    ctx["image_pipeline"] = create_image_pipeline(http_client)
+
 
 async def shutdown(ctx: dict[str, Any]) -> None:
     client = ctx.get("llm_client")
     if client is not None:
         await client.close()
+
+    http_client = ctx.get("http_client")
+    if http_client is not None:
+        await http_client.aclose()

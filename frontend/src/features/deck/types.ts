@@ -1,7 +1,9 @@
 import type { components } from '@/api/schema'
-import type { Slide } from '@/render/types'
+import type { ImageBlock, Slide } from '@/render/types'
 
 type Schemas = components['schemas']
+
+export const ACCEPTED_IMAGE = 'image/png,image/jpeg,image/webp'
 
 export type Deck = Schemas['DeckPublic']
 export type DeckSlide = Schemas['SlidePublic']
@@ -33,6 +35,10 @@ export const SLIDE_STATUS_LABEL: Record<SlideStatus, string> = {
   generating: '生成中',
   ready: '已完成',
   failed: '失败',
+}
+
+export function imageBlocks(slide: DeckSlide): ImageBlock[] {
+  return slide.blocks.filter((block): block is ImageBlock => block.type === 'image')
 }
 
 /** 落库的页面转成渲染器认识的内容模型：两者字段同源，只是多了生成状态 */

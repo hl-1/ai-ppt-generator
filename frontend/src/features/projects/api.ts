@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { request } from '@/api/client'
-import { tokenStore } from '@/features/auth/token'
 import type {
   Project,
   ProjectCreate,
@@ -70,21 +69,13 @@ export function useAddTextSource(projectId: string) {
 export function useUploadSource(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: (file: File) => {
       const form = new FormData()
       form.append('file', file)
-
-      // 不能走通用 request：它会强制 JSON 的 Content-Type，
-      // 而 multipart 的边界串必须由浏览器自己生成
-      const token = tokenStore.get()
-      const response = await fetch(`/api/v1/projects/${projectId}/sources/upload`, {
+      return request<ProjectSource>(`/projects/${projectId}/sources/upload`, {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: form,
       })
-      const body = await response.json()
-      if (!response.ok) throw new Error(body.detail ?? '上传失败')
-      return body as ProjectSource
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: detailKey(projectId) }),
   })

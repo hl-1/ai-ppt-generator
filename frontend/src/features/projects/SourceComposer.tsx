@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
 import { useAddTextSource, useUploadSource } from '@/features/projects/api'
 import { ACCEPTED_UPLOAD } from '@/features/projects/types'
+import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 type Mode = 'topic' | 'text' | 'document'
@@ -136,7 +137,7 @@ function UploadPanel({ projectId }: { projectId: string }) {
         />
       </div>
       {upload.isError && (
-        <p className="text-sm text-negative">{(upload.error as Error).message}</p>
+        <p className="text-sm text-negative">{errorMessage(upload.error, '上传失败，请重试。')}</p>
       )}
     </div>
   )

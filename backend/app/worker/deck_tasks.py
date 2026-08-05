@@ -2,6 +2,7 @@ import asyncio
 import uuid
 from typing import Any
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -10,6 +11,7 @@ from app.core.db import async_session_factory
 from app.domain.content import Slide as SlideContent
 from app.domain.outline import OutlinePage
 from app.domain.validation import StructureIssue
+from app.images.pipeline import ImagePipeline, create_image_pipeline
 from app.llm.base import OutlineSourceSection, SlideGenerationInput, SlideGenerator
 from app.llm.errors import LLMNotConfiguredError
 from app.models.project import Project
@@ -23,6 +25,7 @@ from app.services.deck import (
     load_slides,
     outline_pages,
 )
+from app.services.slide_images import resolve_slide_images
 from app.worker.context import create_slide_generator
 from app.workflows.slide import build_slide_workflow, run_slide_workflow
 
@@ -41,6 +44,11 @@ async def generate_deck(ctx: dict[str, Any], project_id: str, slide_ids: list[st
 
     generator: SlideGenerator = ctx.get("slide_generator") or create_slide_generator()
     workflow = build_slide_workflow(generator)
+    owned_client: httpx.AsyncClient | None = None
+    pipeline: ImagePipeline | None = ctx.get("image_pipeline")
+    if pipeline is None:
+        owned_client = httpx.AsyncClient()
+        pipeline = create_image_pipeline(owned_client)
     semaphore = asyncio.Semaphore(get_settings().slide_concurrency)
     cancelled = False
 
@@ -52,9 +60,13 @@ async def generate_deck(ctx: dict[str, Any], project_id: str, slide_ids: list[st
             if cancelled or await is_cancelled(project_uuid):
                 cancelled = True
                 return
-            await _generate_one(project_uuid, slide_id, context, workflow)
+            await _generate_one(project_uuid, slide_id, context, workflow, pipeline)
 
-    await asyncio.gather(*(run_one(slide_id) for slide_id in targets))
+    try:
+        await asyncio.gather(*(run_one(slide_id) for slide_id in targets))
+    finally:
+        if owned_client is not None:
+            await owned_client.aclose()
     await _finish(project_uuid, cancelled=cancelled)
 
 
@@ -63,6 +75,7 @@ async def _generate_one(
     slide_id: uuid.UUID,
     context: "DeckContext",
     workflow,
+    pipeline: ImagePipeline,
 ) -> None:
     page = context.pages.get(slide_id)
     if page is None:
@@ -95,6 +108,14 @@ async def _generate_one(
         await _publish(project_id, "slide_failed", f"第 {page.position} 页生成失败", slide_id, page)
         return
 
+    slide = await resolve_slide_images(
+        pipeline,
+        user_id=context.user_id,
+        project_id=project_id,
+        deck_title=context.title,
+        page_title=page.page.title,
+        slide=slide,
+    )
     await _save_ready(slide_id, slide, issues)
     await _publish(project_id, "slide_completed", f"第 {page.position} 页已完成", slide_id, page)
 
@@ -105,6 +126,7 @@ class DeckContext:
     def __init__(
         self,
         *,
+        user_id: uuid.UUID,
         title: str,
         audience: str | None,
         tone: str,
@@ -112,6 +134,7 @@ class DeckContext:
         pages: dict[uuid.UUID, "SlideTarget"],
         ordered_titles: list[str],
     ) -> None:
+        self.user_id = user_id
         self.title = title
         self.audience = audience
         self.tone = tone
@@ -165,6 +188,7 @@ async def _load_context(project_id: uuid.UUID) -> DeckContext | None:
         }
 
         return DeckContext(
+            user_id=project.user_id,
             title=project.title,
             audience=project.audience,
             tone=project.tone,

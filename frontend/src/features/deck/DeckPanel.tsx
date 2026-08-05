@@ -1,12 +1,9 @@
 import { Button } from '@/components/ui/Button'
-import { useCancelDeck, useDeck, useGenerateDeck, useRetrySlide } from '@/features/deck/api'
-import { SLIDE_STATUS_LABEL, type DeckSlide, toRenderSlide } from '@/features/deck/types'
+import { useCancelDeck, useDeck, useGenerateDeck } from '@/features/deck/api'
+import { SlideCard } from '@/features/deck/SlideCard'
 import { useDeckProgress } from '@/features/deck/useDeckProgress'
 import { errorMessage } from '@/lib/errors'
-import { cn } from '@/lib/utils'
 import { getTheme } from '@/render/design'
-import { SlideView } from '@/render/SlideView'
-import { CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, type Theme } from '@/render/types'
 
 export function DeckPanel({
   projectId,
@@ -135,7 +132,7 @@ function DeckProgressBar({
         </span>
       </div>
       {/* 完成与失败共用一条进度条：失败也是"这一页已经有结论"，
-          分成两条会让人误以为总进度不到 100% */}
+          拆成两条会让人误以为总进度永远到不了 100% */}
       <div className="flex h-1 overflow-hidden bg-line">
         <div
           className="h-full bg-accent transition-[width] duration-500"
@@ -149,92 +146,6 @@ function DeckProgressBar({
       {connectionError && (
         <p className="mt-3 text-xs text-ink-muted">进度连接暂时中断，正在自动重连…</p>
       )}
-    </div>
-  )
-}
-
-function SlideCard({
-  projectId,
-  slide,
-  theme,
-}: {
-  projectId: string
-  slide: DeckSlide
-  theme: Theme
-}) {
-  const retry = useRetrySlide(projectId)
-  const warnings = slide.issues.filter((issue) => issue.severity === 'warning')
-  const settled = slide.status === 'ready' || slide.status === 'failed'
-
-  return (
-    <li className="flex flex-col">
-      <div
-        className={cn(
-          'border',
-          slide.status === 'ready' ? 'border-line' : 'border-dashed border-line-strong',
-          slide.status === 'failed' && 'border-solid border-negative/40',
-        )}
-        style={{ aspectRatio: `${CANVAS_WIDTH_PT} / ${CANVAS_HEIGHT_PT}` }}
-      >
-        {slide.status === 'ready' ? (
-          <SlideView slide={toRenderSlide(slide)} theme={theme} />
-        ) : (
-          <SlidePlaceholder status={slide.status} error={slide.error} />
-        )}
-      </div>
-
-      <div className="mt-4 flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">
-            <span className="mr-3 text-line-strong tabular-nums">
-              {String(slide.position).padStart(2, '0')}
-            </span>
-            {slide.title}
-          </p>
-          <p className="mt-1 text-xs text-ink-muted">
-            {SLIDE_STATUS_LABEL[slide.status]}
-            {slide.status === 'ready' && warnings.length > 0 && (
-              <span className="ml-3 text-warning">{warnings.length} 处内容偏长</span>
-            )}
-          </p>
-        </div>
-        {settled && (
-          <button
-            type="button"
-            disabled={retry.isPending}
-            onClick={() => retry.mutate(slide.id)}
-            className="shrink-0 text-xs text-ink-muted transition-colors hover:text-accent disabled:opacity-40"
-          >
-            重新生成
-          </button>
-        )}
-      </div>
-    </li>
-  )
-}
-
-function SlidePlaceholder({
-  status,
-  error,
-}: {
-  status: DeckSlide['status']
-  error: string | null
-}) {
-  if (status === 'failed') {
-    return (
-      <div className="flex h-full flex-col justify-end bg-negative/[0.04] p-7">
-        <p className="text-xs leading-relaxed text-negative">{error ?? '生成失败'}</p>
-      </div>
-    )
-  }
-
-  const pulse = status === 'generating'
-  return (
-    <div className="flex h-full flex-col justify-end gap-3 bg-surface p-7">
-      {/* 骨架按正文页的真实节奏排布，等待时的画面不会与最终结果割裂 */}
-      <div className={cn('h-2 w-1/2', pulse ? 'animate-pulse bg-accent/40' : 'bg-line-strong')} />
-      <div className={cn('h-1.5 w-4/5 bg-line', pulse && 'animate-pulse')} />
-      <div className={cn('h-1.5 w-3/5 bg-line', pulse && 'animate-pulse')} />
     </div>
   )
 }

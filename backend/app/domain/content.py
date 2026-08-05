@@ -32,6 +32,8 @@ class ImageBlock(BlockBase):
     # 可访问性要求图片必须有替代文本，因此不设默认空值
     alt: str
     source: ImageSource
+    # 图库要求标注作者，署名信息必须随内容一起保存，否则界面无从展示
+    credit: str | None = None
 
 
 class ChartSeries(BaseModel):
