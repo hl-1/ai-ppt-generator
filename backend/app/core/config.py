@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://aippt:aippt@localhost:39432/aippt"
     redis_url: str = "redis://localhost:39379/0"
     cors_origins: list[str] = ["http://localhost:39173"]
+    jwt_secret: str = "dev-only-insecure-secret-change-me"
+    jwt_algorithm: str = "HS256"
+    # 本项目不做 refresh token，access token 默认 7 天
+    jwt_expire_minutes: int = 60 * 24 * 7
 
 
 @lru_cache

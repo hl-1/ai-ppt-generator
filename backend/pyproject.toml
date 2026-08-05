@@ -13,6 +13,9 @@ dependencies = [
     "alembic",
     "redis",
     "python-dotenv",
+    "pyjwt>=2.13.0",
+    "pwdlib[argon2]>=0.3.0",
+    "email-validator>=2.3.0",
 ]
 
 [build-system]
@@ -39,3 +42,6 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# 全局 async engine 绑定事件循环；session 级 loop 避免跨用例 InterfaceError
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
