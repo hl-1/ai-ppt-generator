@@ -15,3 +15,10 @@ def get_redis() -> Redis:
             socket_connect_timeout=2,
         )
     return _redis
+
+
+async def close_redis() -> None:
+    global _redis
+    if _redis is not None:
+        await _redis.aclose()
+        _redis = None

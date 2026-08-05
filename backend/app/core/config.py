@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://aippt:aippt@localhost:39432/aippt"
     redis_url: str = "redis://localhost:39379/0"
     cors_origins: list[str] = ["http://localhost:39173"]
+    llm_api_key: str = ""
+    llm_base_url: str = "https://api.deepseek.com"
+    llm_model: str = "deepseek-v4-flash"
+    # 大纲默认关闭思考模式以满足首个结果 10 秒内返回的目标；
+    # 遇到复杂主题时可通过环境变量开启，不把供应商参数写死在工作流里。
+    llm_thinking_enabled: bool = False
+    llm_timeout_seconds: float = 60
     jwt_secret: str = "dev-only-insecure-secret-change-me"
     jwt_algorithm: str = "HS256"
     # 本项目不做 refresh token，access token 默认 7 天

@@ -10,9 +10,11 @@ import {
 export function SourceList({
   projectId,
   sources,
+  locked = false,
 }: {
   projectId: string
   sources: ProjectSource[]
+  locked?: boolean
 }) {
   const totalChars = sources.reduce((sum, source) => sum + source.char_count, 0)
 
@@ -28,7 +30,12 @@ export function SourceList({
       {sources.length > 0 && (
         <ul className="border-t border-line">
           {sources.map((source) => (
-            <SourceItem key={source.id} projectId={projectId} source={source} />
+            <SourceItem
+              key={source.id}
+              projectId={projectId}
+              source={source}
+              locked={locked}
+            />
           ))}
         </ul>
       )}
@@ -36,7 +43,15 @@ export function SourceList({
   )
 }
 
-function SourceItem({ projectId, source }: { projectId: string; source: ProjectSource }) {
+function SourceItem({
+  projectId,
+  source,
+  locked,
+}: {
+  projectId: string
+  source: ProjectSource
+  locked: boolean
+}) {
   const [expanded, setExpanded] = useState(false)
   const remove = useDeleteSource(projectId)
 
@@ -66,7 +81,7 @@ function SourceItem({ projectId, source }: { projectId: string; source: ProjectS
         <Button
           variant="ghost"
           className="h-8 shrink-0 px-0 text-xs"
-          disabled={remove.isPending}
+          disabled={locked || remove.isPending}
           onClick={() => remove.mutate(source.id)}
         >
           删除

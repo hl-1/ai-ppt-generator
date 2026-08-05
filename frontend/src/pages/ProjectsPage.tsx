@@ -22,13 +22,13 @@ export default function ProjectsPage() {
     <>
       <section className="flex items-end justify-between border-b border-line py-16">
         <div>
-          <p className="mb-4 text-xs tracking-[0.2em] text-accent uppercase">演示文稿</p>
+          <p className="mb-4 text-xs tracking-[0.2em] text-accent uppercase">PPT</p>
           <h1 className="font-display text-[clamp(2rem,4vw,2.75rem)] leading-[1.3]">
             从一句主题或一份文档开始。
           </h1>
         </div>
         <Button onClick={() => setComposing((open) => !open)} aria-expanded={composing}>
-          {composing ? '收起' : '新建演示文稿'}
+          {composing ? '收起' : '新建 PPT'}
         </Button>
       </section>
 
@@ -40,7 +40,7 @@ export default function ProjectsPage() {
           <p className="pt-8 text-sm text-negative">加载失败，请刷新重试。</p>
         )}
         {projects.data?.length === 0 && (
-          <p className="pt-8 text-sm text-ink-muted">还没有演示文稿，点右上角新建一个。</p>
+          <p className="pt-8 text-sm text-ink-muted">还没有 PPT，点右上角新建一个。</p>
         )}
         {projects.data && projects.data.length > 0 && (
           <ul>

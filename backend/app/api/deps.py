@@ -1,18 +1,24 @@
 import uuid
 from typing import Annotated
 
+from arq.connections import ArqRedis
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.queue import get_arq_pool
 from app.core.security import decode_access_token
 from app.models.user import User
 
 # auto_error=False：默认行为在缺少凭证时抛 403，语义不对且 detail 是英文。
 # 关掉后由本模块统一抛 401，前端只需识别一种未登录状态。
 _bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def get_queue() -> ArqRedis:
+    return await get_arq_pool()
 
 
 def _unauthorized() -> HTTPException:

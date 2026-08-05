@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { TextField } from '@/components/ui/TextField'
+import { OutlinePanel } from '@/features/outline/OutlinePanel'
 import { useProject, useUpdateProject } from '@/features/projects/api'
 import { SourceComposer } from '@/features/projects/SourceComposer'
 import { SourceList } from '@/features/projects/SourceList'
@@ -32,7 +33,7 @@ export default function ProjectDetailPage() {
     <>
       <section className="border-b border-line py-14">
         <Link to="/projects" className="text-xs text-ink-muted transition-colors hover:text-accent">
-          ← 演示文稿
+          ← PPT
         </Link>
         <h1 className="mt-5 font-display text-[clamp(1.75rem,3.5vw,2.5rem)] leading-[1.3]">
           {project.data.title}
@@ -45,17 +46,32 @@ export default function ProjectDetailPage() {
       {/* min-w-0：栅格子项默认 min-width:auto，内部 truncate 的 nowrap 文本
           会把整列顶宽，进而撑出横向滚动条 */}
       <div className="grid gap-16 py-16 lg:grid-cols-[1fr_1.4fr] [&>*]:min-w-0">
-        <SettingsForm project={project.data} />
+        <SettingsForm project={project.data} locked={project.data.status === 'outline_ready'} />
         <div className="flex flex-col gap-16">
-          <SourceComposer projectId={projectId} />
-          <SourceList projectId={projectId} sources={project.data.sources} />
+          {project.data.status === 'outline_ready' ? (
+            <p className="border-l-2 border-accent py-2 pl-4 text-sm text-ink-soft">
+              大纲已确认。取消确认后才能修改设置和输入材料。
+            </p>
+          ) : (
+            <SourceComposer projectId={projectId} />
+          )}
+          <SourceList
+            projectId={projectId}
+            sources={project.data.sources}
+            locked={project.data.status === 'outline_ready'}
+          />
         </div>
       </div>
+      <OutlinePanel
+        projectId={projectId}
+        pageCount={project.data.page_count}
+        hasSources={project.data.sources.some((source) => source.char_count > 0)}
+      />
     </>
   )
 }
 
-function SettingsForm({ project }: { project: ProjectDetail }) {
+function SettingsForm({ project, locked }: { project: ProjectDetail; locked: boolean }) {
   const update = useUpdateProject(project.id)
   const [title, setTitle] = useState(project.title)
   const [audience, setAudience] = useState(project.audience ?? '')
@@ -93,6 +109,7 @@ function SettingsForm({ project }: { project: ProjectDetail }) {
           onChange={(event) => setTitle(event.target.value)}
           maxLength={200}
           required
+          disabled={locked}
         />
         <TextField
           label="受众（可选）"
@@ -100,28 +117,32 @@ function SettingsForm({ project }: { project: ProjectDetail }) {
           onChange={(event) => setAudience(event.target.value)}
           maxLength={100}
           placeholder="例如：管理层"
+          disabled={locked}
         />
         <Select
           label="语气"
           value={tone ?? 'professional'}
           onChange={(event) => setTone(event.target.value as Tone)}
           options={TONE_OPTIONS}
+          disabled={locked}
         />
         <Select
           label="页数"
           value={pageCount}
           onChange={(event) => setPageCount(Number(event.target.value))}
           options={PAGE_COUNT_OPTIONS}
+          disabled={locked}
         />
         <Select
           label="主题"
           value={themeId}
           onChange={(event) => setThemeId(event.target.value)}
           options={THEME_OPTIONS}
+          disabled={locked}
         />
 
         <div className="flex items-center gap-5">
-          <Button type="submit" disabled={!dirty || update.isPending || !title.trim()}>
+          <Button type="submit" disabled={locked || !dirty || update.isPending || !title.trim()}>
             {update.isPending ? '保存中…' : '保存设置'}
           </Button>
           {update.isError && <span className="text-sm text-negative">保存失败。</span>}

@@ -36,6 +36,15 @@ def _ensure_known_theme(theme_id: str | None) -> None:
         )
 
 
+def _ensure_outline_unlocked(project: Project) -> None:
+    # 已确认大纲对应一组确定的输入与参数；允许它们静默变化会让确认失去意义。
+    if project.outline is not None and project.outline.status == "confirmed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="请先取消确认大纲",
+        )
+
+
 async def get_owned_project(
     project_id: Annotated[uuid.UUID, Path()],
     session: SessionDep,
@@ -90,6 +99,7 @@ async def get_project(project: OwnedProject) -> Project:
 async def update_project(
     body: ProjectUpdate, project: OwnedProject, session: SessionDep
 ) -> Project:
+    _ensure_outline_unlocked(project)
     _ensure_known_theme(body.theme_id)
 
     for field, value in body.model_dump(exclude_unset=True).items():
@@ -114,6 +124,7 @@ async def remove_project(project: OwnedProject, session: SessionDep) -> None:
 async def create_text_source(
     body: TextSourceCreate, project: OwnedProject, session: SessionDep
 ) -> ProjectSource:
+    _ensure_outline_unlocked(project)
     return await add_text_source(session, project, body)
 
 
@@ -127,6 +138,7 @@ async def upload_source(
     session: SessionDep,
     file: Annotated[UploadFile, File()],
 ) -> ProjectSource:
+    _ensure_outline_unlocked(project)
     data = await file.read()
     try:
         return await add_document_source(
@@ -145,6 +157,7 @@ async def upload_source(
 async def remove_source(
     source_id: uuid.UUID, project: OwnedProject, session: SessionDep
 ) -> None:
+    _ensure_outline_unlocked(project)
     result = await session.execute(
         select(ProjectSource).where(
             ProjectSource.id == source_id, ProjectSource.project_id == project.id

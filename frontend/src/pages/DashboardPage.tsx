@@ -28,13 +28,13 @@ export default function DashboardPage() {
           欢迎回来，{user?.email.split('@')[0]}。
         </h1>
         <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-ink-soft">
-          现在可以创建演示文稿并录入材料了。大纲生成会在下一个里程碑接入。
+          现在可以创建 PPT 并录入材料了。大纲生成会在下一个里程碑接入。
         </p>
         <Link
           to="/projects"
           className="mt-8 inline-block border-b border-accent pb-1 text-sm text-accent"
         >
-          进入演示文稿列表
+          进入 PPT 列表
         </Link>
       </section>
 

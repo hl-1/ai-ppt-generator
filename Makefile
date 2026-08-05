@@ -1,4 +1,4 @@
-.PHONY: up down install dev-api dev-web migrate migration test lint gen-api
+.PHONY: up down install dev-api dev-worker dev-web migrate migration test lint gen-api
 
 up:
 	docker compose up -d
@@ -12,6 +12,9 @@ install:
 
 dev-api:
 	cd backend && uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 39800
+
+dev-worker:
+	cd backend && uv run arq app.worker.settings.WorkerSettings
 
 dev-web:
 	cd frontend && npm run dev

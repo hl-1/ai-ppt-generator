@@ -80,7 +80,7 @@ export default function AuthPage() {
             <span className="text-accent underline decoration-accent/30 decoration-1 underline-offset-8">
               可以直接编辑
             </span>
-            的演示文稿。
+            的 PPT。
           </h1>
         </div>
 

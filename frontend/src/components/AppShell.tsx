@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 
 const NAV = [
   { to: '/', label: '工作台' },
-  { to: '/projects', label: '演示文稿' },
+  { to: '/projects', label: 'PPT' },
   { to: '/preview', label: '渲染基线' },
 ]
 
