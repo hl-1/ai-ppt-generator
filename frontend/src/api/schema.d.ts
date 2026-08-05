@@ -1073,6 +1073,10 @@ export interface components {
             max_columns?: number | null;
             /** Max Chars Per Cell */
             max_chars_per_cell?: number | null;
+            /** Max Series */
+            max_series?: number | null;
+            /** Max Categories */
+            max_categories?: number | null;
         };
         /** SourcePublic */
         SourcePublic: {

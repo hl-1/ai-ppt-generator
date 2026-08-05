@@ -24,6 +24,7 @@ from app.domain.content import (
 from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, EMU_PER_POINT, Rect
 from app.domain.layout import Slot, get_layout
 from app.domain.theme import Theme, get_theme
+from app.render.chart import render_chart
 from app.render.color import mix, to_rgb
 from app.render.table import set_cell_borders, use_plain_style
 from app.render.text import apply_bullet, apply_text_style, write_paragraph
@@ -286,26 +287,7 @@ class PptxRenderer:
         shape.shadow.inherit = False
 
     def _render_chart(self, pptx_slide: PptxSlide, slot: Slot, block: ChartBlock) -> None:
-        """原生图表在后续里程碑接入，此处先输出数据摘要文本框。
-
-        与 Web 端保持同样的降级形态，避免两端在同一阶段呈现不一致。
-        """
-        style = self.theme.text_style("chart_label")
-        frame = self._add_textbox(pptx_slide, slot.rect)
-        frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-
-        unit = f" · 单位：{block.unit}" if block.unit else ""
-        lines = [f"{block.chart_type} 图 · {' / '.join(block.categories)}{unit}"]
-        lines += [
-            f"{series.name}：{'、'.join(str(value) for value in series.values)}"
-            for series in block.series
-        ]
-
-        for index, line in enumerate(lines):
-            paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
-            if index > 0:
-                paragraph.space_before = Pt(8)
-            write_paragraph(paragraph, line, self.theme, style)
+        render_chart(pptx_slide, slot.rect, block, self.theme)
 
 
 def render_deck_to_pptx(deck: Deck, theme_id: str | None = None) -> BytesIO:

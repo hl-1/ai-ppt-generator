@@ -1,16 +1,27 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pptx import Presentation
+from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 from pptx.util import Pt
 
+from app.domain.content import ChartBlock, ChartSeries, Deck, Slide, TextBlock
 from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT
 from app.domain.sample import load_sample_deck
-from app.domain.theme import load_themes
+from app.domain.theme import get_theme, load_themes
+from app.domain.validation import validate_slide
 from app.main import app
+from app.render.color import to_rgb
 from app.render.pptx import render_deck_to_pptx
 from app.render.table import NO_STYLE_NO_GRID
+
+_CHART_TYPE_MAP = {
+    "bar": XL_CHART_TYPE.BAR_CLUSTERED,
+    "column": XL_CHART_TYPE.COLUMN_CLUSTERED,
+    "line": XL_CHART_TYPE.LINE,
+    "pie": XL_CHART_TYPE.PIE,
+}
 
 
 @pytest.fixture
@@ -171,3 +182,138 @@ async def test_download_endpoint_returns_pptx(client: AsyncClient) -> None:
 async def test_download_unknown_theme_returns_404(client: AsyncClient) -> None:
     response = await client.get("/api/v1/design/sample-deck/pptx?theme_id=nope")
     assert response.status_code == 404
+
+
+def _chart_deck(
+    chart_type: str,
+    *,
+    categories: list[str] | None = None,
+    series: list[ChartSeries] | None = None,
+    unit: str | None = "单位",
+) -> Deck:
+    return Deck(
+        id="chart-test",
+        title="图表测试",
+        theme_id="ivory",
+        slides=[
+            Slide(
+                id="s1",
+                layout_id="chart",
+                blocks=[
+                    TextBlock(id="t1", slot_id="title", text="图表页"),
+                    ChartBlock(
+                        id="c1",
+                        slot_id="chart",
+                        chart_type=chart_type,  # type: ignore[arg-type]
+                        categories=categories or ["甲", "乙", "丙"],
+                        series=series
+                        or [
+                            ChartSeries(name="系列一", values=[10, 20, 30]),
+                            ChartSeries(name="系列二", values=[15, 25, 18]),
+                        ],
+                        unit=unit,
+                    ),
+                ],
+            )
+        ],
+    )
+
+
+def _first_chart(presentation: Presentation):
+    for shape in presentation.slides[0].shapes:
+        if shape.has_chart:
+            return shape.chart
+    raise AssertionError("未找到原生图表")
+
+
+@pytest.mark.parametrize("chart_type", ["bar", "column", "line", "pie"])
+def test_chart_exports_as_native_editable_object(chart_type: str) -> None:
+    series = [ChartSeries(name="占比", values=[10, 20, 30])] if chart_type == "pie" else None
+    presentation = Presentation(
+        render_deck_to_pptx(_chart_deck(chart_type, series=series, unit=None))
+    )
+    chart = _first_chart(presentation)
+    assert chart.chart_type == _CHART_TYPE_MAP[chart_type]
+
+
+def test_chart_writes_categories_and_series() -> None:
+    presentation = Presentation(render_deck_to_pptx(_chart_deck("column")))
+    chart = _first_chart(presentation)
+
+    assert list(chart.plots[0].categories) == ["甲", "乙", "丙"]
+    assert [series.name for series in chart.series] == ["系列一", "系列二"]
+    assert list(chart.series[0].values) == [10.0, 20.0, 30.0]
+    assert list(chart.series[1].values) == [15.0, 25.0, 18.0]
+
+
+def test_chart_series_color_comes_from_theme() -> None:
+    theme = get_theme("ivory")
+    presentation = Presentation(render_deck_to_pptx(_chart_deck("column"), "ivory"))
+    chart = _first_chart(presentation)
+
+    assert chart.series[0].format.fill.fore_color.rgb == to_rgb(theme.palette.chart_series[0])
+
+
+def test_chart_hides_legend_for_single_series() -> None:
+    deck = _chart_deck(
+        "column",
+        series=[ChartSeries(name="唯一", values=[1, 2, 3])],
+    )
+    chart = _first_chart(Presentation(render_deck_to_pptx(deck)))
+    assert chart.has_legend is False
+
+
+def test_chart_shows_legend_for_multiple_series() -> None:
+    chart = _first_chart(Presentation(render_deck_to_pptx(_chart_deck("column"))))
+    assert chart.has_legend is True
+
+
+def test_pie_chart_colors_by_point() -> None:
+    theme = get_theme("ivory")
+    deck = _chart_deck(
+        "pie",
+        series=[ChartSeries(name="占比", values=[10, 20, 30])],
+        unit=None,
+    )
+    chart = _first_chart(Presentation(render_deck_to_pptx(deck, "ivory")))
+    colors = theme.palette.chart_series
+    for index, point in enumerate(chart.series[0].points):
+        assert point.format.fill.fore_color.rgb == to_rgb(colors[index % len(colors)])
+
+
+def test_chart_mismatched_lengths_still_export() -> None:
+    deck = _chart_deck(
+        "bar",
+        categories=["A", "B", "C", "D"],
+        series=[ChartSeries(name="短", values=[1, 2])],
+    )
+    buffer = render_deck_to_pptx(deck)
+    assert buffer.getvalue()[:2] == b"PK"
+
+    chart = _first_chart(Presentation(buffer))
+    assert list(chart.plots[0].categories) == ["A", "B"]
+    assert list(chart.series[0].values) == [1.0, 2.0]
+
+
+def test_chart_capacity_overflow_is_warning_not_error() -> None:
+    slide = Slide(
+        id="s1",
+        layout_id="chart",
+        blocks=[
+            TextBlock(id="t1", slot_id="title", text="标题"),
+            ChartBlock(
+                id="c1",
+                slot_id="chart",
+                chart_type="column",
+                categories=[f"C{i}" for i in range(10)],
+                series=[ChartSeries(name=f"S{i}", values=[float(i)] * 10) for i in range(4)],
+            ),
+        ],
+    )
+    issues = validate_slide(slide)
+    warnings = [issue for issue in issues if issue.severity == "warning"]
+    errors = [issue for issue in issues if issue.severity == "error"]
+
+    assert not errors
+    assert any("系列" in issue.message for issue in warnings)
+    assert any("分类" in issue.message for issue in warnings)

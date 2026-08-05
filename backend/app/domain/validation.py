@@ -51,6 +51,12 @@ def _capacity_issues(slide_id: str, slot: Slot, block: Block) -> list[StructureI
         if capacity.max_rows is not None and len(block.rows) > capacity.max_rows:
             warn(f"表格 {len(block.rows)} 行，超出上限 {capacity.max_rows} 行")
 
+    if block.type == "chart":
+        if capacity.max_series is not None and len(block.series) > capacity.max_series:
+            warn(f"图表 {len(block.series)} 条系列，超出上限 {capacity.max_series} 条")
+        if capacity.max_categories is not None and len(block.categories) > capacity.max_categories:
+            warn(f"图表 {len(block.categories)} 个分类，超出上限 {capacity.max_categories} 个")
+
     return issues
 
 

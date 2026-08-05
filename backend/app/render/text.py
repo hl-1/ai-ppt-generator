@@ -1,18 +1,18 @@
 from pptx.oxml.ns import qn
-from pptx.text.text import _Paragraph, _Run
+from pptx.text.text import Font, _Paragraph, _Run
 from pptx.util import Pt
 
 from app.domain.theme import TextStyle, Theme
 from app.render.color import to_rgb
 
 
-def _set_east_asian_font(run: _Run, typeface: str) -> None:
+def set_east_asian_font(font: Font, typeface: str) -> None:
     """为文本设置中日韩字体。
 
     python-pptx 的 font.name 只写 a:latin，中文会落到 PowerPoint 的兜底字体，
     导出效果与 Web 端对不上。必须另外写入 a:ea，且按 schema 要求排在 a:latin 之后。
     """
-    rpr = run.font._rPr
+    rpr = font._rPr
     latin = rpr.find(qn("a:latin"))
     east_asian = rpr.find(qn("a:ea"))
 
@@ -26,20 +26,22 @@ def _set_east_asian_font(run: _Run, typeface: str) -> None:
     east_asian.set("typeface", typeface)
 
 
-def apply_text_style(run: _Run, theme: Theme, style: TextStyle) -> None:
+def apply_font_style(font: Font, theme: Theme, style: TextStyle) -> None:
+    """把主题文本样式落到任意 Font（含图表坐标轴/图例的 defRPr）。"""
     family = theme.font_family(style)
-    font = run.font
-
     font.name = family.pptx_latin
     font.size = Pt(style.size_pt)
     font.bold = style.weight >= 600
     font.color.rgb = to_rgb(theme.color(style.color))
-
-    _set_east_asian_font(run, family.pptx_east_asian)
+    set_east_asian_font(font, family.pptx_east_asian)
 
     if style.letter_spacing_pt:
         # 字距没有 python-pptx 封装，直接写 rPr@spc，单位为 1/100 pt
-        run.font._rPr.set("spc", str(round(style.letter_spacing_pt * 100)))
+        font._rPr.set("spc", str(round(style.letter_spacing_pt * 100)))
+
+
+def apply_text_style(run: _Run, theme: Theme, style: TextStyle) -> None:
+    apply_font_style(run.font, theme, style)
 
 
 def write_paragraph(paragraph: _Paragraph, content: str, theme: Theme, style: TextStyle) -> _Run:

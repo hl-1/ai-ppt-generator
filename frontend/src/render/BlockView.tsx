@@ -1,9 +1,9 @@
 import type { CSSProperties } from 'react'
+import { ChartView } from '@/render/ChartView'
 import { pt, resolveColor, textStyleToCss } from '@/render/style'
 import type {
   Block,
   BulletsBlock,
-  ChartBlock,
   ImageBlock,
   KpiBlock,
   Slot,
@@ -126,38 +126,6 @@ function ImageView({ block, theme }: BlockProps<ImageBlock>) {
       alt={block.alt}
       style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
     />
-  )
-}
-
-/** 原生图表在后续里程碑接入，此处先按主题呈现数据摘要，不伪造图形 */
-function ChartView({ block, theme }: BlockProps<ChartBlock>) {
-  const label = textStyleToCss(theme, 'chart_label')
-
-  return (
-    <div
-      style={{
-        ...label,
-        width: '100%',
-        height: '100%',
-        border: `${pt(theme.shape.border_width_pt)} dashed ${resolveColor(theme, 'line_strong')}`,
-        borderRadius: pt(theme.shape.radius_pt),
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        gap: pt(8),
-        padding: pt(20),
-      }}
-    >
-      <span>
-        {block.chart_type} 图 · {block.categories.join(' / ')}
-        {block.unit ? ` · 单位：${block.unit}` : ''}
-      </span>
-      {block.series.map((series, index) => (
-        <span key={series.name} style={{ color: theme.palette.chart_series[index] }}>
-          {series.name}：{series.values.join('、')}
-        </span>
-      ))}
-    </div>
   )
 }
 

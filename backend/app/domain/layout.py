@@ -39,6 +39,8 @@ class SlotCapacity(BaseModel):
     max_rows: int | None = None
     max_columns: int | None = None
     max_chars_per_cell: int | None = None
+    max_series: int | None = None
+    max_categories: int | None = None
 
 
 class Slot(BaseModel):
