@@ -104,10 +104,18 @@ def _reset(slide: Slide) -> None:
     slide.error = None
 
 
-def deck_status(slides: list[Slide]) -> DeckStatus:
+def deck_status(slides: list[Slide], *, project_status: str | None = None) -> DeckStatus:
+    """汇总整份 deck 状态。
+
+    任务入队后、worker 领走页之前，页仍是 pending；页与页之间也会短暂没有
+    generating 行。这两种窗口必须靠 project.status == generating 识别，否则
+    前端不会挂 SSE，取消接口也会误判为「没有任务」。
+    """
     if not slides:
         return "idle"
-    if any(slide.status == "generating" for slide in slides):
+    if any(slide.status == "generating" for slide in slides) or (
+        project_status == "generating" and any(slide.status == "pending" for slide in slides)
+    ):
         return "generating"
     if all(slide.status == "ready" for slide in slides):
         return "ready"
@@ -119,7 +127,7 @@ def to_deck_public(project: Project, slides: list[Slide]) -> DeckPublic:
         project_id=project.id,
         title=project.title,
         theme_id=project.theme_id,
-        status=deck_status(slides),
+        status=deck_status(slides, project_status=project.status),
         total=len(slides),
         ready=sum(1 for slide in slides if slide.status == "ready"),
         failed=sum(1 for slide in slides if slide.status == "failed"),

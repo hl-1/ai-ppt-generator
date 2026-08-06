@@ -3,8 +3,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router'
 import { AppShell } from '@/components/AppShell'
 import { useAuthStore } from '@/features/auth/store'
 import AuthPage from '@/pages/AuthPage'
-import DashboardPage from '@/pages/DashboardPage'
-import DeckPreviewPage from '@/pages/DeckPreviewPage'
+import CreatePage from '@/pages/CreatePage'
 import ProjectDetailPage from '@/pages/ProjectDetailPage'
 import ProjectsPage from '@/pages/ProjectsPage'
 import { RequireAuth } from '@/routes/RequireAuth'
@@ -20,6 +19,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<AuthPage />} />
+
         <Route
           element={
             <RequireAuth>
@@ -29,12 +29,22 @@ export default function App() {
             </RequireAuth>
           }
         >
-          <Route path="/" element={<DashboardPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
-          <Route path="/preview" element={<DeckPreviewPage />} />
+          <Route path="/create" element={<CreatePage />} />
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
+
+        {/* 大纲与编辑工作台自带全屏 chrome，不进工作区外壳 */}
+        <Route
+          element={
+            <RequireAuth>
+              <Outlet />
+            </RequireAuth>
+          }
+        >
+          <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+        </Route>
+
+        <Route path="*" element={<Navigate to="/projects" replace />} />
       </Routes>
     </BrowserRouter>
   )

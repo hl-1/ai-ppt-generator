@@ -12,8 +12,8 @@ export function TextField({ label, hint, className, id, ...props }: TextFieldPro
   const hintId = hint ? `${inputId}-hint` : undefined
 
   return (
-    <div className="flex flex-col gap-2">
-      <label htmlFor={inputId} className="text-xs font-medium tracking-wide text-ink-soft">
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={inputId} className="text-[13px] font-medium text-ink-soft">
         {label}
       </label>
       <input
@@ -21,9 +21,9 @@ export function TextField({ label, hint, className, id, ...props }: TextFieldPro
         id={inputId}
         aria-describedby={hintId}
         className={cn(
-          'h-11 border-b border-line-strong bg-transparent text-[15px] text-ink',
-          'placeholder:text-ink-muted/60 focus:border-accent focus:outline-none',
-          'transition-colors duration-150',
+          'h-11 rounded-xl border border-line bg-surface px-3.5 text-[15px] text-ink',
+          'placeholder:text-ink-muted/70 focus:border-accent focus:outline-none',
+          'transition-colors duration-150 disabled:bg-surface-soft disabled:text-ink-muted',
           className,
         )}
       />

@@ -286,6 +286,7 @@ async def retry_slide(
     target.blocks = []
     target.issues = []
     target.error = None
+    project.status = "generating"
     await session.commit()
 
     job_id = await _enqueue(queue, session, project.id, [slide_id])
@@ -295,7 +296,7 @@ async def retry_slide(
 @router.post("/cancel", status_code=status.HTTP_202_ACCEPTED)
 async def cancel_deck(project: OwnedProject, session: SessionDep) -> Response:
     slides = await load_slides(session, project.id)
-    if deck_status(slides) != "generating":
+    if deck_status(slides, project_status=project.status) != "generating":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="当前没有生成任务")
     await request_cancel(project.id)
     return Response(status_code=status.HTTP_202_ACCEPTED)
@@ -619,7 +620,7 @@ async def stream_deck_events(
     session: SessionDep,
 ) -> StreamingResponse:
     slides = await load_slides(session, project.id)
-    current = deck_status(slides)
+    current = deck_status(slides, project_status=project.status)
     ready = sum(1 for slide in slides if slide.status == "ready")
     failed = sum(1 for slide in slides if slide.status == "failed")
     return event_stream_response(

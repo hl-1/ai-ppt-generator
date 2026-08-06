@@ -8,6 +8,7 @@ from reportlab.pdfgen import canvas
 from app.ingest.base import UnsupportedDocument
 from app.ingest.docx import DocxParser
 from app.ingest.markdown import MarkdownParser
+from app.ingest.models import SourceSection
 from app.ingest.pdf import PdfParser
 from app.ingest.plain import PlainTextParser
 from app.ingest.registry import SUPPORTED_EXTENSIONS, parser_for
@@ -178,3 +179,22 @@ def test_parser_for_by_extension() -> None:
 def test_unsupported_extension() -> None:
     with pytest.raises(UnsupportedDocument, match="不支持的文件类型"):
         parser_for("archive.zip")
+
+
+def test_source_section_strips_null_bytes() -> None:
+    # PDF 文字层偶发夹带 \\u0000，PostgreSQL 无法写入 text/JSONB
+    section = SourceSection(
+        level=1,
+        heading="标\x00题",
+        text="正文\x00内容",
+        locator="第\x00 1 页",
+    )
+    assert section.heading == "标题"
+    assert section.text == "正文内容"
+    assert section.locator == "第 1 页"
+
+
+def test_plain_text_with_null_bytes_can_parse() -> None:
+    parsed = PlainTextParser().parse("含空字节\x00的段落\n\n第二段".encode())
+    assert parsed.sections[0].text == "含空字节的段落"
+    assert "\x00" not in parsed.sections[0].text

@@ -1,9 +1,8 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { ApiError } from '@/api/client'
 import { Button } from '@/components/ui/Button'
 import { useApplyAiEdit, useProposeAiEdit } from '@/features/deck/api'
 import type {
-  AiEditAction,
   AiEditOperation,
   AiEditPatch,
   AiEditProposal,
@@ -12,17 +11,24 @@ import type {
 import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
-const ACTIONS: { action: AiEditAction; label: string }[] = [
-  { action: 'rewrite', label: '改写' },
-  { action: 'condense', label: '压缩' },
-  { action: 'expand', label: '扩写' },
-]
-
 const TYPE_LABEL: Record<AiEditOperation['type'], string> = {
   text: '文字',
   bullets: '列表',
   kpi: '指标',
   table: '表格',
+}
+
+type ActiveSide = 'before' | 'after'
+
+type ChatTurn = {
+  id: string
+  instruction: string
+  proposal: AiEditProposal | null
+  error: string | null
+}
+
+function newTurnId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 export function AiEditPanel({
@@ -33,17 +39,21 @@ export function AiEditPanel({
   slide: DeckSlide
 }) {
   const titleId = useId()
-  const instructionId = useId()
-  const [instruction, setInstruction] = useState('')
-  const [proposal, setProposal] = useState<AiEditProposal | null>(null)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [lastAction, setLastAction] = useState<AiEditAction | null>(null)
+  const inputId = useId()
+  const listRef = useRef<HTMLDivElement>(null)
+  const [draft, setDraft] = useState('')
+  const [turns, setTurns] = useState<ChatTurn[]>([])
+  const [activeSide, setActiveSide] = useState<Record<string, ActiveSide>>({})
+  const [workingRevision, setWorkingRevision] = useState(slide.revision)
+  const [applyingBlockId, setApplyingBlockId] = useState<string | null>(null)
+  const [applyError, setApplyError] = useState<string | null>(null)
+  const [applyConflict, setApplyConflict] = useState(false)
 
   const propose = useProposeAiEdit(projectId, slide.id)
   const apply = useApplyAiEdit(projectId, slide.id)
 
   const generating = slide.status === 'generating'
-  const busy = propose.isPending || apply.isPending
+  const busy = propose.isPending || applyingBlockId != null
   const editableUnlocked = slide.blocks.some(
     (block) =>
       !block.locked &&
@@ -53,191 +63,237 @@ export function AiEditPanel({
         block.type === 'table'),
   )
   const canPropose = !generating && !busy && editableUnlocked
+  const trimmedDraft = draft.trim()
+  const canSend = canPropose && trimmedDraft.length > 0
+
+  const latestProposal =
+    [...turns].reverse().find((turn) => turn.proposal != null)?.proposal ?? null
+  const lastInstruction =
+    [...turns].reverse().find((turn) => turn.instruction)?.instruction ?? null
 
   useEffect(() => {
-    // 换页时清掉上一次提案，避免把旧页操作套到新页
-    setProposal(null)
-    setSelected(new Set())
-    setLastAction(null)
+    // 换页时清掉对话与提案，避免把旧页操作套到新页
+    setDraft('')
+    setTurns([])
+    setActiveSide({})
+    setWorkingRevision(slide.revision)
+    setApplyingBlockId(null)
+    setApplyError(null)
+    setApplyConflict(false)
   }, [slide.id])
 
-  const runPropose = (action: AiEditAction) => {
-    if (!canPropose) return
-    setLastAction(action)
+  useEffect(() => {
+    const node = listRef.current
+    if (!node) return
+    node.scrollTop = node.scrollHeight
+  }, [turns, propose.isPending])
+
+  const clearProposalSegments = () => {
+    setTurns((current) =>
+      current.map((turn) => ({ ...turn, proposal: null, error: null })),
+    )
+    setActiveSide({})
+    setApplyError(null)
+    setApplyConflict(false)
     apply.reset()
-    const trimmed = instruction.trim()
+    propose.reset()
+  }
+
+  const sendInstruction = (instruction: string) => {
+    if (!canPropose || !instruction) return
+    const turnId = newTurnId()
+    setApplyError(null)
+    setApplyConflict(false)
+    apply.reset()
+    // 新一轮提案替换当前预览；用户气泡保留
+    setTurns((current) => [
+      ...current.map((turn) => ({ ...turn, proposal: null, error: null })),
+      { id: turnId, instruction, proposal: null, error: null },
+    ])
+    setActiveSide({})
+    setDraft('')
     propose.mutate(
       {
-        action,
+        action: 'instruct',
         revision: slide.revision,
-        ...(trimmed ? { instruction: trimmed.slice(0, 500) } : {}),
+        instruction: instruction.slice(0, 500),
       },
       {
         onSuccess: (data) => {
-          setProposal(data)
-          setSelected(new Set(data.operations.map((op) => op.block_id)))
+          setWorkingRevision(data.revision)
+          setTurns((current) =>
+            current.map((turn) =>
+              turn.id === turnId ? { ...turn, proposal: data, error: null } : turn,
+            ),
+          )
+        },
+        onError: (error) => {
+          setTurns((current) =>
+            current.map((turn) =>
+              turn.id === turnId
+                ? { ...turn, proposal: null, error: errorMessage(error) }
+                : turn,
+            ),
+          )
         },
       },
     )
   }
 
-  const discardProposal = () => {
-    setProposal(null)
-    setSelected(new Set())
-    apply.reset()
-    propose.reset()
+  const handleSend = () => {
+    if (!canSend) return
+    sendInstruction(trimmedDraft)
   }
 
-  const toggle = (blockId: string) => {
-    setSelected((current) => {
-      const next = new Set(current)
-      if (next.has(blockId)) next.delete(blockId)
-      else next.add(blockId)
-      return next
-    })
-  }
+  const applySide = (operation: AiEditOperation, side: ActiveSide) => {
+    if (applyingBlockId != null || generating) return
+    if (activeSide[operation.block_id] === side) return
 
-  const selectedOps =
-    proposal?.operations.filter((op) => selected.has(op.block_id)) ?? []
-
-  const runApply = () => {
-    if (!proposal || selectedOps.length === 0 || apply.isPending) return
+    setApplyingBlockId(operation.block_id)
+    setApplyError(null)
+    setApplyConflict(false)
     apply.mutate(
       {
-        revision: proposal.revision,
-        operations: selectedOps.map((op) => op.after),
+        revision: workingRevision,
+        operations: [side === 'after' ? operation.after : operation.before],
       },
-      { onSuccess: () => discardProposal() },
+      {
+        onSuccess: (updated) => {
+          setWorkingRevision(updated.revision)
+          setActiveSide((current) => ({ ...current, [operation.block_id]: side }))
+          setApplyingBlockId(null)
+        },
+        onError: (error) => {
+          setApplyingBlockId(null)
+          setApplyError(errorMessage(error))
+          setApplyConflict(error instanceof ApiError && error.status === 409)
+        },
+      },
     )
   }
 
-  const applyConflict =
-    apply.isError && apply.error instanceof ApiError && apply.error.status === 409
-
   return (
-    <aside
-      aria-labelledby={titleId}
-      className="flex w-full shrink-0 flex-col border-t border-line bg-canvas md:w-96 md:border-t-0 md:border-l"
-    >
-      <div className="border-b border-line px-5 py-4">
-        <p className="mb-1 text-[10px] tracking-[0.2em] text-accent uppercase">AI 修改</p>
-        <h3 id={titleId} className="font-display text-xl">
-          单页局部调整
+    <section aria-labelledby={titleId} className="flex h-full min-h-0 flex-col gap-3">
+      <div>
+        <h3 id={titleId} className="text-sm font-semibold tracking-tight">
+          AI 修改这一页
         </h3>
-        <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">
-          先预览再确认；人工改过的块不会被覆盖
+        <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+          用自然语言描述想改的内容；点选改动前/后即可应用到画布
         </p>
       </div>
 
-      <div className="flex flex-1 flex-col gap-5 overflow-auto px-5 py-5">
-        <div className="flex flex-wrap gap-2">
-          {ACTIONS.map(({ action, label }) => (
-            <button
-              key={action}
-              type="button"
-              disabled={!canPropose}
-              onClick={() => runPropose(action)}
-              className={cn(
-                'border border-line px-3 py-1.5 text-xs tracking-wide transition-colors',
-                'hover:border-accent hover:text-accent',
-                'disabled:cursor-not-allowed disabled:opacity-40',
-                lastAction === action && propose.isPending && 'border-accent text-accent',
-              )}
-            >
-              {propose.isPending && lastAction === action ? `${label}中…` : label}
-            </button>
-          ))}
-        </div>
+      {generating && <p className="text-xs text-ink-muted">页面生成中，暂不可发起 AI 修改</p>}
 
-        <div className="flex flex-col gap-2">
-          <label
-            htmlFor={instructionId}
-            className="text-[10px] tracking-[0.2em] text-ink-soft uppercase"
-          >
-            自由指令
-          </label>
-          <textarea
-            id={instructionId}
-            value={instruction}
-            maxLength={500}
-            rows={2}
-            disabled={busy || generating}
-            placeholder="可选：把语气改得更专业"
-            onChange={(event) => setInstruction(event.target.value)}
-            className={cn(
-              'border border-line bg-surface px-3 py-2 text-sm leading-relaxed text-ink',
-              'placeholder:text-ink-muted/60 focus:border-accent focus:outline-none',
-              'resize-y disabled:opacity-40',
-            )}
-          />
-        </div>
+      {!generating && !editableUnlocked && (
+        <p className="rounded-xl border border-dashed border-line px-3 py-3 text-xs leading-relaxed text-ink-muted">
+          本页可编辑内容均已人工修改，AI 不会覆盖；如需改写请先手动调整或换一页。
+        </p>
+      )}
 
-        {generating && (
-          <p className="text-xs text-ink-muted">页面生成中，暂不可发起 AI 修改</p>
-        )}
-
-        {!generating && !editableUnlocked && (
-          <p className="border border-dashed border-line px-3 py-3 text-xs leading-relaxed text-ink-muted">
-            本页可编辑块均已人工锁定，AI 不会覆盖；如需改写请先解除锁定或换一页。
+      <div
+        ref={listRef}
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-0.5"
+      >
+        {turns.length === 0 && !propose.isPending && (
+          <p className="rounded-xl border border-dashed border-line px-3 py-4 text-xs leading-relaxed text-ink-muted">
+            例如：「标题改得更正式」「正文压缩到三条」「语气更适合管理层」
           </p>
         )}
+
+        {turns.map((turn) => (
+          <div key={turn.id} className="flex flex-col gap-2">
+            <div className="flex justify-end">
+              <p className="max-w-[92%] rounded-2xl rounded-br-md bg-accent-soft px-3 py-2 text-[13px] leading-relaxed text-ink">
+                {turn.instruction}
+              </p>
+            </div>
+            {turn.error && (
+              <p role="alert" className="rounded-xl bg-negative/8 px-3 py-2 text-xs text-negative">
+                {turn.error}
+              </p>
+            )}
+            {turn.proposal && (
+              <ProposalPreview
+                proposal={turn.proposal}
+                activeSide={activeSide}
+                applyingBlockId={applyingBlockId}
+                applyError={applyError}
+                applyConflict={applyConflict}
+                onApplySide={applySide}
+                onDiscard={clearProposalSegments}
+                onRegenerate={() => lastInstruction && sendInstruction(lastInstruction)}
+                canRegenerate={canPropose && lastInstruction != null}
+              />
+            )}
+          </div>
+        ))}
 
         {propose.isPending && (
           <p className="text-xs text-ink-muted" aria-live="polite">
-            正在生成提案，请稍候…
+            正在根据指令生成提案…
           </p>
-        )}
-
-        {propose.isError && (
-          <p role="alert" className="border-l-2 border-negative py-1 pl-3 text-xs text-negative">
-            {errorMessage(propose.error)}
-          </p>
-        )}
-
-        {proposal && (
-          <ProposalPreview
-            proposal={proposal}
-            selected={selected}
-            selectedCount={selectedOps.length}
-            applying={apply.isPending}
-            applyError={apply.isError ? errorMessage(apply.error) : null}
-            applyConflict={applyConflict}
-            lastAction={lastAction}
-            onToggle={toggle}
-            onApply={runApply}
-            onDiscard={discardProposal}
-            onRegenerate={() => lastAction && runPropose(lastAction)}
-            canRegenerate={canPropose && lastAction != null}
-          />
         )}
       </div>
-    </aside>
+
+      <div className="flex flex-col gap-2 border-t border-line pt-3">
+        <label htmlFor={inputId} className="sr-only">
+          修改指令
+        </label>
+        <textarea
+          id={inputId}
+          value={draft}
+          maxLength={500}
+          rows={2}
+          disabled={busy || generating || !editableUnlocked}
+          placeholder="输入修改指令，回车发送"
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault()
+              handleSend()
+            }
+          }}
+          className={cn(
+            'rounded-xl border border-line bg-surface px-3 py-2 text-[13px] leading-relaxed text-ink',
+            'placeholder:text-ink-muted/70 focus:border-accent focus:outline-none',
+            'resize-none disabled:opacity-40',
+          )}
+        />
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] text-ink-muted">{draft.trim().length}/500</p>
+          <Button size="sm" disabled={!canSend} onClick={handleSend}>
+            {propose.isPending ? '发送中…' : '发送'}
+          </Button>
+        </div>
+      </div>
+
+      {latestProposal == null && applyError && (
+        <p role="alert" className="text-xs text-negative">
+          {applyError}
+        </p>
+      )}
+    </section>
   )
 }
 
 function ProposalPreview({
   proposal,
-  selected,
-  selectedCount,
-  applying,
+  activeSide,
+  applyingBlockId,
   applyError,
   applyConflict,
-  lastAction,
-  onToggle,
-  onApply,
+  onApplySide,
   onDiscard,
   onRegenerate,
   canRegenerate,
 }: {
   proposal: AiEditProposal
-  selected: Set<string>
-  selectedCount: number
-  applying: boolean
+  activeSide: Record<string, ActiveSide>
+  applyingBlockId: string | null
   applyError: string | null
   applyConflict: boolean
-  lastAction: AiEditAction | null
-  onToggle: (blockId: string) => void
-  onApply: () => void
+  onApplySide: (operation: AiEditOperation, side: ActiveSide) => void
   onDiscard: () => void
   onRegenerate: () => void
   canRegenerate: boolean
@@ -246,13 +302,21 @@ function ProposalPreview({
   const empty = proposal.operations.length === 0
 
   return (
-    <section aria-labelledby={listId} className="flex flex-col gap-4">
-      <h4 id={listId} className="text-[10px] tracking-[0.2em] text-ink-soft uppercase">
-        变更预览
-      </h4>
+    <section
+      aria-labelledby={listId}
+      className="rounded-2xl rounded-tl-md border border-line bg-surface px-3 py-3"
+    >
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h4 id={listId} className="text-xs font-semibold text-ink-soft">
+          变更预览
+        </h4>
+        <Button variant="ghost" size="sm" disabled={applyingBlockId != null} onClick={onDiscard}>
+          放弃
+        </Button>
+      </div>
 
       {empty ? (
-        <p className="border border-dashed border-line px-3 py-4 text-xs leading-relaxed text-ink-muted">
+        <p className="rounded-xl border border-dashed border-line px-3 py-4 text-xs leading-relaxed text-ink-muted">
           模型没有提出需要修改的内容
           {proposal.discarded.length > 0
             ? '（部分块因已人工修改等原因被跳过）'
@@ -264,19 +328,18 @@ function ProposalPreview({
             <OperationCard
               key={op.block_id}
               operation={op}
-              checked={selected.has(op.block_id)}
-              onToggle={() => onToggle(op.block_id)}
-              disabled={applying}
+              side={activeSide[op.block_id] ?? null}
+              applying={applyingBlockId === op.block_id}
+              disabled={applyingBlockId != null}
+              onSelectSide={(side) => onApplySide(op, side)}
             />
           ))}
         </ul>
       )}
 
       {proposal.warnings.length > 0 && (
-        <div className="border-l-2 border-warning py-1 pl-3">
-          <p className="mb-1 text-[10px] tracking-[0.2em] text-warning uppercase">
-            应用后可能出现
-          </p>
+        <div className="mt-3 rounded-xl bg-warning/8 px-3 py-2.5">
+          <p className="mb-1 text-xs font-medium text-warning">应用后可能出现</p>
           <ul className="flex flex-col gap-1">
             {proposal.warnings.map((issue, index) => (
               <li key={`${issue.slot_id ?? 'page'}-${index}`} className="text-xs text-warning">
@@ -288,10 +351,8 @@ function ProposalPreview({
       )}
 
       {proposal.discarded.length > 0 && (
-        <div className="border-l-2 border-line-strong py-1 pl-3">
-          <p className="mb-1 text-[10px] tracking-[0.2em] text-ink-soft uppercase">
-            未改动的块
-          </p>
+        <div className="mt-3 rounded-xl bg-surface-soft px-3 py-2.5">
+          <p className="mb-1 text-xs font-medium text-ink-soft">未改动的内容</p>
           <ul className="flex flex-col gap-1.5">
             {proposal.discarded.map((item) => (
               <li key={item.block_id} className="text-xs leading-relaxed text-ink-muted">
@@ -303,13 +364,11 @@ function ProposalPreview({
       )}
 
       {!empty && (
-        <p className="text-xs text-ink-muted">
-          已选 {selectedCount} / {proposal.operations.length} 条
-        </p>
+        <p className="mt-3 text-xs text-ink-muted">点击「改动前 / 改动后」即可应用到画布，可来回切换</p>
       )}
 
       {applyError && (
-        <div role="alert" className="border-l-2 border-negative py-1 pl-3">
+        <div role="alert" className="mt-3 rounded-xl bg-negative/8 px-3 py-2.5">
           <p className="text-xs text-negative">{applyError}</p>
           {applyConflict && (
             <button
@@ -318,73 +377,58 @@ function ProposalPreview({
               onClick={onRegenerate}
               className="mt-2 text-xs text-ink-muted underline-offset-2 hover:text-accent hover:underline disabled:opacity-40"
             >
-              重新生成提案
-              {lastAction ? `（${ACTIONS.find((item) => item.action === lastAction)?.label}）` : ''}
+              刷新提案
             </button>
           )}
         </div>
       )}
-
-      <div className="flex flex-wrap items-center gap-3">
-        {!empty && (
-          <Button
-            variant="accent"
-            disabled={selectedCount === 0 || applying}
-            onClick={onApply}
-            className="h-9 px-4 text-xs"
-          >
-            {applying ? '应用中…' : '应用所选'}
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          disabled={applying}
-          onClick={onDiscard}
-          className="h-9 px-3 text-xs"
-        >
-          放弃
-        </Button>
-      </div>
     </section>
   )
 }
 
 function OperationCard({
   operation,
-  checked,
-  onToggle,
+  side,
+  applying,
   disabled,
+  onSelectSide,
 }: {
   operation: AiEditOperation
-  checked: boolean
-  onToggle: () => void
+  side: ActiveSide | null
+  applying: boolean
   disabled?: boolean
+  onSelectSide: (side: ActiveSide) => void
 }) {
-  const checkboxId = useId()
-  const labelId = `${checkboxId}-label`
-
   return (
-    <li className="border border-line">
-      <div className="flex items-center gap-3 border-b border-line px-3 py-2">
-        <input
-          id={checkboxId}
-          type="checkbox"
-          checked={checked}
-          disabled={disabled}
-          onChange={onToggle}
-          aria-labelledby={labelId}
-          className="size-3.5 shrink-0 accent-[var(--color-accent)]"
-        />
-        <label id={labelId} htmlFor={checkboxId} className="min-w-0 flex-1 cursor-pointer">
+    <li className="overflow-hidden rounded-xl border border-line">
+      <div className="flex items-center gap-3 border-b border-line bg-surface-soft px-3 py-2">
+        <div className="min-w-0 flex-1">
           <span className="text-[10px] tracking-[0.16em] text-accent uppercase">
             {TYPE_LABEL[operation.type]}
           </span>
           <span className="ml-2 text-[11px] text-ink-soft">{operation.slot_id}</span>
-        </label>
+        </div>
+        {applying && <span className="text-[11px] text-ink-muted">应用中…</span>}
       </div>
       <div className="grid gap-0 sm:grid-cols-2">
-        <PatchSide label="改动前" tone="before" patch={operation.before} type={operation.type} />
-        <PatchSide label="改动后" tone="after" patch={operation.after} type={operation.type} />
+        <PatchSide
+          label="改动前"
+          tone="before"
+          patch={operation.before}
+          type={operation.type}
+          active={side === 'before'}
+          disabled={disabled}
+          onSelect={() => onSelectSide('before')}
+        />
+        <PatchSide
+          label="改动后"
+          tone="after"
+          patch={operation.after}
+          type={operation.type}
+          active={side === 'after'}
+          disabled={disabled}
+          onSelect={() => onSelectSide('after')}
+        />
       </div>
     </li>
   )
@@ -395,38 +439,62 @@ function PatchSide({
   tone,
   patch,
   type,
+  active,
+  disabled,
+  onSelect,
 }: {
   label: string
-  tone: 'before' | 'after'
+  tone: ActiveSide
   patch: AiEditPatch
   type: AiEditOperation['type']
+  active: boolean
+  disabled?: boolean
+  onSelect: () => void
 }) {
   return (
-    <div
+    <button
+      type="button"
+      disabled={disabled || active}
+      onClick={onSelect}
+      aria-pressed={active}
       className={cn(
-        'px-3 py-3',
+        'px-3 py-3 text-left transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-inset',
+        'disabled:cursor-default',
+        !active && !disabled && 'hover:bg-accent-soft/40 cursor-pointer',
         tone === 'before' && 'border-b border-line sm:border-r sm:border-b-0',
-        tone === 'after' && 'sm:border-l-2 sm:border-l-accent/40',
+        active && tone === 'before' && 'bg-surface-soft',
+        active && tone === 'after' && 'bg-accent-soft/50',
+        !active && tone === 'after' && 'sm:border-l-2 sm:border-l-transparent',
+        active && tone === 'after' && 'sm:border-l-2 sm:border-l-accent',
       )}
     >
       <p
         className={cn(
           'mb-2 text-[10px] tracking-[0.16em] uppercase',
-          tone === 'before' ? 'text-ink-muted' : 'text-accent',
+          active
+            ? tone === 'before'
+              ? 'text-ink-soft'
+              : 'text-accent'
+            : tone === 'before'
+              ? 'text-ink-muted'
+              : 'text-accent/80',
         )}
       >
         {label}
+        {active ? ' · 已应用' : ''}
       </p>
       <div
         className={cn(
           'text-xs leading-relaxed',
-          tone === 'before' && 'text-ink-muted line-through decoration-ink-muted/50 opacity-70',
+          tone === 'before' && !active && 'text-ink-muted line-through decoration-ink-muted/50 opacity-70',
+          tone === 'before' && active && 'text-ink',
           tone === 'after' && 'text-ink',
         )}
       >
         <PatchContent patch={patch} type={type} />
       </div>
-    </div>
+    </button>
   )
 }
 

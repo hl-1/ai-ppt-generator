@@ -640,9 +640,10 @@ export interface components {
         AiEditRequest: {
             /**
              * Action
+             * @default instruct
              * @enum {string}
              */
-            action: "rewrite" | "condense" | "expand";
+            action: "rewrite" | "condense" | "expand" | "instruct";
             /** Instruction */
             instruction?: string | null;
             /** Revision */

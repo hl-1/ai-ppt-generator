@@ -251,7 +251,12 @@ async def _publish(
     page: SlideTarget | None,
 ) -> None:
     async with async_session_factory() as session:
+        project = await session.get(Project, project_id)
         slides = await load_slides(session, project_id)
+        status = deck_status(
+            slides,
+            project_status=project.status if project is not None else None,
+        )
 
     total = len(slides)
     ready = sum(1 for slide in slides if slide.status == "ready")
@@ -260,7 +265,7 @@ async def _publish(
         project_id,
         DeckEvent(
             type=event_type,  # type: ignore[arg-type]
-            status=deck_status(slides),
+            status=status,
             progress=int((ready + failed) * 100 / total) if total else 0,
             message=message,
             slide_id=slide_id,
@@ -276,6 +281,7 @@ async def _finish(project_id: uuid.UUID, *, cancelled: bool) -> None:
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         slides = await load_slides(session, project_id)
+        # 收尾时不再把 project.generating 算进去：任务已结束，剩余 pending 应落为 partial
         status = deck_status(slides)
         if project is not None:
             project.status = "ready" if status == "ready" else "outline_ready"

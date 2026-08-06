@@ -16,6 +16,7 @@ ACTION_LABELS: dict[str, str] = {
     "rewrite": "改写",
     "condense": "压缩",
     "expand": "扩写",
+    "instruct": "按指令修改",
 }
 
 
@@ -76,6 +77,11 @@ class DeepSeekSlideEditGenerator:
                 "扩写＝在容量上限内补充必要细节与过渡，使论证更完整；"
                 "不得超出字数/条目上限，不得编造数据。"
             ),
+            "instruct": (
+                "按用户指令修改＝以 instruction 为唯一目标完成局部修改；"
+                "指令未要求改动的块不要出现在 operations 里；"
+                "不得超出字数/条目上限，不得编造数据。"
+            ),
         }[action]
         return (
             "你是 PPT 单页局部修改助手。必须只输出一个 JSON 对象，不要 Markdown，不要额外说明。\n"
@@ -115,10 +121,16 @@ class DeepSeekSlideEditGenerator:
         if payload.instruction and payload.instruction.strip():
             body["instruction"] = payload.instruction.strip()
 
-        prompt = (
-            f"请为以下页面生成{ACTION_LABELS[payload.action]}操作清单 JSON。\n"
-            f"{json.dumps(body, ensure_ascii=False)}"
-        )
+        if payload.action == "instruct":
+            prompt = (
+                "请严格按用户 instruction 完成本页局部修改，并输出操作清单 JSON。\n"
+                f"{json.dumps(body, ensure_ascii=False)}"
+            )
+        else:
+            prompt = (
+                f"请为以下页面生成{ACTION_LABELS[payload.action]}操作清单 JSON。\n"
+                f"{json.dumps(body, ensure_ascii=False)}"
+            )
         if payload.issues:
             prompt += (
                 "\n上一次修改存在以下问题，请只修正这些问题并保持其余操作稳定：\n"

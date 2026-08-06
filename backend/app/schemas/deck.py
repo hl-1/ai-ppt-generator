@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domain.content import Block
 from app.domain.slide_patch import BlockPatch
@@ -125,13 +125,23 @@ class LayoutCandidatePublic(BaseModel):
     current: bool = False
 
 
-AiEditAction = Literal["rewrite", "condense", "expand"]
+AiEditAction = Literal["rewrite", "condense", "expand", "instruct"]
 
 
 class AiEditRequest(BaseModel):
-    action: AiEditAction
+    action: AiEditAction = "instruct"
     instruction: str | None = Field(default=None, max_length=500)
     revision: int
+
+    @model_validator(mode="after")
+    def require_instruction_for_instruct(self) -> Self:
+        # 对话指令模式必须带有效 instruction；旧三动作仍可无指令调用
+        if self.action == "instruct":
+            text = (self.instruction or "").strip()
+            if not text:
+                raise ValueError("对话修改必须提供 instruction")
+            self.instruction = text
+        return self
 
 
 class AiEditOperationPublic(BaseModel):

@@ -1,4 +1,5 @@
 import base64
+import json
 import struct
 import uuid
 import zlib
@@ -15,6 +16,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import get_settings
 from app.core.db import async_session_factory
 from app.domain.content import Deck, ImageBlock, Slide, TextBlock
+from app.images.bailian import BailianImageProvider, _closest_size, _resolve_base_url
 from app.images.base import ImageAsset, ImageRequest
 from app.images.generated import GeneratedImageProvider
 from app.images.pipeline import ImagePipeline
@@ -288,6 +290,110 @@ async def test_generated_provider_http_500_returns_none() -> None:
             base_url="https://api.example.com/v1",
             api_key="test-key",
             model="gpt-image-1",
+        )
+        result = await provider.fetch(ImageRequest(prompt="a", query="a", aspect_ratio=1.0))
+    assert result is None
+
+
+# --- BailianImageProvider ---
+
+
+def test_bailian_size_and_workspace_base_url() -> None:
+    assert _closest_size(1.0) == "1328*1328"
+    assert _closest_size(1.5) == "1664*928"
+    assert _closest_size(0.67) == "928*1664"
+    assert (
+        _resolve_base_url("https://dashscope.aliyuncs.com/api/v1", "ws-demo")
+        == "https://ws-demo.cn-beijing.maas.aliyuncs.com/api/v1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_bailian_provider_posts_native_payload_and_downloads_image() -> None:
+    png = MINIMAL_PNG
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/services/aigc/multimodal-generation/generation"):
+            captured["auth"] = request.headers.get("Authorization")
+            captured["json"] = json.loads(request.content.decode())
+            return httpx.Response(
+                200,
+                json={
+                    "output": {
+                        "choices": [
+                            {
+                                "finish_reason": "stop",
+                                "message": {
+                                    "role": "assistant",
+                                    "content": [
+                                        {"image": "https://cdn.example.com/bailian.png"}
+                                    ],
+                                },
+                            }
+                        ]
+                    },
+                    "request_id": "req-1",
+                },
+            )
+        if "cdn.example.com" in str(request.url):
+            return httpx.Response(200, content=png)
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        provider = BailianImageProvider(
+            client=client,
+            api_key="sk-test",
+            model="qwen-image-3.0",
+            base_url="https://dashscope.aliyuncs.com/api/v1",
+        )
+        asset = await provider.fetch(
+            ImageRequest(prompt="商务配图，无文字", query="business", aspect_ratio=1.5)
+        )
+
+    assert asset is not None and asset.data == png and asset.source == "generated"
+    assert captured["auth"] == "Bearer sk-test"
+    body = captured["json"]
+    assert isinstance(body, dict)
+    assert body["model"] == "qwen-image-3.0"
+    assert body["input"]["messages"][0]["content"][0]["text"] == "商务配图，无文字"
+    assert body["parameters"]["size"] == "1664*928"
+    assert body["parameters"]["n"] == 1
+    assert body["parameters"]["watermark"] is False
+    assert body["parameters"]["prompt_extend"] is True
+
+
+@pytest.mark.asyncio
+async def test_bailian_provider_business_error_returns_none() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"code": "InvalidApiKey", "message": "Invalid API-key provided."},
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        provider = BailianImageProvider(
+            client=client,
+            api_key="bad",
+            model="qwen-image-3.0",
+        )
+        result = await provider.fetch(ImageRequest(prompt="a", query="a", aspect_ratio=1.0))
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_bailian_provider_http_500_returns_none() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="boom")
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        provider = BailianImageProvider(
+            client=client,
+            api_key="sk-test",
+            model="qwen-image-3.0",
         )
         result = await provider.fetch(ImageRequest(prompt="a", query="a", aspect_ratio=1.0))
     assert result is None

@@ -1,160 +1,174 @@
-import { type FormEvent, useState } from 'react'
-import { Link } from 'react-router'
+import { MoreHorizontal, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router'
+import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/Button'
-import { Select } from '@/components/ui/Select'
-import { TextField } from '@/components/ui/TextField'
-import { useCreateProject, useDeleteProject, useProjects } from '@/features/projects/api'
-import { PAGE_COUNT_OPTIONS, THEME_OPTIONS, TONE_OPTIONS } from '@/features/projects/options'
-import { STATUS_LABEL, type Project, type Tone } from '@/features/projects/types'
-
-const DATE_FORMAT = new Intl.DateTimeFormat('zh-CN', {
-  month: 'numeric',
-  day: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-})
+import { useDeleteProject, useProjects } from '@/features/projects/api'
+import type { Project } from '@/features/projects/types'
+import { relativeTime } from '@/lib/datetime'
+import { errorMessage } from '@/lib/errors'
+import { getTheme } from '@/render/design'
+import { ThemeCover } from '@/render/ThemeCover'
 
 export default function ProjectsPage() {
+  const navigate = useNavigate()
   const projects = useProjects()
-  const [composing, setComposing] = useState(false)
-
-  return (
-    <>
-      <section className="flex items-end justify-between border-b border-line py-16">
-        <div>
-          <p className="mb-4 text-xs tracking-[0.2em] text-accent uppercase">PPT</p>
-          <h1 className="font-display text-[clamp(2rem,4vw,2.75rem)] leading-[1.3]">
-            从一句主题或一份文档开始。
-          </h1>
-        </div>
-        <Button onClick={() => setComposing((open) => !open)} aria-expanded={composing}>
-          {composing ? '收起' : '新建 PPT'}
-        </Button>
-      </section>
-
-      {composing && <CreateForm onDone={() => setComposing(false)} />}
-
-      <section className="pt-4 pb-20">
-        {projects.isPending && <p className="pt-8 text-sm text-ink-muted">正在加载…</p>}
-        {projects.isError && (
-          <p className="pt-8 text-sm text-negative">加载失败，请刷新重试。</p>
-        )}
-        {projects.data?.length === 0 && (
-          <p className="pt-8 text-sm text-ink-muted">还没有 PPT，点右上角新建一个。</p>
-        )}
-        {projects.data && projects.data.length > 0 && (
-          <ul>
-            {projects.data.map((project) => (
-              <ProjectRow key={project.id} project={project} />
-            ))}
-          </ul>
-        )}
-      </section>
-    </>
-  )
-}
-
-function ProjectRow({ project }: { project: Project }) {
   const remove = useDeleteProject()
 
   return (
-    <li className="group flex items-center gap-6 border-b border-line py-5">
-      <Link to={`/projects/${project.id}`} className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] font-medium transition-colors group-hover:text-accent">
-          {project.title}
-        </span>
-        <span className="mt-1 block text-xs text-ink-muted">
-          {project.page_count} 页 · {STATUS_LABEL[project.status]}
-          {project.audience && ` · 面向${project.audience}`}
-        </span>
-      </Link>
-      <span className="shrink-0 text-xs text-ink-muted tabular-nums">
-        {DATE_FORMAT.format(new Date(project.updated_at))}
-      </span>
-      <Button
-        variant="ghost"
-        className="h-8 shrink-0 px-0 text-xs opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-        disabled={remove.isPending}
-        onClick={() => remove.mutate(project.id)}
+    <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mb-8">
+        <h1 className="text-2xl font-semibold tracking-tight">我的 PPT</h1>
+        <p className="mt-1.5 text-sm text-ink-muted">固定 16:9 画幅，导出为原生可编辑 PPTX</p>
+      </div>
+
+      {projects.isPending && <CardSkeletonGrid />}
+
+      {projects.isError && (
+        <p role="alert" className="rounded-2xl bg-negative/8 px-5 py-4 text-sm text-negative">
+          {errorMessage(projects.error, 'PPT 列表加载失败，请稍后重试')}
+        </p>
+      )}
+
+      {projects.data?.length === 0 && <EmptyState onCreate={() => navigate('/create')} />}
+
+      {projects.data && projects.data.length > 0 && (
+        <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {projects.data.map((project) => (
+            <ProjectCard
+              key={project.id}
+              project={project}
+              deleting={remove.isPending && remove.variables === project.id}
+              onDelete={() => remove.mutate(project.id)}
+            />
+          ))}
+        </ul>
+      )}
+
+      {remove.isError && (
+        <p role="alert" className="mt-5 text-sm text-negative">
+          {errorMessage(remove.error, '删除失败，请稍后重试')}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function ProjectCard({
+  project,
+  deleting,
+  onDelete,
+}: {
+  project: Project
+  deleting: boolean
+  onDelete: () => void
+}) {
+  const theme = getTheme(project.theme_id)
+
+  return (
+    <li className="group relative">
+      <Link
+        to={`/projects/${project.id}`}
+        className="block overflow-hidden rounded-2xl border border-line bg-surface transition-all duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-card"
       >
-        删除
-      </Button>
+        <div className="border-b border-line">
+          <ThemeCover theme={theme} title={project.title} />
+        </div>
+        <div className="flex flex-col gap-2.5 px-4 py-3.5">
+          <p className="truncate pr-8 text-[15px] font-semibold tracking-tight">{project.title}</p>
+          <div className="flex items-center gap-2 text-xs text-ink-muted">
+            <StatusPill status={project.status} />
+            <span>{project.page_count} 页</span>
+            <span aria-hidden>·</span>
+            <span>{relativeTime(project.updated_at)}</span>
+          </div>
+        </div>
+      </Link>
+
+      <CardMenu deleting={deleting} onDelete={onDelete} />
     </li>
   )
 }
 
-function CreateForm({ onDone }: { onDone: () => void }) {
-  const create = useCreateProject()
-  const [title, setTitle] = useState('')
-  const [audience, setAudience] = useState('')
-  const [tone, setTone] = useState<Tone>('professional')
-  const [pageCount, setPageCount] = useState(10)
-  const [themeId, setThemeId] = useState(THEME_OPTIONS[0]?.value ?? 'ivory')
+function CardMenu({ deleting, onDelete }: { deleting: boolean; onDelete: () => void }) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    create.mutate(
-      {
-        title: title.trim(),
-        audience: audience.trim() || null,
-        tone,
-        page_count: pageCount,
-        theme_id: themeId,
-      },
-      { onSuccess: onDone },
-    )
-  }
+  useEffect(() => {
+    if (!open) return
+    const onPointer = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onPointer)
+    return () => document.removeEventListener('mousedown', onPointer)
+  }, [open])
 
   return (
-    <section className="border-b border-line py-10">
-      <form onSubmit={submit} className="grid gap-8 md:grid-cols-2">
-        <TextField
-          label="标题"
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder="例如：2026 上半年产品复盘"
-          maxLength={200}
-          required
-          autoFocus
-        />
-        <TextField
-          label="受众（可选）"
-          value={audience}
-          onChange={(event) => setAudience(event.target.value)}
-          placeholder="例如：管理层、客户、团队内部"
-          maxLength={100}
-        />
-        <div className="grid grid-cols-3 gap-6 md:col-span-2">
-          <Select
-            label="语气"
-            value={tone ?? 'professional'}
-            onChange={(event) => setTone(event.target.value as Tone)}
-            options={TONE_OPTIONS}
-          />
-          <Select
-            label="页数"
-            value={pageCount}
-            onChange={(event) => setPageCount(Number(event.target.value))}
-            options={PAGE_COUNT_OPTIONS}
-          />
-          <Select
-            label="主题"
-            value={themeId}
-            onChange={(event) => setThemeId(event.target.value)}
-            options={THEME_OPTIONS}
-          />
-        </div>
+    <div ref={rootRef} className="absolute right-3 bottom-3">
+      <button
+        type="button"
+        aria-label="更多操作"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="grid size-7 place-items-center rounded-lg bg-surface/90 text-ink-muted shadow-sm ring-1 ring-line transition-all hover:bg-surface-soft hover:text-ink"
+      >
+        <MoreHorizontal className="size-4" />
+      </button>
 
-        <div className="flex items-center gap-6 md:col-span-2">
-          <Button type="submit" disabled={create.isPending || !title.trim()}>
-            {create.isPending ? '创建中…' : '创建'}
-          </Button>
-          {create.isError && <span className="text-sm text-negative">创建失败，请重试。</span>}
-          <span className="text-xs text-ink-muted">
-            这些设置随时可改，大纲生成时才会真正生效。
-          </span>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 bottom-full z-20 mb-1 w-40 overflow-hidden rounded-xl border border-line bg-surface shadow-pop"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={deleting}
+            onClick={() => {
+              setOpen(false)
+              onDelete()
+            }}
+            className="flex w-full items-center gap-2 px-3.5 py-2.5 text-[13px] text-negative transition-colors hover:bg-negative/8 disabled:opacity-50"
+          >
+            <Trash2 className="size-3.5" />
+            {deleting ? '删除中…' : '删除'}
+          </button>
         </div>
-      </form>
-    </section>
+      )}
+    </div>
+  )
+}
+
+function EmptyState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="rounded-3xl border border-dashed border-line-strong bg-aurora px-8 py-20 text-center">
+      <span className="mx-auto mb-5 grid size-12 place-items-center rounded-2xl bg-surface text-accent shadow-card">
+        <Sparkles className="size-5" />
+      </span>
+      <h2 className="text-xl font-semibold tracking-tight">还没有 PPT</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-ink-muted">
+        给一个主题，或者把已有的文字、文档交给它，先看大纲，再生成可编辑的 16:9 页面。
+      </p>
+      <Button size="lg" onClick={onCreate} className="mt-7">
+        <Plus className="size-4" />
+        新建 PPT
+      </Button>
+    </div>
+  )
+}
+
+function CardSkeletonGrid() {
+  return (
+    <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      {[0, 1, 2].map((key) => (
+        <div key={key} className="overflow-hidden rounded-2xl border border-line bg-surface">
+          <div className="aspect-video animate-pulse bg-surface-soft" />
+          <div className="flex flex-col gap-2.5 px-4 py-3.5">
+            <div className="h-4 w-2/3 animate-pulse rounded bg-surface-soft" />
+            <div className="h-3 w-1/3 animate-pulse rounded bg-surface-soft" />
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }

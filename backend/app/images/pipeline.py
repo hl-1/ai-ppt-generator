@@ -1,6 +1,7 @@
 import httpx
 
 from app.core.config import get_settings
+from app.images.bailian import BailianImageProvider
 from app.images.base import ImageAsset, ImageProvider, ImageRequest
 from app.images.generated import GeneratedImageProvider
 from app.images.unsplash import UnsplashImageProvider
@@ -32,15 +33,27 @@ class ImagePipeline:
 
 def create_image_pipeline(client: httpx.AsyncClient) -> ImagePipeline:
     settings = get_settings()
+    if settings.image_provider == "bailian":
+        primary: ImageProvider = BailianImageProvider(
+            client=client,
+            api_key=settings.image_api_key,
+            model=settings.image_model,
+            base_url=settings.image_base_url,
+            workspace_id=settings.image_workspace_id,
+            timeout_seconds=settings.image_timeout_seconds,
+        )
+    else:
+        primary = GeneratedImageProvider(
+            client=client,
+            base_url=settings.image_base_url,
+            api_key=settings.image_api_key,
+            model=settings.image_model,
+            timeout_seconds=settings.image_timeout_seconds,
+        )
+
     return ImagePipeline(
         [
-            GeneratedImageProvider(
-                client=client,
-                base_url=settings.image_base_url,
-                api_key=settings.image_api_key,
-                model=settings.image_model,
-                timeout_seconds=settings.image_timeout_seconds,
-            ),
+            primary,
             UnsplashImageProvider(
                 client=client,
                 access_key=settings.unsplash_access_key,

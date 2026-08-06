@@ -1,29 +1,34 @@
 @import 'tailwindcss';
 
-@import '@fontsource/instrument-serif/400.css';
-@import '@fontsource/instrument-serif/400-italic.css';
 @import '@fontsource-variable/manrope';
+/* 幻灯片主题（shared/themes）里声明了衬线标题字体，必须随应用一起加载 */
+@import '@fontsource/instrument-serif';
 
 /* 应用外壳的设计令牌。注意：这一套只服务于产品界面本身，
    幻灯片主题的令牌另有一套（shared/themes），两者不可混用，
    否则切换 PPT 主题时会连带改变编辑器界面。 */
 @theme {
-  --font-display: 'Instrument Serif', 'Songti SC', serif;
   --font-sans: 'Manrope Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-display: 'Manrope Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 
-  --color-canvas: #fbfaf6;
+  --color-canvas: #f3f6fb;
   --color-surface: #ffffff;
-  --color-ink: #171614;
-  --color-ink-soft: #4a463e;
-  --color-ink-muted: #8a8478;
-  --color-line: #e7e2d7;
-  --color-line-strong: #d6cfc0;
-  --color-accent: #c8442a;
-  --color-accent-soft: #f3e3de;
-  --color-positive: #3f7d5c;
+  --color-surface-soft: #f7f9fd;
+  --color-ink: #0f1522;
+  --color-ink-soft: #3d4657;
+  --color-ink-muted: #7b8598;
+  --color-line: #e4eaf3;
+  --color-line-strong: #ccd6e6;
+  --color-accent: #2f4bff;
+  --color-accent-soft: #eaeeff;
+  --color-positive: #0f9d6a;
   /* 警告与错误必须能一眼分开：前者只是内容偏长，不阻断导出 */
-  --color-warning: #a2751f;
-  --color-negative: #b23b2e;
+  --color-warning: #b5761a;
+  --color-negative: #d93b30;
+
+  --shadow-card: 0 1px 2px rgba(15, 21, 34, 0.04), 0 10px 30px -18px rgba(15, 21, 34, 0.18);
+  --shadow-pop: 0 12px 40px -12px rgba(15, 21, 34, 0.28);
+  --shadow-slide: 0 2px 4px rgba(15, 21, 34, 0.06), 0 24px 60px -28px rgba(15, 21, 34, 0.35);
 }
 
 @layer base {
@@ -40,7 +45,7 @@
 
   ::selection {
     background-color: var(--color-accent);
-    color: var(--color-canvas);
+    color: #fff;
   }
 
   :focus-visible {
@@ -49,10 +54,21 @@
   }
 }
 
-/* 纸张质感的细网格底纹，用于大面积留白区域，避免纯色显得单薄 */
-@utility bg-grid {
-  background-image: linear-gradient(var(--color-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
-  background-size: 72px 72px;
-  background-position: center;
+/* 创作类页面的空气感底纹：两团低饱和光晕，避免大面积纯色显得单薄 */
+@utility bg-aurora {
+  background-image:
+    radial-gradient(60rem 32rem at 12% -8%, #dde6ff 0%, transparent 60%),
+    radial-gradient(48rem 28rem at 92% 4%, #e6f0ff 0%, transparent 62%);
+  background-repeat: no-repeat;
+}
+
+/* 编辑器画布衬底：比页面底色更深一档，让白色幻灯片成为唯一焦点 */
+@utility bg-stage {
+  background-color: #e9edf5;
+  background-image: radial-gradient(48rem 24rem at 50% -10%, #f4f7fc 0%, transparent 70%);
+}
+
+@utility scrollbar-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
 }

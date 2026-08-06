@@ -116,12 +116,76 @@ class ScriptedEditGenerator:
         ]
         self.error = error
         self.seen_block_ids: list[list[str]] = []
+        self.seen_payloads: list[SlideEditInput] = []
 
     async def generate(self, payload: SlideEditInput):
+        self.seen_payloads.append(payload)
         self.seen_block_ids.append([block.block_id for block in payload.blocks])
         if self.error is not None:
             raise self.error
         return list(self.operations)
+
+
+@pytest.mark.asyncio
+async def test_propose_instruct_requires_instruction(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.api.v1.decks.create_slide_edit_generator",
+        lambda: ScriptedEditGenerator(),
+    )
+    headers = await _sign_up(client)
+    project, slide = await _project_with_slide(client, headers)
+
+    response = await client.post(
+        f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
+        headers=headers,
+        json={"action": "instruct", "revision": slide.revision},
+    )
+    assert response.status_code == 422
+
+    blank = await client.post(
+        f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
+        headers=headers,
+        json={"action": "instruct", "instruction": "   ", "revision": slide.revision},
+    )
+    assert blank.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_propose_instruct_returns_before_after(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generator = ScriptedEditGenerator(
+        operations=[TextPatch(block_id="t1", text="按指令改过的标题")]
+    )
+    monkeypatch.setattr(
+        "app.api.v1.decks.create_slide_edit_generator",
+        lambda: generator,
+    )
+    headers = await _sign_up(client)
+    project, slide = await _project_with_slide(client, headers)
+
+    response = await client.post(
+        f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
+        headers=headers,
+        json={
+            "action": "instruct",
+            "instruction": "标题改得更正式",
+            "revision": slide.revision,
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["revision"] == slide.revision
+    assert len(body["operations"]) == 1
+    title_op = body["operations"][0]
+    assert title_op["before"]["text"] == "原标题"
+    assert title_op["after"]["text"] == "按指令改过的标题"
+    assert generator.seen_payloads[0].action == "instruct"
+    assert generator.seen_payloads[0].instruction == "标题改得更正式"
 
 
 @pytest.mark.asyncio

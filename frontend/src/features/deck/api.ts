@@ -184,9 +184,17 @@ export function useSwitchSlideLayout(projectId: string, slideId: string) {
 
 export function useProposeAiEdit(projectId: string, slideId: string) {
   return useMutation({
-    mutationFn: (body: { action: AiEditAction; revision: number; instruction?: string }) => {
-      const payload: { action: AiEditAction; revision: number; instruction?: string } = {
-        action: body.action,
+    mutationFn: (body: {
+      action?: AiEditAction
+      revision: number
+      instruction?: string
+    }) => {
+      const payload: {
+        action: AiEditAction
+        revision: number
+        instruction?: string
+      } = {
+        action: body.action ?? 'instruct',
         revision: body.revision,
       }
       if (body.instruction) payload.instruction = body.instruction

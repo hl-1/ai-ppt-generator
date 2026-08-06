@@ -64,7 +64,7 @@ class SlideGenerator(Protocol):
         """根据大纲页与布局槽位生成单页正文草稿。"""
 
 
-SlideEditAction = Literal["rewrite", "condense", "expand"]
+SlideEditAction = Literal["rewrite", "condense", "expand", "instruct"]
 
 
 class SlideEditBlockInput(BaseModel):

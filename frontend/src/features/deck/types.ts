@@ -60,15 +60,17 @@ export interface DeckProgressEvent {
   total: number
 }
 
-export const SLIDE_STATUS_LABEL: Record<SlideStatus, string> = {
-  pending: '待生成',
-  generating: '生成中',
-  ready: '已完成',
-  failed: '失败',
-}
-
 export function imageBlocks(slide: DeckSlide): ImageBlock[] {
   return slide.blocks.filter((block): block is ImageBlock => block.type === 'image')
+}
+
+/** 胶片标题优先用画布上的 title 槽，避免改字后侧栏仍显示大纲旧标题 */
+export function slideDisplayTitle(slide: DeckSlide): string {
+  const title = slide.blocks.find(
+    (block) => block.type === 'text' && block.slot_id === 'title',
+  )
+  const text = title?.type === 'text' ? title.text.trim() : ''
+  return text || slide.title
 }
 
 /** 落库的页面转成渲染器认识的内容模型：两者字段同源，只是多了生成状态 */
