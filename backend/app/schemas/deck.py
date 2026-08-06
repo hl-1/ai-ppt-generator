@@ -4,6 +4,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.domain.block_style import BlockStyle
 from app.domain.content import Block
 from app.domain.slide_patch import BlockPatch
 from app.domain.validation import StructureIssue
@@ -105,6 +106,13 @@ BlockUpdate = Annotated[
     TextBlockUpdate | BulletsBlockUpdate | KpiBlockUpdate | TableBlockUpdate,
     Field(discriminator="type"),
 ]
+
+
+class BlockStyleUpdate(BaseModel):
+    """元素级样式覆盖；style 为 null 表示清除该元素的全部微调。"""
+
+    revision: int
+    style: BlockStyle | None = None
 
 
 class SlideOrderRequest(BaseModel):

@@ -7,7 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.db import get_session
-from app.domain.theme import load_themes
+from app.domain.theme import (
+    dump_overrides,
+    empty_overrides,
+    fonts_are_whitelisted,
+    load_themes,
+    resolve_project_theme,
+)
 from app.ingest.base import UnsupportedDocument
 from app.ingest.upload import UploadRejected
 from app.models.project import Project, ProjectSource
@@ -16,10 +22,12 @@ from app.schemas.project import (
     ProjectCreate,
     ProjectDetail,
     ProjectPublic,
+    ProjectThemeUpdate,
     ProjectUpdate,
     SourcePublic,
     TextSourceCreate,
 )
+from app.services.deck import load_slides, refresh_slide_issues
 from app.services.sources import add_document_source, add_text_source, delete_source
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -102,8 +110,51 @@ async def update_project(
     _ensure_outline_unlocked(project)
     _ensure_known_theme(body.theme_id)
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    data = body.model_dump(exclude_unset=True)
+    if "theme_id" in data and data["theme_id"] != project.theme_id:
+        project.theme_overrides = empty_overrides()
+    for field, value in data.items():
         setattr(project, field, value)
+
+    await session.commit()
+    await session.refresh(project)
+    return project
+
+
+@router.patch("/{project_id}/theme", response_model=ProjectDetail)
+async def update_project_theme(
+    body: ProjectThemeUpdate, project: OwnedProject, session: SessionDep
+) -> Project:
+    """更新主题预设或细粒度覆盖；大纲确认后仍可用。"""
+    fields = body.model_fields_set
+    if not fields:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="请提供 theme_id 或 overrides",
+        )
+
+    if "theme_id" in fields and body.theme_id is not None:
+        _ensure_known_theme(body.theme_id)
+        if body.theme_id != project.theme_id:
+            project.theme_id = body.theme_id
+            project.theme_overrides = empty_overrides()
+
+    if "overrides" in fields:
+        if body.overrides is None:
+            project.theme_overrides = empty_overrides()
+        else:
+            if body.overrides.fonts is not None and not fonts_are_whitelisted(body.overrides.fonts):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="字体须选自系统提供的字体对",
+                )
+            project.theme_overrides = dump_overrides(body.overrides)
+
+    theme = resolve_project_theme(project)
+    slides = await load_slides(session, project.id)
+    for slide in slides:
+        if slide.status == "ready" and slide.blocks:
+            refresh_slide_issues(slide, theme=theme)
 
     await session.commit()
     await session.refresh(project)

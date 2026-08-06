@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { request } from '@/api/client'
+import { deckKey } from '@/features/deck/api'
 import type {
   Project,
   ProjectCreate,
@@ -7,6 +8,7 @@ import type {
   ProjectSource,
   ProjectUpdate,
 } from '@/features/projects/types'
+import type { ThemeOverrides } from '@/render/themeOverrides'
 
 const listKey = ['projects'] as const
 const detailKey = (id: string) => ['projects', id] as const
@@ -42,6 +44,23 @@ export function useUpdateProject(id: string) {
     onSuccess: (project) => {
       queryClient.setQueryData(detailKey(id), project)
       void queryClient.invalidateQueries({ queryKey: listKey })
+    },
+  })
+}
+
+export function useUpdateProjectTheme(id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { theme_id?: string; overrides?: ThemeOverrides }) =>
+      request<ProjectDetail>(`/projects/${id}/theme`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (project) => {
+      queryClient.setQueryData(detailKey(id), project)
+      void queryClient.invalidateQueries({ queryKey: listKey })
+      // 字号变化会重算 issues，刷新 deck 缓存
+      void queryClient.invalidateQueries({ queryKey: deckKey(id) })
     },
   })
 }

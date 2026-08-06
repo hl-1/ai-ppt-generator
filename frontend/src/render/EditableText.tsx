@@ -18,6 +18,42 @@ interface EditableTextProps {
   style?: CSSProperties
   className?: string
   onCommit: (next: string) => void
+  onFocus?: () => void
+}
+
+/** 两串公共前缀长度：撤销删除 / 重做插入时把光标落在变化处 */
+function caretAtChange(from: string, to: string): number {
+  const limit = Math.min(from.length, to.length)
+  let i = 0
+  while (i < limit && from[i] === to[i]) i += 1
+  return i
+}
+
+function placeCaret(el: HTMLElement, offset: number) {
+  const selection = window.getSelection()
+  if (!selection) return
+
+  if (document.activeElement !== el) {
+    el.focus()
+  }
+
+  const range = document.createRange()
+  const textNode = el.firstChild
+  if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+    const length = textNode.textContent?.length ?? 0
+    const next = Math.max(0, Math.min(offset, length))
+    range.setStart(textNode, next)
+    range.collapse(true)
+  } else if (offset <= 0) {
+    range.setStart(el, 0)
+    range.collapse(true)
+  } else {
+    range.selectNodeContents(el)
+    range.collapse(false)
+  }
+
+  selection.removeAllRanges()
+  selection.addRange(range)
 }
 
 /**
@@ -33,11 +69,14 @@ export function EditableText({
   style,
   className,
   onCommit,
+  onFocus,
 }: EditableTextProps) {
   const ref = useRef<HTMLSpanElement>(null)
   const focusedRef = useRef(false)
   const valueRef = useRef(value)
   const draftRef = useRef(value)
+  /** 刚用 ⌘Z 丢掉的未提交草稿，供 ⌘⇧Z 就地重做 */
+  const pendingRedoRef = useRef<string | null>(null)
   const timerRef = useRef<number | null>(null)
   const onCommitRef = useRef(onCommit)
   onCommitRef.current = onCommit
@@ -52,6 +91,7 @@ export function EditableText({
   const commitIfChanged = () => {
     const next = draftRef.current
     if (next === valueRef.current) return
+    pendingRedoRef.current = null
     onCommitRef.current(next)
   }
 
@@ -63,11 +103,41 @@ export function EditableText({
     }, SAVE_IDLE_MS)
   }
 
+  const syncDom = (next: string, caretFrom?: string) => {
+    const el = ref.current
+    if (!el) return
+    const from = caretFrom ?? el.textContent ?? draftRef.current
+    if (el.textContent !== next) {
+      el.textContent = next
+    }
+    draftRef.current = next
+
+    // native focus / 重渲染后 focusedRef 可能短暂不同步，以 activeElement 为准
+    const alive = focusedRef.current || document.activeElement === el
+    if (!alive) return
+
+    focusedRef.current = true
+    const caret = caretAtChange(from, next)
+    placeCaret(el, caret)
+    // 部分浏览器会在 keydown 收尾把光标打回开头，下一帧再钉一次
+    requestAnimationFrame(() => {
+      if (ref.current !== el) return
+      if (!focusedRef.current && document.activeElement !== el) return
+      placeCaret(el, caret)
+    })
+  }
+
   useLayoutEffect(() => {
+    const previous = valueRef.current
     valueRef.current = value
-    if (!focusedRef.current && ref.current && ref.current.textContent !== value) {
-      ref.current.textContent = value
+    if (!ref.current) return
+    if (ref.current.textContent === value) {
       draftRef.current = value
+      return
+    }
+    // 外部更新（撤销/AI 写回）时，即便仍聚焦也要同步 DOM，并尽量保住光标落点
+    if (!focusedRef.current || previous !== value) {
+      syncDom(value, previous)
     }
   }, [value])
 
@@ -85,11 +155,62 @@ export function EditableText({
       event.preventDefault()
       event.stopPropagation()
       clearTimer()
-      draftRef.current = valueRef.current
-      if (ref.current) ref.current.textContent = valueRef.current
+      pendingRedoRef.current = null
+      syncDom(valueRef.current)
       ref.current?.blur()
       return
     }
+
+    const mod = event.metaKey || event.ctrlKey
+    if (mod && event.key.toLowerCase() === 'z') {
+      // 未提交草稿：⌘Z 就地还原，并缓存以便 ⌘⇧Z 重做
+      if (!event.shiftKey && draftRef.current !== valueRef.current) {
+        event.preventDefault()
+        event.stopPropagation()
+        clearTimer()
+        const discarded = draftRef.current
+        pendingRedoRef.current = discarded
+        syncDom(valueRef.current, discarded)
+        return
+      }
+
+      // 刚丢掉的未提交草稿：⌘⇧Z / ⌘Y 就地重做，不落到页面历史栈
+      if (
+        event.shiftKey &&
+        pendingRedoRef.current != null &&
+        draftRef.current === valueRef.current
+      ) {
+        event.preventDefault()
+        event.stopPropagation()
+        const redoText = pendingRedoRef.current
+        pendingRedoRef.current = null
+        syncDom(redoText, valueRef.current)
+        scheduleCommit()
+        return
+      }
+
+      // 已提交：挡住浏览器自带撤销，放行到页面级历史栈
+      event.preventDefault()
+      return
+    }
+
+    if (mod && event.key.toLowerCase() === 'y') {
+      if (
+        pendingRedoRef.current != null &&
+        draftRef.current === valueRef.current
+      ) {
+        event.preventDefault()
+        event.stopPropagation()
+        const redoText = pendingRedoRef.current
+        pendingRedoRef.current = null
+        syncDom(redoText, valueRef.current)
+        scheduleCommit()
+        return
+      }
+      event.preventDefault()
+      return
+    }
+
     if (!multiline && event.key === 'Enter') {
       event.preventDefault()
       clearTimer()
@@ -126,14 +247,17 @@ export function EditableText({
       }}
       onFocus={() => {
         focusedRef.current = true
+        onFocus?.()
       }}
       onBlur={() => {
         focusedRef.current = false
+        pendingRedoRef.current = null
         clearTimer()
         commitIfChanged()
       }}
       onInput={() => {
         draftRef.current = ref.current?.textContent ?? ''
+        pendingRedoRef.current = null
         scheduleCommit()
       }}
       onPaste={onPaste}

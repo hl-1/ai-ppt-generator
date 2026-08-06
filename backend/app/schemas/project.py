@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.theme import ThemeOverrides
 from app.ingest.models import SourceSection
 
 Tone = Literal["professional", "plain", "punchy"]
@@ -31,6 +34,13 @@ class ProjectUpdate(BaseModel):
     theme_id: str | None = Field(default=None, max_length=50)
 
 
+class ProjectThemeUpdate(BaseModel):
+    """样式专用更新：不受大纲 confirmed 锁定。"""
+
+    theme_id: str | None = Field(default=None, max_length=50)
+    overrides: ThemeOverrides | None = None
+
+
 class SourcePublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -54,6 +64,7 @@ class ProjectPublic(BaseModel):
     tone: Tone
     page_count: int
     theme_id: str
+    theme_overrides: dict[str, Any] = Field(default_factory=dict)
     status: ProjectStatus
     created_at: datetime
     updated_at: datetime

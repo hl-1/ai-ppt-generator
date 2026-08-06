@@ -2,6 +2,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
+from app.domain.block_style import BlockStyle
+
 BlockType = Literal["text", "bullets", "image", "chart", "table", "kpi"]
 ImageSource = Literal["generated", "stock", "upload", "placeholder"]
 ChartKind = Literal["bar", "column", "line", "pie"]
@@ -12,6 +14,8 @@ class BlockBase(BaseModel):
     slot_id: str
     # 人工编辑过的内容默认受保护，AI 局部修改必须绕开它
     locked: bool = False
+    # 相对主题的元素级样式覆盖；None / 空对象表示纯主题
+    style: BlockStyle | None = None
 
 
 class TextBlock(BlockBase):

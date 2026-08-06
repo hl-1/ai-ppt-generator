@@ -15,7 +15,7 @@ from app.domain.content import Deck, ImageBlock, Slide
 from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT
 from app.domain.layout import get_layout
 from app.domain.quality import check_deck_content_quality
-from app.domain.theme import get_theme
+from app.domain.theme import Theme, get_theme
 from app.domain.validation import StructureIssue, has_blocking_issue, validate_deck
 
 # 槽位内图片短边低于此像素视为分辨率偏低（96dpi × 约 1.5 英寸）
@@ -186,19 +186,21 @@ def check_images(
     return issues
 
 
-def check_content_overflows_canvas(deck: Deck) -> list[StructureIssue]:
+def check_content_overflows_canvas(
+    deck: Deck, *, theme: Theme | None = None
+) -> list[StructureIssue]:
     """块内容渲染后必然溢出画布 → error。
 
     文字溢出槽位本身是 warning（由 validate 负责）；
     仅当「槽位顶边 + 实际占用高度」超出画布时升级为 error。
     """
     from app.domain.text_metrics import measure_bullets, measure_text
-    from app.domain.theme import Theme
 
     try:
-        theme: Theme = get_theme(deck.theme_id)
+        resolved = theme or get_theme(deck.theme_id)
     except KeyError:
         return []
+    theme = resolved
 
     issues: list[StructureIssue] = []
     for slide in deck.slides:
@@ -214,14 +216,22 @@ def check_content_overflows_canvas(deck: Deck) -> list[StructureIssue]:
             used_height: float | None = None
 
             if block.type == "text":
-                style = theme.text_style(slot.text_style or "body")
+                from app.domain.block_style import content_rect_pt, merge_text_style, resolve_box
+
+                box = resolve_box(theme, block.style)
+                avail_w, avail_h = content_rect_pt(w_pt, h_pt, padding_pt=box.padding_pt)
+                style = merge_text_style(theme, slot.text_style or "body", block.style)
                 used_height = measure_text(
-                    block.text, style=style, width_pt=w_pt, height_pt=h_pt
+                    block.text, style=style, width_pt=avail_w, height_pt=avail_h
                 ).height_pt
             elif block.type == "bullets":
-                style = theme.text_style(slot.text_style or "bullet")
+                from app.domain.block_style import content_rect_pt, merge_text_style, resolve_box
+
+                box = resolve_box(theme, block.style)
+                avail_w, avail_h = content_rect_pt(w_pt, h_pt, padding_pt=box.padding_pt)
+                style = merge_text_style(theme, slot.text_style or "bullet", block.style)
                 used_height = measure_bullets(
-                    block.items, style=style, width_pt=w_pt, height_pt=h_pt
+                    block.items, style=style, width_pt=avail_w, height_pt=avail_h
                 ).height_pt
 
             if used_height is None:
@@ -259,6 +269,7 @@ def check_font_metrics_availability() -> list[StructureIssue]:
 def run_export_check(
     deck: Deck,
     *,
+    theme: Theme | None = None,
     slide_titles: Mapping[str, str] | None = None,
     slide_sources: Mapping[str, str] | None = None,
     load_image: ImageLoader | None = None,
@@ -267,11 +278,16 @@ def run_export_check(
     """产出导出前分级报告。"""
     from app.domain.text_metrics import fonts_available
 
+    try:
+        resolved = theme or get_theme(deck.theme_id)
+    except KeyError:
+        resolved = None
+
     issues: list[StructureIssue] = []
     issues.extend(check_canvas_size(deck))
-    issues.extend(validate_deck(deck))
+    issues.extend(validate_deck(deck, theme=resolved))
     issues.extend(check_slot_bounds(deck))
-    issues.extend(check_content_overflows_canvas(deck))
+    issues.extend(check_content_overflows_canvas(deck, theme=resolved))
     issues.extend(check_images(deck, load_image=load_image, media_key_from_url=media_key_from_url))
     issues.extend(
         check_deck_content_quality(

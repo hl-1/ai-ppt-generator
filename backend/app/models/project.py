@@ -28,6 +28,8 @@ class Project(Base):
     tone: Mapped[str] = mapped_column(String(32), nullable=False)
     page_count: Mapped[int] = mapped_column(Integer, nullable=False)
     theme_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    # 相对 theme_id 预设的局部覆盖；空对象表示纯预设
+    theme_overrides: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
 
     created_at: Mapped[datetime] = mapped_column(

@@ -200,6 +200,26 @@ export interface paths {
         patch: operations["update_project_api_v1_projects__project_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/theme": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Project Theme
+         * @description 更新主题预设或细粒度覆盖；大纲确认后仍可用。
+         */
+        patch: operations["update_project_theme_api_v1_projects__project_id__theme_patch"];
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/sources": {
         parameters: {
             query?: never;
@@ -479,6 +499,26 @@ export interface paths {
         patch: operations["update_slide_block_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/blocks/{block_id}/style": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Slide Block Style
+         * @description 更新元素级样式覆盖。不置 locked：改颜色不该挡住 AI 改写文字。
+         */
+        patch: operations["update_slide_block_style_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__style_patch"];
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/deck/slides/order": {
         parameters: {
             query?: never;
@@ -649,6 +689,41 @@ export interface components {
             /** Revision */
             revision: number;
         };
+        /**
+         * BlockStyle
+         * @description 单个元素相对主题的样式覆盖。
+         */
+        BlockStyle: {
+            /** Size Pt */
+            size_pt?: number | null;
+            /** Color */
+            color?: string | null;
+            /** Weight */
+            weight?: number | null;
+            /** Italic */
+            italic?: boolean | null;
+            /** Align */
+            align?: ("left" | "center" | "right") | null;
+            /** Fill */
+            fill?: string | null;
+            /** Radius Pt */
+            radius_pt?: number | null;
+            /** Border Color */
+            border_color?: string | null;
+            /** Border Width Pt */
+            border_width_pt?: number | null;
+            /** Padding Pt */
+            padding_pt?: number | null;
+        };
+        /**
+         * BlockStyleUpdate
+         * @description 元素级样式覆盖；style 为 null 表示清除该元素的全部微调。
+         */
+        BlockStyleUpdate: {
+            /** Revision */
+            revision: number;
+            style?: components["schemas"]["BlockStyle"] | null;
+        };
         /** Body_replace_slide_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_put */
         Body_replace_slide_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_put: {
             /** File */
@@ -672,6 +747,7 @@ export interface components {
              * @default false
              */
             locked: boolean;
+            style?: components["schemas"]["BlockStyle"] | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -715,6 +791,7 @@ export interface components {
              * @default false
              */
             locked: boolean;
+            style?: components["schemas"]["BlockStyle"] | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -898,6 +975,7 @@ export interface components {
              * @default false
              */
             locked: boolean;
+            style?: components["schemas"]["BlockStyle"] | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -926,6 +1004,7 @@ export interface components {
              * @default false
              */
             locked: boolean;
+            style?: components["schemas"]["BlockStyle"] | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -1121,6 +1200,27 @@ export interface components {
             /** Chart Series */
             chart_series: string[];
         };
+        /** PaletteOverride */
+        PaletteOverride: {
+            /** Background */
+            background?: string | null;
+            /** Surface */
+            surface?: string | null;
+            /** Ink */
+            ink?: string | null;
+            /** Ink Soft */
+            ink_soft?: string | null;
+            /** Ink Muted */
+            ink_muted?: string | null;
+            /** Accent */
+            accent?: string | null;
+            /** Accent Soft */
+            accent_soft?: string | null;
+            /** Line */
+            line?: string | null;
+            /** Line Strong */
+            line_strong?: string | null;
+        };
         /** ProjectCreate */
         ProjectCreate: {
             /** Title */
@@ -1164,6 +1264,10 @@ export interface components {
             page_count: number;
             /** Theme Id */
             theme_id: string;
+            /** Theme Overrides */
+            theme_overrides?: {
+                [key: string]: unknown;
+            };
             /**
              * Status
              * @enum {string}
@@ -1202,6 +1306,10 @@ export interface components {
             page_count: number;
             /** Theme Id */
             theme_id: string;
+            /** Theme Overrides */
+            theme_overrides?: {
+                [key: string]: unknown;
+            };
             /**
              * Status
              * @enum {string}
@@ -1217,6 +1325,15 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * ProjectThemeUpdate
+         * @description 样式专用更新：不受大纲 confirmed 锁定。
+         */
+        ProjectThemeUpdate: {
+            /** Theme Id */
+            theme_id?: string | null;
+            overrides?: components["schemas"]["ThemeOverrides"] | null;
         };
         /** ProjectUpdate */
         ProjectUpdate: {
@@ -1269,6 +1386,13 @@ export interface components {
              * @enum {string}
              */
             bullet_marker: "rule" | "dot" | "index";
+        };
+        /** ShapeOverride */
+        ShapeOverride: {
+            /** Radius Pt */
+            radius_pt?: number | null;
+            /** Bullet Marker */
+            bullet_marker?: ("rule" | "dot" | "index") | null;
         };
         /** Slide */
         Slide: {
@@ -1407,7 +1531,7 @@ export interface components {
         };
         /**
          * SourceSection
-         * @description 输入材料的一个小节。
+         * @description 输入材料的一个章节。
          *
          *     保留标题层级而非拍平成纯文本，是因为大纲规划本质上是结构提炼：
          *     原文档已有的结构信息如果丢掉，等于让模型再猜一遍。
@@ -1453,6 +1577,7 @@ export interface components {
              * @default false
              */
             locked: boolean;
+            style?: components["schemas"]["BlockStyle"] | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -1502,6 +1627,7 @@ export interface components {
              * @default false
              */
             locked: boolean;
+            style?: components["schemas"]["BlockStyle"] | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -1559,11 +1685,18 @@ export interface components {
             weight: number;
             /** Letter Spacing Pt */
             letter_spacing_pt: number;
+            /** Color */
+            color: string;
             /**
-             * Color
-             * @enum {string}
+             * Italic
+             * @default false
              */
-            color: "background" | "surface" | "ink" | "ink_soft" | "ink_muted" | "accent" | "accent_soft" | "line" | "line_strong";
+            italic: boolean;
+        };
+        /** TextStyleSizeOverride */
+        TextStyleSizeOverride: {
+            /** Size Pt */
+            size_pt?: number | null;
         };
         /** Theme */
         Theme: {
@@ -1580,6 +1713,19 @@ export interface components {
                 [key: string]: components["schemas"]["TextStyle"];
             };
             shape: components["schemas"]["Shape"];
+        };
+        /**
+         * ThemeOverrides
+         * @description 相对预设主题的安全子集覆盖。
+         */
+        ThemeOverrides: {
+            palette?: components["schemas"]["PaletteOverride"] | null;
+            fonts?: components["schemas"]["Fonts"] | null;
+            /** Text Styles */
+            text_styles?: {
+                [key: string]: components["schemas"]["TextStyleSizeOverride"];
+            } | null;
+            shape?: components["schemas"]["ShapeOverride"] | null;
         };
         /** TokenResponse */
         TokenResponse: {
@@ -1985,6 +2131,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProjectUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_project_theme_api_v1_projects__project_id__theme_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectThemeUpdate"];
             };
         };
         responses: {
@@ -2548,6 +2729,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TextBlockUpdate"] | components["schemas"]["BulletsBlockUpdate"] | components["schemas"]["KpiBlockUpdate"] | components["schemas"]["TableBlockUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_slide_block_style_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__style_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                block_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockStyleUpdate"];
             };
         };
         responses: {

@@ -4,12 +4,18 @@ from pydantic import BaseModel
 
 from app.domain.content import Block, Deck, Slide
 from app.domain.layout import Slot, get_layout
-from app.domain.theme import get_theme
+from app.domain.theme import Theme, get_theme
 
 IssueSeverity = Literal["error", "warning"]
 
-# 单页校验在缺少主题上下文时的回退；正式路径应传入项目 theme_id
+# 单页校验在缺少主题上下文时的回退；正式路径应传入项目主题
 _DEFAULT_THEME_ID = "ivory"
+
+
+def _resolve_theme(*, theme: Theme | None = None, theme_id: str | None = None) -> Theme:
+    if theme is not None:
+        return theme
+    return get_theme(theme_id or _DEFAULT_THEME_ID)
 
 
 class StructureIssue(BaseModel):
@@ -65,7 +71,7 @@ def _capacity_issues(slide_id: str, slot: Slot, block: Block) -> list[StructureI
 
 
 def _overflow_issues(
-    slide_id: str, slot: Slot, block: Block, *, theme_id: str
+    slide_id: str, slot: Slot, block: Block, *, theme: Theme
 ) -> list[StructureIssue]:
     """基于字体度量的文字溢出检测；warning，不阻断。"""
     if block.type not in {"text", "bullets"}:
@@ -73,21 +79,20 @@ def _overflow_issues(
     if slot.text_style is None:
         return []
 
+    from app.domain.block_style import content_rect_pt, merge_text_style, resolve_box
     from app.domain.text_metrics import measure_bullets, measure_text
 
-    try:
-        theme = get_theme(theme_id)
-    except KeyError:
-        return []
-
     _x, _y, width_pt, height_pt = slot.rect.to_points()
+    box = resolve_box(theme, block.style)
+    avail_w, avail_h = content_rect_pt(width_pt, height_pt, padding_pt=box.padding_pt)
+
     if block.type == "text":
-        style = theme.text_style(slot.text_style or "body")
-        result = measure_text(block.text, style=style, width_pt=width_pt, height_pt=height_pt)
+        style = merge_text_style(theme, slot.text_style or "body", block.style)
+        result = measure_text(block.text, style=style, width_pt=avail_w, height_pt=avail_h)
         label = "文字"
     else:
-        style = theme.text_style(slot.text_style or "bullet")
-        result = measure_bullets(block.items, style=style, width_pt=width_pt, height_pt=height_pt)
+        style = merge_text_style(theme, slot.text_style or "bullet", block.style)
+        result = measure_bullets(block.items, style=style, width_pt=avail_w, height_pt=avail_h)
         label = "要点"
 
     if not result.overflows:
@@ -108,8 +113,19 @@ def _overflow_issues(
     ]
 
 
-def validate_slide(slide: Slide, *, theme_id: str | None = None) -> list[StructureIssue]:
-    resolved_theme = theme_id or _DEFAULT_THEME_ID
+def validate_slide(
+    slide: Slide,
+    *,
+    theme_id: str | None = None,
+    theme: Theme | None = None,
+) -> list[StructureIssue]:
+    try:
+        resolved_theme = _resolve_theme(theme=theme, theme_id=theme_id)
+    except KeyError as error:
+        return [
+            StructureIssue(severity="error", slide_id=slide.id, slot_id=None, message=str(error))
+        ]
+
     try:
         layout = get_layout(slide.layout_id)
     except KeyError as error:
@@ -157,7 +173,7 @@ def validate_slide(slide: Slide, *, theme_id: str | None = None) -> list[Structu
 
         # 字数上限是提示词约束依据，保留；度量溢出是更准的一层 warning
         issues.extend(_capacity_issues(slide.id, slot, block))
-        issues.extend(_overflow_issues(slide.id, slot, block, theme_id=resolved_theme))
+        issues.extend(_overflow_issues(slide.id, slot, block, theme=resolved_theme))
 
     for slot in layout.slots:
         if slot.required and slot.id not in seen:
@@ -173,10 +189,14 @@ def validate_slide(slide: Slide, *, theme_id: str | None = None) -> list[Structu
     return issues
 
 
-def validate_deck(deck: Deck) -> list[StructureIssue]:
-    return [
-        issue for slide in deck.slides for issue in validate_slide(slide, theme_id=deck.theme_id)
-    ]
+def validate_deck(deck: Deck, *, theme: Theme | None = None) -> list[StructureIssue]:
+    resolved = theme
+    if resolved is None:
+        try:
+            resolved = get_theme(deck.theme_id)
+        except KeyError:
+            resolved = get_theme(_DEFAULT_THEME_ID)
+    return [issue for slide in deck.slides for issue in validate_slide(slide, theme=resolved)]
 
 
 def has_blocking_issue(issues: list[StructureIssue]) -> bool:

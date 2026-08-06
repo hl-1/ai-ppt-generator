@@ -8,6 +8,7 @@ from app.core.redis import get_redis
 from app.domain.content import Block
 from app.domain.content import Slide as ContentSlide
 from app.domain.outline import OutlinePage
+from app.domain.theme import Theme
 from app.domain.validation import validate_slide
 from app.models.project import Project
 from app.models.slide import Slide
@@ -33,7 +34,12 @@ async def load_slides(session: AsyncSession, project_id: uuid.UUID) -> list[Slid
     return list(result.scalars())
 
 
-def refresh_slide_issues(slide: Slide, *, theme_id: str) -> None:
+def refresh_slide_issues(
+    slide: Slide,
+    *,
+    theme_id: str | None = None,
+    theme: Theme | None = None,
+) -> None:
     """按当前 blocks/layout/主题重算结构与溢出告警并写回 JSONB。"""
     content = ContentSlide(
         id=str(slide.id),
@@ -42,7 +48,10 @@ def refresh_slide_issues(slide: Slide, *, theme_id: str) -> None:
         speaker_notes=slide.speaker_notes,
         revision=slide.revision,
     )
-    slide.issues = [issue.model_dump() for issue in validate_slide(content, theme_id=theme_id)]
+    slide.issues = [
+        issue.model_dump()
+        for issue in validate_slide(content, theme_id=theme_id, theme=theme)
+    ]
 
 
 async def sync_slides(

@@ -6,6 +6,7 @@ import {
   Loader2,
   Minus,
   MoreHorizontal,
+  Palette,
   Play,
   Plus,
   RefreshCw,
@@ -24,25 +25,31 @@ import {
   useRetrySlide,
 } from '@/features/deck/api'
 import { AiEditPanel } from '@/features/deck/AiEditPanel'
+import { ElementToolbar } from '@/features/deck/ElementToolbar'
 import { ExportDialog } from '@/features/deck/ExportDialog'
 import { Filmstrip } from '@/features/deck/Filmstrip'
 import { ImagePanel } from '@/features/deck/ImagePanel'
 import { LayoutPanel } from '@/features/deck/LayoutPanel'
 import { PresentMode } from '@/features/deck/PresentMode'
+import { ThemePanel } from '@/features/deck/ThemePanel'
 import { type DeckSlide, toRenderSlide } from '@/features/deck/types'
 import { useDeckProgress } from '@/features/deck/useDeckProgress'
 import { type SaveStatus, useSlideSaveQueue } from '@/features/deck/useSlideSaveQueue'
 import type { ProjectDetail } from '@/features/projects/types'
 import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
-import { getTheme } from '@/render/design'
+import type { BlockStyle } from '@/render/blockStyle'
 import { SlideView } from '@/render/SlideView'
+import { resolveTheme, type ThemeOverrides } from '@/render/themeOverrides'
 import type { Theme } from '@/render/types'
 
-type RailTab = 'ai' | 'layout' | 'image'
+type BlockSelection = { slideId: string; blockId: string }
+
+type RailTab = 'ai' | 'theme' | 'layout' | 'image'
 
 const RAIL_TABS: Array<{ tab: RailTab; label: string; icon: typeof Wand2 }> = [
   { tab: 'ai', label: 'AI 修改', icon: Wand2 },
+  { tab: 'theme', label: '主题', icon: Palette },
   { tab: 'layout', label: '版式', icon: LayoutTemplate },
   { tab: 'image', label: '图片', icon: ImageIcon },
 ]
@@ -68,7 +75,10 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
             (slide) => slide.status === 'pending' || slide.status === 'generating',
           ))))
   const progress = useDeckProgress(project.id, generating)
-  const theme = getTheme(project.theme_id)
+  const theme = resolveTheme(
+    project.theme_id,
+    (project.theme_overrides ?? {}) as ThemeOverrides,
+  )
 
   const generate = useGenerateDeck(project.id)
   const cancel = useCancelDeck(project.id)
@@ -207,7 +217,7 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
 
         {active && (
           <Rail
-            projectId={project.id}
+            project={project}
             slide={active}
             tab={rail}
             locked={generating}
@@ -268,10 +278,27 @@ function SlideStage({
   const scrollerRef = useRef<HTMLDivElement>(null)
   const slideElsRef = useRef(new Map<string, HTMLElement>())
   const ignoreObserverRef = useRef(false)
+  const [selection, setSelection] = useState<BlockSelection | null>(null)
   const slideIdsKey = slides.map((slide) => slide.id).join('|')
   const active = slides.find((slide) => slide.id === activeId) ?? null
   const warnings =
     active?.issues.filter((issue) => issue.severity === 'warning') ?? []
+
+  // 翻页或选中页失效时清掉元素选中
+  useEffect(() => {
+    setSelection((current) => {
+      if (!current) return null
+      if (!slides.some((slide) => slide.id === current.slideId)) return null
+      return current
+    })
+  }, [slideIdsKey])
+
+  useEffect(() => {
+    if (!activeId) return
+    setSelection((current) =>
+      current && current.slideId !== activeId ? null : current,
+    )
+  }, [activeId])
 
   const bindSlideEl = (slideId: string, node: HTMLElement | null) => {
     if (node) slideElsRef.current.set(slideId, node)
@@ -341,6 +368,12 @@ function SlideStage({
               index={index}
               total={slides.length}
               active={slide.id === activeId}
+              selectedBlockId={
+                selection?.slideId === slide.id ? selection.blockId : null
+              }
+              onSelectBlock={(blockId) =>
+                setSelection(blockId ? { slideId: slide.id, blockId } : null)
+              }
               bindEl={bindSlideEl}
             />
           ))}
@@ -376,7 +409,7 @@ function SlideStage({
           {locked
             ? '生成中暂不可编辑'
             : active?.status === 'ready'
-              ? '向下滚动切换页面；点击文字即可修改'
+              ? '点击元素调样式；Ctrl/⌘+Z 撤销，Ctrl/⌘+Shift+Z 重做'
               : '向下滚动查看其他页面'}
         </span>
 
@@ -400,6 +433,8 @@ function SlidePage({
   index,
   total,
   active,
+  selectedBlockId,
+  onSelectBlock,
   bindEl,
 }: {
   projectId: string
@@ -410,18 +445,88 @@ function SlidePage({
   index: number
   total: number
   active: boolean
+  selectedBlockId: string | null
+  onSelectBlock: (blockId: string | null) => void
   bindEl: (slideId: string, node: HTMLElement | null) => void
 }) {
-  const { commit, status, error, refresh } = useSlideSaveQueue(projectId, slide.id)
+  const {
+    commit,
+    commitStyle,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    historyTick,
+    status,
+    error,
+    refresh,
+  } = useSlideSaveQueue(projectId, slide.id)
   const retry = useRetrySlide(projectId)
   const editable = slide.status === 'ready' && !locked && status !== 'conflict'
+  const articleRef = useRef<HTMLElement | null>(null)
+  const [blockEl, setBlockEl] = useState<HTMLElement | null>(null)
+  const selectedBlock =
+    selectedBlockId != null
+      ? (slide.blocks.find((block) => block.id === selectedBlockId) ?? null)
+      : null
+
+  useEffect(() => {
+    if (!selectedBlockId || !articleRef.current) {
+      setBlockEl(null)
+      return
+    }
+    const node = articleRef.current.querySelector<HTMLElement>(
+      `[data-block-id="${CSS.escape(selectedBlockId)}"]`,
+    )
+    setBlockEl(node)
+  }, [selectedBlockId, slide.blocks, zoom])
+
+  // 仅当前可视页响应撤销/重做，避免多页 SlidePage 抢同一快捷键
+  useEffect(() => {
+    if (!active || !editable) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey
+      if (!mod) return
+      const key = event.key.toLowerCase()
+      const isUndo = key === 'z' && !event.shiftKey
+      const isRedo = (key === 'z' && event.shiftKey) || key === 'y'
+      if (!isUndo && !isRedo) return
+
+      const target = event.target as HTMLElement | null
+      // 系统输入框（若有）不拦截；画布 contenteditable 的未提交草稿由 EditableText 处理
+      if (
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') &&
+        !target.closest('[data-slide-id]')
+      ) {
+        return
+      }
+
+      if (isUndo) {
+        if (!canUndo) return
+        event.preventDefault()
+        undo()
+        return
+      }
+      if (!canRedo) return
+      event.preventDefault()
+      redo()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [active, editable, canUndo, canRedo, undo, redo, historyTick])
 
   return (
     <article
-      ref={(node) => bindEl(slide.id, node)}
+      ref={(node) => {
+        articleRef.current = node
+        bindEl(slide.id, node)
+      }}
       data-slide-id={slide.id}
       aria-current={active ? 'true' : undefined}
-      className="flex w-full flex-col items-center gap-2"
+      className="relative flex w-full flex-col items-center gap-2"
     >
       <div className="flex w-full max-w-[76rem] items-center gap-2 px-1">
         <span
@@ -448,6 +553,8 @@ function SlidePage({
             slide={toRenderSlide(slide)}
             theme={theme}
             editable={editable}
+            selectedBlockId={selectedBlockId}
+            onSelectBlock={onSelectBlock}
             onCommit={commit}
           />
         </div>
@@ -462,6 +569,18 @@ function SlidePage({
             onRetry={() => retry.mutate(slide.id)}
           />
         </div>
+      )}
+
+      {editable && selectedBlock && (
+        <ElementToolbar
+          articleEl={articleRef.current}
+          blockEl={blockEl}
+          block={selectedBlock}
+          theme={theme}
+          disabled={status === 'saving'}
+          onChange={(style: BlockStyle | null) => commitStyle(selectedBlock.id, style)}
+          onDismiss={() => onSelectBlock(null)}
+        />
       )}
     </article>
   )
@@ -519,13 +638,13 @@ function EmptyStage({ pending, onGenerate }: { pending: boolean; onGenerate: () 
 }
 
 function Rail({
-  projectId,
+  project,
   slide,
   tab,
   locked,
   onTab,
 }: {
-  projectId: string
+  project: ProjectDetail
   slide: DeckSlide
   tab: RailTab | null
   locked: boolean
@@ -535,11 +654,14 @@ function Rail({
     <div className="flex shrink-0">
       {tab && (
         <aside className="scrollbar-slim w-80 overflow-y-auto border-l border-line bg-surface px-4 py-4">
-          {tab === 'ai' && <AiEditPanel projectId={projectId} slide={slide} />}
+          {tab === 'ai' && <AiEditPanel projectId={project.id} slide={slide} />}
+          {tab === 'theme' && <ThemePanel project={project} disabled={locked} />}
           {tab === 'layout' && (
-            <LayoutPanel projectId={projectId} slide={slide} disabled={locked} />
+            <LayoutPanel projectId={project.id} slide={slide} disabled={locked} />
           )}
-          {tab === 'image' && <ImagePanel projectId={projectId} slide={slide} disabled={locked} />}
+          {tab === 'image' && (
+            <ImagePanel projectId={project.id} slide={slide} disabled={locked} />
+          )}
         </aside>
       )}
 

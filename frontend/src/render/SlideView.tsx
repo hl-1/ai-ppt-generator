@@ -13,6 +13,8 @@ interface SlideViewProps {
   slide: Slide
   theme: Theme
   editable?: boolean
+  selectedBlockId?: string | null
+  onSelectBlock?: (blockId: string | null) => void
   onCommit?: (blockId: string, body: EditableBlockCommit) => void
 }
 
@@ -25,7 +27,14 @@ interface SlideViewProps {
  *
  * 编辑态复用同一棵渲染树：仅把可写字段换成受约束的 contenteditable。
  */
-export function SlideView({ slide, theme, editable = false, onCommit }: SlideViewProps) {
+export function SlideView({
+  slide,
+  theme,
+  editable = false,
+  selectedBlockId = null,
+  onSelectBlock,
+  onCommit,
+}: SlideViewProps) {
   const layout = getLayout(slide.layout_id)
 
   return (
@@ -37,6 +46,12 @@ export function SlideView({ slide, theme, editable = false, onCommit }: SlideVie
         aspectRatio: `${CANVAS_WIDTH_PT} / ${CANVAS_HEIGHT_PT}`,
         background: resolveColor(theme, 'background'),
         overflow: 'hidden',
+      }}
+      onPointerDown={(event) => {
+        if (!editable || !onSelectBlock) return
+        // 点在空白处（非 block）才清空选中
+        if ((event.target as HTMLElement).closest('[data-block-id]')) return
+        onSelectBlock(null)
       }}
     >
       {layout.decorations.map((decoration, index) => (
@@ -53,11 +68,29 @@ export function SlideView({ slide, theme, editable = false, onCommit }: SlideVie
       {slide.blocks.map((block) => {
         const slot = layout.slots.find((candidate) => candidate.id === block.slot_id)
         if (!slot) return null
+        const selected = selectedBlockId === block.id
+        const selectable = editable && block.type !== 'chart'
 
         return (
           <div
             key={block.id}
-            style={{ ...rectToStyle(slot.rect), overflow: 'hidden' }}
+            data-block-id={block.id}
+            style={{
+              ...rectToStyle(slot.rect),
+              overflow: 'hidden',
+              outline: selected
+                ? `2px solid ${resolveColor(theme, 'accent')}`
+                : '2px solid transparent',
+              outlineOffset: selected ? '2px' : 0,
+              cursor: selectable ? 'pointer' : undefined,
+              zIndex: selected ? 3 : 1,
+            }}
+            onPointerDown={(event) => {
+              if (!selectable || !onSelectBlock) return
+              // 不阻断 contenteditable 的聚焦；仅同步选中
+              event.stopPropagation()
+              onSelectBlock(block.id)
+            }}
           >
             {editable && block.locked && (
               <span
@@ -81,6 +114,7 @@ export function SlideView({ slide, theme, editable = false, onCommit }: SlideVie
               theme={theme}
               editable={editable}
               onCommit={onCommit}
+              onSelect={onSelectBlock ?? undefined}
             />
           </div>
         )

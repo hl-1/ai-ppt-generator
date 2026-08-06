@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from pydantic import TypeAdapter
@@ -12,6 +12,7 @@ from app.domain.slide_patch import (
     apply_patches,
     filter_patches,
 )
+from app.domain.theme import resolve_theme
 from app.domain.validation import StructureIssue, has_blocking_issue, validate_slide
 from app.llm.base import SlideEditGenerator, SlideEditInput
 from app.llm.errors import InvalidSlideEditOutputError
@@ -27,6 +28,7 @@ class SlideEditWorkflowState(TypedDict, total=False):
     slide_id: str
     layout_id: str
     theme_id: str
+    theme_overrides: dict[str, Any]
     original_blocks: list[Block]
     operations: list[BlockPatch]
     discarded: list[DiscardedPatch]
@@ -54,7 +56,12 @@ def build_slide_edit_workflow(generator: SlideEditGenerator):
             "operations": filtered.accepted,
             "discarded": filtered.discarded,
             "patched_blocks": patched,
-            "issues": validate_slide(slide, theme_id=state.get("theme_id")),
+            "issues": validate_slide(
+                slide,
+                theme=resolve_theme(
+                    state.get("theme_id") or "ivory", state.get("theme_overrides")
+                ),
+            ),
         }
 
     async def repair(state: SlideEditWorkflowState) -> dict:
@@ -89,6 +96,7 @@ async def run_slide_edit_workflow(
     layout_id: str,
     blocks: list[Block],
     theme_id: str | None = None,
+    theme_overrides: dict[str, Any] | None = None,
 ) -> tuple[list[BlockPatch], list[DiscardedPatch], list[StructureIssue], list[Block]]:
     result = await workflow.ainvoke(
         {
@@ -96,6 +104,7 @@ async def run_slide_edit_workflow(
             "slide_id": slide_id,
             "layout_id": layout_id,
             "theme_id": theme_id or "ivory",
+            "theme_overrides": theme_overrides or {},
             "original_blocks": blocks,
             "repairs": 0,
         }

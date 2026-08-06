@@ -1,7 +1,8 @@
 import type { CSSProperties } from 'react'
+import { boxCss, mergeTextCss } from '@/render/blockStyle'
 import { ChartView } from '@/render/ChartView'
 import { EditableText } from '@/render/EditableText'
-import { pt, resolveColor, textStyleToCss } from '@/render/style'
+import { pt, resolveColor } from '@/render/style'
 import type {
   Block,
   BulletsBlock,
@@ -24,26 +25,35 @@ interface BlockProps<T> {
   theme: Theme
   editable?: boolean
   onCommit?: (blockId: string, body: EditableBlockCommit) => void
+  onSelect?: (blockId: string) => void
 }
 
-function TextView({ block, slot, theme, editable, onCommit }: BlockProps<TextBlock>) {
+function TextView({ block, slot, theme, editable, onCommit, onSelect }: BlockProps<TextBlock>) {
   const styleName = slot.text_style ?? 'body'
-  const style = textStyleToCss(theme, styleName)
+  const style = mergeTextCss(theme, styleName, block.style)
+  const chrome = boxCss(theme, block.style)
 
   if (!editable || !onCommit) {
-    return <p style={{ ...style, margin: 0 }}>{block.text}</p>
+    return (
+      <div style={chrome}>
+        <p style={{ ...style, margin: 0 }}>{block.text}</p>
+      </div>
+    )
   }
 
   return (
-    <p style={{ ...style, margin: 0 }}>
-      <EditableText
-        value={block.text}
-        ariaLabel="编辑文字"
-        multiline={MULTILINE_STYLES.has(styleName)}
-        style={style}
-        onCommit={(text) => onCommit(block.id, { type: 'text', text })}
-      />
-    </p>
+    <div style={chrome}>
+      <p style={{ ...style, margin: 0 }}>
+        <EditableText
+          value={block.text}
+          ariaLabel="编辑文字"
+          multiline={MULTILINE_STYLES.has(styleName)}
+          style={style}
+          onFocus={() => onSelect?.(block.id)}
+          onCommit={(text) => onCommit(block.id, { type: 'text', text })}
+        />
+      </p>
+    </div>
   )
 }
 
@@ -95,37 +105,48 @@ function BulletMarker({ theme, index }: { theme: Theme; index: number }) {
   )
 }
 
-function BulletsView({ block, slot, theme, editable, onCommit }: BlockProps<BulletsBlock>) {
-  const textStyle = textStyleToCss(theme, slot.text_style ?? 'bullet')
+function BulletsView({
+  block,
+  slot,
+  theme,
+  editable,
+  onCommit,
+  onSelect,
+}: BlockProps<BulletsBlock>) {
+  const textStyle = mergeTextCss(theme, slot.text_style ?? 'bullet', block.style)
+  const chrome = boxCss(theme, block.style)
 
   return (
-    <ul
-      style={{
-        ...textStyle,
-        listStyle: 'none',
-        margin: 0,
-        padding: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: pt(12),
-      }}
-    >
-      {block.items.map((item, index) => (
-        <li key={`${block.id}-${index}`} style={{ display: 'flex', alignItems: 'flex-start' }}>
-          <BulletMarker theme={theme} index={index} />
-          {editable && onCommit ? (
-            <EditableText
-              value={item}
-              ariaLabel={`编辑要点 ${index + 1}`}
-              style={{ ...textStyle, flex: 1 }}
-              onCommit={(text) => onCommit(block.id, { type: 'bullets', index, text })}
-            />
-          ) : (
-            <span>{item}</span>
-          )}
-        </li>
-      ))}
-    </ul>
+    <div style={chrome}>
+      <ul
+        style={{
+          ...textStyle,
+          listStyle: 'none',
+          margin: 0,
+          padding: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: pt(12),
+        }}
+      >
+        {block.items.map((item, index) => (
+          <li key={`${block.id}-${index}`} style={{ display: 'flex', alignItems: 'flex-start' }}>
+            <BulletMarker theme={theme} index={index} />
+            {editable && onCommit ? (
+              <EditableText
+                value={item}
+                ariaLabel={`编辑要点 ${index + 1}`}
+                style={{ ...textStyle, flex: 1 }}
+                onFocus={() => onSelect?.(block.id)}
+                onCommit={(text) => onCommit(block.id, { type: 'bullets', index, text })}
+              />
+            ) : (
+              <span>{item}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -153,23 +174,46 @@ function ImagePlaceholder({ theme, alt }: { theme: Theme; alt: string }) {
 }
 
 function ImageView({ block, theme }: BlockProps<ImageBlock>) {
+  const border =
+    block.style?.border_color != null &&
+    block.style?.border_width_pt != null &&
+    block.style.border_width_pt > 0
+      ? {
+          border: `${pt(block.style.border_width_pt)} solid ${
+            block.style.border_color.startsWith('#')
+              ? block.style.border_color
+              : resolveColor(theme, block.style.border_color)
+          }`,
+          boxSizing: 'border-box' as const,
+          width: '100%',
+          height: '100%',
+        }
+      : { width: '100%', height: '100%' }
+
   if (!block.url) {
-    return <ImagePlaceholder theme={theme} alt={block.alt} />
+    return (
+      <div style={border}>
+        <ImagePlaceholder theme={theme} alt={block.alt} />
+      </div>
+    )
   }
   return (
     <img
       src={block.url}
       alt={block.alt}
-      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+      style={{ ...border, objectFit: 'cover', display: 'block' }}
     />
   )
 }
 
-function TableView({ block, theme, editable, onCommit }: BlockProps<TableBlock>) {
-  const headerStyle = textStyleToCss(theme, 'table_header')
-  const cellStyle = textStyleToCss(theme, 'table_cell')
+function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<TableBlock>) {
+  const headerStyle = mergeTextCss(theme, 'table_header', block.style)
+  const cellStyle = mergeTextCss(theme, 'table_cell', block.style)
   const border = `${pt(theme.shape.border_width_pt)} solid ${resolveColor(theme, 'line')}`
   const cellPadding: CSSProperties = { padding: `${pt(9)} ${pt(12)}`, textAlign: 'left' }
+  if (block.style?.align) {
+    cellPadding.textAlign = block.style.align
+  }
 
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
@@ -189,6 +233,7 @@ function TableView({ block, theme, editable, onCommit }: BlockProps<TableBlock>)
                   value={cell}
                   ariaLabel={`编辑表头 ${index + 1}`}
                   style={headerStyle}
+                  onFocus={() => onSelect?.(block.id)}
                   onCommit={(text) =>
                     onCommit(block.id, { type: 'table', kind: 'header', index, text })
                   }
@@ -213,6 +258,7 @@ function TableView({ block, theme, editable, onCommit }: BlockProps<TableBlock>)
                     value={cell}
                     ariaLabel={`编辑单元格 ${rowIndex + 1}-${cellIndex + 1}`}
                     style={cellStyle}
+                    onFocus={() => onSelect?.(block.id)}
                     onCommit={(text) =>
                       onCommit(block.id, {
                         type: 'table',
@@ -235,14 +281,15 @@ function TableView({ block, theme, editable, onCommit }: BlockProps<TableBlock>)
   )
 }
 
-function KpiView({ block, theme, editable, onCommit }: BlockProps<KpiBlock>) {
-  const valueStyle = textStyleToCss(theme, 'kpi_value')
-  const labelStyle = textStyleToCss(theme, 'kpi_label')
-  const noteStyle = textStyleToCss(theme, 'kpi_note')
+function KpiView({ block, theme, editable, onCommit, onSelect }: BlockProps<KpiBlock>) {
+  const valueStyle = mergeTextCss(theme, 'kpi_value', block.style)
+  const labelStyle = mergeTextCss(theme, 'kpi_label', block.style)
+  const noteStyle = mergeTextCss(theme, 'kpi_note', block.style)
+  const chrome = boxCss(theme, block.style)
 
   if (!editable || !onCommit) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: pt(8) }}>
+      <div style={{ ...chrome, display: 'flex', flexDirection: 'column', gap: pt(8) }}>
         <span style={{ ...valueStyle, whiteSpace: 'nowrap' }}>{block.value}</span>
         <span style={labelStyle}>{block.label}</span>
         {block.note && <span style={noteStyle}>{block.note}</span>}
@@ -251,30 +298,40 @@ function KpiView({ block, theme, editable, onCommit }: BlockProps<KpiBlock>) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: pt(8) }}>
+    <div style={{ ...chrome, display: 'flex', flexDirection: 'column', gap: pt(8) }}>
       <EditableText
         value={block.value}
         ariaLabel="编辑指标数值"
         style={{ ...valueStyle, whiteSpace: 'nowrap' }}
+        onFocus={() => onSelect?.(block.id)}
         onCommit={(text) => onCommit(block.id, { type: 'kpi', field: 'value', text })}
       />
       <EditableText
         value={block.label}
         ariaLabel="编辑指标标签"
         style={labelStyle}
+        onFocus={() => onSelect?.(block.id)}
         onCommit={(text) => onCommit(block.id, { type: 'kpi', field: 'label', text })}
       />
       <EditableText
         value={block.note ?? ''}
         ariaLabel="编辑指标备注"
         style={noteStyle}
+        onFocus={() => onSelect?.(block.id)}
         onCommit={(text) => onCommit(block.id, { type: 'kpi', field: 'note', text })}
       />
     </div>
   )
 }
 
-export function BlockView({ block, slot, theme, editable, onCommit }: BlockProps<Block>) {
+export function BlockView({
+  block,
+  slot,
+  theme,
+  editable,
+  onCommit,
+  onSelect,
+}: BlockProps<Block>) {
   switch (block.type) {
     case 'text':
       return (
@@ -284,6 +341,7 @@ export function BlockView({ block, slot, theme, editable, onCommit }: BlockProps
           theme={theme}
           editable={editable}
           onCommit={onCommit}
+          onSelect={onSelect}
         />
       )
     case 'bullets':
@@ -294,6 +352,7 @@ export function BlockView({ block, slot, theme, editable, onCommit }: BlockProps
           theme={theme}
           editable={editable}
           onCommit={onCommit}
+          onSelect={onSelect}
         />
       )
     case 'image':
@@ -308,6 +367,7 @@ export function BlockView({ block, slot, theme, editable, onCommit }: BlockProps
           theme={theme}
           editable={editable}
           onCommit={onCommit}
+          onSelect={onSelect}
         />
       )
     case 'kpi':
@@ -318,6 +378,7 @@ export function BlockView({ block, slot, theme, editable, onCommit }: BlockProps
           theme={theme}
           editable={editable}
           onCommit={onCommit}
+          onSelect={onSelect}
         />
       )
   }

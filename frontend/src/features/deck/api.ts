@@ -13,6 +13,7 @@ import type {
   LayoutCandidate,
 } from '@/features/deck/types'
 import { filenameFromDisposition, saveBlob } from '@/lib/download'
+import type { BlockStyle } from '@/render/blockStyle'
 
 export const deckKey = (projectId: string) => ['projects', projectId, 'deck'] as const
 const projectKey = (projectId: string) => ['projects', projectId] as const
@@ -118,6 +119,18 @@ export function updateSlideBlock(
 ) {
   return request<DeckSlide>(
     `/projects/${projectId}/deck/slides/${slideId}/blocks/${blockId}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+  )
+}
+
+export function updateSlideBlockStyle(
+  projectId: string,
+  slideId: string,
+  blockId: string,
+  body: { revision: number; style: BlockStyle | null },
+) {
+  return request<DeckSlide>(
+    `/projects/${projectId}/deck/slides/${slideId}/blocks/${blockId}/style`,
     { method: 'PATCH', body: JSON.stringify(body) },
   )
 }

@@ -37,6 +37,7 @@ from app.domain.slide_patch import (
     filter_patches,
     unlocked_editable_blocks,
 )
+from app.domain.theme import resolve_project_theme
 from app.images.validate import ImageRejected, validate_image
 from app.llm.base import SlideEditInput
 from app.llm.errors import InvalidSlideEditOutputError, LLMNotConfiguredError
@@ -50,6 +51,7 @@ from app.schemas.deck import (
     AiEditOperationPublic,
     AiEditProposalPublic,
     AiEditRequest,
+    BlockStyleUpdate,
     BlockUpdate,
     DeckEvent,
     DeckGenerateAccepted,
@@ -186,7 +188,7 @@ async def export_deck(project: OwnedProject, session: SessionDep) -> StreamingRe
 
     deck = project_to_content_deck(project, slides)
     try:
-        buffer = render_deck_to_pptx(deck, project.theme_id)
+        buffer = render_deck_to_pptx(deck, theme=resolve_project_theme(project))
         payload = buffer.getvalue()
     except Exception as error:
         logger.exception("项目 %s 导出渲染失败", project.id)
@@ -407,7 +409,48 @@ async def update_slide_block(
         updated["rows"] = body.rows
 
     slide.blocks = [updated if block.get("id") == block_id else block for block in slide.blocks]
-    refresh_slide_issues(slide, theme_id=project.theme_id)
+    refresh_slide_issues(slide, theme=resolve_project_theme(project))
+    slide.revision += 1
+    await session.commit()
+    await session.refresh(slide)
+    return SlidePublic.model_validate(slide)
+
+
+@router.patch(
+    "/slides/{slide_id}/blocks/{block_id}/style",
+    response_model=SlidePublic,
+)
+async def update_slide_block_style(
+    slide_id: uuid.UUID,
+    block_id: str,
+    body: BlockStyleUpdate,
+    project: OwnedProject,
+    session: SessionDep,
+) -> SlidePublic:
+    """更新元素级样式覆盖。不置 locked：改颜色不该挡住 AI 改写文字。"""
+    slides = await load_slides(session, project.id)
+    slide = _find_slide(slides, slide_id)
+    target = next((block for block in slide.blocks if block.get("id") == block_id), None)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="内容块不存在")
+
+    _ensure_editable(slide, body.revision)
+
+    # chart 本轮不开放样式；其余类型允许（image 只消费边框字段）
+    if target.get("type") == "chart":
+        raise HTTPException(
+            status_code=422,
+            detail="图表暂不支持元素级样式调整",
+        )
+
+    updated = {**target}
+    if body.style is None or body.style.is_empty():
+        updated["style"] = None
+    else:
+        updated["style"] = body.style.model_dump(mode="json", exclude_none=True)
+
+    slide.blocks = [updated if block.get("id") == block_id else block for block in slide.blocks]
+    refresh_slide_issues(slide, theme=resolve_project_theme(project))
     slide.revision += 1
     await session.commit()
     await session.refresh(slide)
@@ -497,7 +540,7 @@ async def switch_slide_layout(
     # 只改槽位归属，不改块内容与 locked
     slide.blocks = [{**block, "slot_id": result.mapping[block["id"]]} for block in slide.blocks]
     slide.layout_id = body.layout_id
-    refresh_slide_issues(slide, theme_id=project.theme_id)
+    refresh_slide_issues(slide, theme=resolve_project_theme(project))
     slide.revision += 1
     await session.commit()
     await session.refresh(slide)
@@ -549,6 +592,7 @@ async def propose_slide_ai_edit(
             layout_id=slide.layout_id,
             blocks=blocks,
             theme_id=project.theme_id,
+            theme_overrides=dict(project.theme_overrides or {}),
         )
     except LLMNotConfiguredError as error:
         raise HTTPException(
@@ -606,7 +650,7 @@ async def apply_slide_ai_edit(
     # AI 改过的块不置 locked：locked 表示「人工修改过」；若 AI 也置位，
     # 一页被 AI 改过后就再也改不动了。
     slide.blocks = [block.model_dump(mode="json") for block in patched]
-    refresh_slide_issues(slide, theme_id=project.theme_id)
+    refresh_slide_issues(slide, theme=resolve_project_theme(project))
     slide.revision += 1
     await session.commit()
     await session.refresh(slide)

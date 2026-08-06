@@ -9,6 +9,8 @@ import {
 } from '@/render/types'
 
 export function resolveColor(theme: Theme, token: ColorToken | string): string {
+  // 元素覆盖后可能是 #RRGGBB，直接透传
+  if (/^#[0-9A-Fa-f]{6}$/.test(token)) return token.toUpperCase()
   const value = (theme.palette as Record<string, unknown>)[token]
   if (typeof value !== 'string') throw new Error(`主题 ${theme.id} 不存在颜色令牌：${token}`)
   return value

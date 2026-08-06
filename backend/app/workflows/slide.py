@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
 from app.domain.content import Slide
 from app.domain.slide_draft import SlideDraft, draft_to_slide
+from app.domain.theme import resolve_theme
 from app.domain.validation import StructureIssue, validate_slide
 from app.llm.base import SlideGenerationInput, SlideGenerator
 from app.llm.errors import InvalidSlideOutputError
@@ -23,6 +24,7 @@ class SlideWorkflowState(TypedDict, total=False):
     input: SlideGenerationInput
     slide_id: str
     theme_id: str
+    theme_overrides: dict[str, Any]
     draft: SlideDraft
     slide: Slide
     issues: list[StructureIssue]
@@ -72,9 +74,12 @@ def build_slide_workflow(generator: SlideGenerator):
     async def check(state: SlideWorkflowState) -> dict:
         slide_id = uuid.UUID(state["slide_id"])
         slide = draft_to_slide(slide_id, state["input"].layout_id, state["draft"])
+        theme = resolve_theme(
+            state.get("theme_id") or "ivory", state.get("theme_overrides")
+        )
         return {
             "slide": slide,
-            "issues": validate_slide(slide, theme_id=state.get("theme_id")),
+            "issues": validate_slide(slide, theme=theme),
         }
 
     async def repair(state: SlideWorkflowState) -> dict:
@@ -108,9 +113,15 @@ async def run_slide_workflow(
     slide_id: uuid.UUID,
     *,
     theme_id: str | None = None,
+    theme_overrides: dict[str, Any] | None = None,
 ) -> tuple[Slide, list[StructureIssue]]:
     result = await workflow.ainvoke(
-        {"input": payload, "slide_id": str(slide_id), "theme_id": theme_id or "ivory"}
+        {
+            "input": payload,
+            "slide_id": str(slide_id),
+            "theme_id": theme_id or "ivory",
+            "theme_overrides": theme_overrides or {},
+        }
     )
     slide = result.get("slide")
     if not isinstance(slide, Slide):

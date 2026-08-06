@@ -32,6 +32,7 @@ def apply_font_style(font: Font, theme: Theme, style: TextStyle) -> None:
     font.name = family.pptx_latin
     font.size = Pt(style.size_pt)
     font.bold = style.weight >= 600
+    font.italic = style.italic
     font.color.rgb = to_rgb(theme.color(style.color))
     set_east_asian_font(font, family.pptx_east_asian)
 

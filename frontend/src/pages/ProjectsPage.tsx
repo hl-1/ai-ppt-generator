@@ -7,8 +7,8 @@ import { useDeleteProject, useProjects } from '@/features/projects/api'
 import type { Project } from '@/features/projects/types'
 import { relativeTime } from '@/lib/datetime'
 import { errorMessage } from '@/lib/errors'
-import { getTheme } from '@/render/design'
 import { ThemeCover } from '@/render/ThemeCover'
+import { resolveTheme, type ThemeOverrides } from '@/render/themeOverrides'
 
 export default function ProjectsPage() {
   const navigate = useNavigate()
@@ -63,7 +63,10 @@ function ProjectCard({
   deleting: boolean
   onDelete: () => void
 }) {
-  const theme = getTheme(project.theme_id)
+  const theme = resolveTheme(
+    project.theme_id,
+    (project.theme_overrides ?? {}) as ThemeOverrides,
+  )
 
   return (
     <li className="group relative">

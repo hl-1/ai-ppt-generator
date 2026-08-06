@@ -20,7 +20,8 @@ export type Rect = Schemas['Rect']
 export type Theme = Schemas['Theme']
 export type TextStyle = Schemas['TextStyle']
 export type TextStyleName = NonNullable<Slot['text_style']>
-export type ColorToken = TextStyle['color']
+/** 色令牌从 palette 键派生；TextStyle.color 放宽后可能是 hex */
+export type ColorToken = Exclude<keyof Theme['palette'], 'chart_series'>
 
 /** 16:9 基准画布，单位 pt。必须与后端 app/domain/geometry.py 保持一致 */
 export const CANVAS_WIDTH_PT = 960
@@ -33,3 +34,4 @@ export type EditableBlockCommit =
   | { type: 'kpi'; field: 'value' | 'label' | 'note'; text: string }
   | { type: 'table'; kind: 'header'; index: number; text: string }
   | { type: 'table'; kind: 'cell'; row: number; col: number; text: string }
+  | { type: 'style'; style: import('@/render/blockStyle').BlockStyle | null }

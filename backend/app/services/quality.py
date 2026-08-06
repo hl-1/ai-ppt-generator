@@ -11,6 +11,7 @@ from app.domain.content import Deck as ContentDeck
 from app.domain.content import Slide as ContentSlide
 from app.domain.export_check import ExportCheckReport, run_export_check
 from app.domain.outline import OutlinePage
+from app.domain.theme import resolve_project_theme
 from app.llm.base import OutlineSourceSection
 from app.models.project import Project
 from app.models.slide import Slide
@@ -94,6 +95,7 @@ def build_quality_report(project: Project, slides: list[Slide]) -> ExportCheckRe
     deck = project_to_content_deck(project, slides)
     return run_export_check(
         deck,
+        theme=resolve_project_theme(project),
         slide_titles=slide_titles_map(slides),
         slide_sources=slide_sources_map(project, slides),
         load_image=load_image,
