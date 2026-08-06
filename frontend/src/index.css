@@ -72,3 +72,17 @@
   scrollbar-width: thin;
   scrollbar-color: var(--color-line-strong) transparent;
 }
+
+/* 演示翻页轻过渡：瞬切质感，不做花哨动画 */
+@keyframes present-slide-in {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.present-slide-in {
+  animation: present-slide-in 160ms ease-out;
+}
