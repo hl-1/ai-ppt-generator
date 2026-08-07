@@ -9,8 +9,16 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_queue
 from app.core.db import async_session_factory
 from app.domain.layout import get_layout
+from app.domain.flex_layout import FlexContainer, FlexLeaf
 from app.domain.slide_draft import (
     BulletsContent,
+    FlexBlockContent,
+    FlexBulletsContent,
+    FlexImageContent,
+    FlexKpiContent,
+    FlexSlideDraft,
+    FlexTableContent,
+    FlexTextContent,
     ImageContent,
     KpiContent,
     SlideDraft,
@@ -42,10 +50,12 @@ class FakeSlideGenerator:
         self.fail_positions = fail_positions or set()
         self.seen: list[int] = []
 
-    async def generate(self, payload: SlideGenerationInput) -> SlideDraft:
+    async def generate(self, payload: SlideGenerationInput) -> SlideDraft | FlexSlideDraft:
         self.seen.append(payload.position)
         if payload.position in self.fail_positions:
             raise InvalidSlideOutputError("模拟生成失败")
+        if payload.layout_mode == "flex":
+            return _fake_flex_draft(payload.layout_id)
         layout = get_layout(payload.layout_id)
         return SlideDraft(
             blocks=[_fill(slot.id, slot.accepts[0]) for slot in layout.slots if slot.required],
@@ -65,6 +75,35 @@ def _fill(slot_id: str, block_type: str) -> SlotContent:
             return TableContent(slot_id=slot_id, header=["项目", "结果"], rows=[["一", "二"]])
         case _:
             return TextContent(slot_id=slot_id, text="正文")
+
+
+def _fill_flex(block_id: str, block_type: str) -> FlexBlockContent:
+    match block_type:
+        case "bullets":
+            return FlexBulletsContent(id=block_id, items=["要点一", "要点二"])
+        case "image":
+            return FlexImageContent(id=block_id, alt="示意图")
+        case "kpi":
+            return FlexKpiContent(id=block_id, value="37%", label="增长")
+        case "table":
+            return FlexTableContent(id=block_id, header=["项目", "结果"], rows=[["一", "二"]])
+        case _:
+            return FlexTextContent(id=block_id, text="正文")
+
+
+def _fake_flex_draft(layout_id: str) -> FlexSlideDraft:
+    layout = get_layout(layout_id)
+    blocks = [
+        _fill_flex(slot.id, slot.accepts[0]) for slot in layout.slots if slot.required
+    ]
+    tree = FlexContainer(
+        type="column",
+        id="root",
+        children=[
+            FlexLeaf(id=f"leaf-{block.id}", block_id=block.id, grow=1.0) for block in blocks
+        ],
+    )
+    return FlexSlideDraft(blocks=blocks, layout_tree=tree, speaker_notes="讲稿提示")
 
 
 @pytest.fixture
@@ -109,11 +148,17 @@ def _pages(count: int) -> list[dict]:
     ]
 
 
-async def _confirmed_project(client: AsyncClient, headers: dict[str, str], pages: int = 5) -> dict:
+async def _confirmed_project(
+    client: AsyncClient,
+    headers: dict[str, str],
+    pages: int = 5,
+    *,
+    layout_mode: str = "fixed",
+) -> dict:
     """直接构造一个大纲已确认的项目，页面生成的测试不重复走大纲链路。"""
     response = await client.post(
         "/api/v1/projects",
-        json={"title": "平台化复盘", "page_count": pages},
+        json={"title": "平台化复盘", "page_count": pages, "layout_mode": layout_mode},
         headers=headers,
     )
     project = response.json()
@@ -177,7 +222,8 @@ async def test_generate_materializes_pending_slides(client: AsyncClient, queue: 
     assert len(args[2]) == 5
 
     deck = await client.get(f"/api/v1/projects/{project['id']}/deck", headers=headers)
-    assert deck.json()["status"] == "partial"
+    # 任务已入队、worker 尚未领页：靠 project.generating + pending 页识别为 generating
+    assert deck.json()["status"] == "generating"
     assert [slide["position"] for slide in deck.json()["slides"]] == [1, 2, 3, 4, 5]
     assert all(slide["status"] == "pending" for slide in deck.json()["slides"])
 
@@ -196,9 +242,67 @@ async def test_worker_fills_blocks_and_marks_ready(client: AsyncClient, queue: F
     assert deck["ready"] == 5
     first = deck["slides"][0]
     assert first["layout_id"] == "cover"
+    assert first["layout_mode"] == "fixed"
     assert first["blocks"]
     assert first["speaker_notes"] == "讲稿提示"
     assert first["issues"] == []
+
+
+@pytest.mark.asyncio
+async def test_worker_flex_generation_persists_layout_tree(
+    client: AsyncClient, queue: FakeQueue
+) -> None:
+    headers = await _sign_up(client)
+    project = await _confirmed_project(client, headers, layout_mode="flex")
+    assert project["layout_mode"] == "flex"
+    await client.post(f"/api/v1/projects/{project['id']}/deck/generate", json={}, headers=headers)
+    slide_ids = queue.calls[0][0][2]
+
+    await generate_deck({"slide_generator": FakeSlideGenerator()}, project["id"], slide_ids)
+
+    deck = (await client.get(f"/api/v1/projects/{project['id']}/deck", headers=headers)).json()
+    assert deck["status"] == "ready"
+    first = deck["slides"][0]
+    assert first["layout_mode"] == "flex"
+    assert first["layout_tree"] is not None
+    assert first["layout_tree"]["type"] in {"row", "column"}
+    assert first["blocks"]
+
+
+@pytest.mark.asyncio
+async def test_flex_project_heals_fixed_slides_on_generate(
+    client: AsyncClient, queue: FakeQueue
+) -> None:
+    """flex 项目里残留的 fixed/无树页，再次生成时应被重置并产出 layout_tree。"""
+    headers = await _sign_up(client)
+    project = await _confirmed_project(client, headers, layout_mode="flex", pages=5)
+    await client.post(f"/api/v1/projects/{project['id']}/deck/generate", json={}, headers=headers)
+    slide_ids = queue.calls[0][0][2]
+    await generate_deck({"slide_generator": FakeSlideGenerator()}, project["id"], slide_ids)
+
+    deck = (await client.get(f"/api/v1/projects/{project['id']}/deck", headers=headers)).json()
+    broken_id = deck["slides"][0]["id"]
+
+    async with async_session_factory() as session:
+        from app.models.slide import Slide
+
+        slide = await session.get(Slide, uuid.UUID(broken_id))
+        assert slide is not None
+        slide.layout_mode = "fixed"
+        slide.layout_tree = None
+        await session.commit()
+
+    queue.calls.clear()
+    await client.post(f"/api/v1/projects/{project['id']}/deck/generate", json={}, headers=headers)
+    assert queue.calls, "应重新入队待愈页"
+    pending_ids = queue.calls[0][0][2]
+    assert broken_id in {str(item) for item in pending_ids}
+
+    await generate_deck({"slide_generator": FakeSlideGenerator()}, project["id"], pending_ids)
+    healed = (await client.get(f"/api/v1/projects/{project['id']}/deck", headers=headers)).json()
+    first = next(item for item in healed["slides"] if item["id"] == broken_id)
+    assert first["layout_mode"] == "flex"
+    assert first["layout_tree"] is not None
 
 
 @pytest.mark.asyncio

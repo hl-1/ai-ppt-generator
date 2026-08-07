@@ -18,12 +18,16 @@ MIN_PAGE_COUNT = 5
 MAX_PAGE_COUNT = 20
 
 
+LayoutMode = Literal["fixed", "flex"]
+
+
 class ProjectCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     audience: str | None = Field(default=None, max_length=100)
     tone: Tone = "professional"
     page_count: int = Field(default=10, ge=MIN_PAGE_COUNT, le=MAX_PAGE_COUNT)
     theme_id: str = Field(default="ivory", max_length=50)
+    layout_mode: LayoutMode = "flex"
 
 
 class ProjectUpdate(BaseModel):
@@ -32,6 +36,7 @@ class ProjectUpdate(BaseModel):
     tone: Tone | None = None
     page_count: int | None = Field(default=None, ge=MIN_PAGE_COUNT, le=MAX_PAGE_COUNT)
     theme_id: str | None = Field(default=None, max_length=50)
+    layout_mode: LayoutMode | None = None
 
 
 class ProjectThemeUpdate(BaseModel):
@@ -65,6 +70,7 @@ class ProjectPublic(BaseModel):
     page_count: int
     theme_id: str
     theme_overrides: dict[str, Any] = Field(default_factory=dict)
+    layout_mode: LayoutMode = "flex"
     status: ProjectStatus
     created_at: datetime
     updated_at: datetime

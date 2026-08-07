@@ -22,8 +22,10 @@ from app.domain.content import (
     TableBlock,
     TextBlock,
 )
+from app.domain.flex_skin import SkinDecoration, iter_skin_decorations
 from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, EMU_PER_POINT, Rect
-from app.domain.layout import Slot, get_layout
+from app.domain.layout import get_layout
+from app.domain.slide_geometry import placed_by_block_id
 from app.domain.theme import Theme, get_theme
 from app.render.chart import render_chart
 from app.render.color import mix, to_rgb
@@ -77,19 +79,33 @@ class PptxRenderer:
         presentation.slide_height = Pt(CANVAS_HEIGHT_PT)
 
     def _render_slide(self, presentation: PresentationType, slide: Slide) -> None:
-        layout = get_layout(slide.layout_id)
         pptx_slide = presentation.slides.add_slide(presentation.slide_layouts[BLANK_LAYOUT_INDEX])
 
         self._fill_background(pptx_slide)
 
-        for decoration in layout.decorations:
-            self._add_filled_rect(pptx_slide, decoration.rect, self.theme.color(decoration.color))
+        # 固定布局装饰 vs flex preset 皮肤；均画在内容块之下
+        if slide.layout_mode == "flex" and slide.layout_tree is not None:
+            for decoration in iter_skin_decorations(slide.layout_tree):
+                self._render_skin_decoration(pptx_slide, decoration)
+        else:
+            try:
+                layout = get_layout(slide.layout_id)
+            except KeyError:
+                layout = None
+            if layout is not None:
+                for decoration in layout.decorations:
+                    self._add_filled_rect(
+                        pptx_slide, decoration.rect, self.theme.color(decoration.color)
+                    )
 
+        placements = placed_by_block_id(slide)
         for block in slide.blocks:
-            slot = layout.slot_by_id(block.slot_id)
-            if slot is None:
+            placed = placements.get(block.id)
+            if placed is None:
                 continue
-            self._render_block(pptx_slide, slot, block)
+            self._render_block(
+                pptx_slide, block, rect=placed.rect, text_style=placed.text_style
+            )
 
         if slide.speaker_notes:
             pptx_slide.notes_slide.notes_text_frame.text = slide.speaker_notes
@@ -100,6 +116,92 @@ class PptxRenderer:
         # 背景必须位于所有内容之下，新形状默认追加在末尾，因此显式前置
         pptx_slide.shapes._spTree.remove(shape._element)
         pptx_slide.shapes._spTree.insert(2, shape._element)
+
+    def _render_skin_decoration(self, pptx_slide: PptxSlide, decoration: SkinDecoration) -> None:
+        color = self.theme.color(decoration.color_token)
+        kind = decoration.kind
+        if kind == "fill_box":
+            shape_type = (
+                MSO_SHAPE.ROUNDED_RECTANGLE if decoration.radius_pt > 0 else MSO_SHAPE.RECTANGLE
+            )
+            self._add_filled_rect(
+                pptx_slide,
+                decoration.rect,
+                color,
+                shape_type,
+                radius_pt=decoration.radius_pt,
+            )
+            return
+        if kind == "outline_box":
+            self._add_outline_rect(
+                pptx_slide,
+                decoration.rect,
+                color,
+                radius_pt=decoration.radius_pt,
+                border_width_pt=1.5,
+            )
+            return
+        if kind in ("side_line", "timeline_axis"):
+            self._add_filled_rect(pptx_slide, decoration.rect, color)
+            return
+        if kind == "timeline_dot":
+            self._add_filled_rect(
+                pptx_slide, decoration.rect, color, MSO_SHAPE.OVAL
+            )
+            return
+        if kind == "number_badge":
+            self._add_number_badge(pptx_slide, decoration.rect, color, decoration.text or "")
+            return
+
+    def _add_outline_rect(
+        self,
+        pptx_slide: PptxSlide,
+        rect: Rect,
+        color: str,
+        *,
+        radius_pt: float = 0,
+        border_width_pt: float = 1.5,
+    ) -> BaseShape:
+        shape_type = MSO_SHAPE.ROUNDED_RECTANGLE if radius_pt > 0 else MSO_SHAPE.RECTANGLE
+        left, top, width, height = (Emu(value) for value in rect.to_emu())
+        shape = pptx_slide.shapes.add_shape(shape_type, left, top, width, height)
+        shape.fill.background()
+        shape.line.color.rgb = to_rgb(color)
+        shape.line.width = Pt(border_width_pt)
+        shape.shadow.inherit = False
+        if shape_type == MSO_SHAPE.ROUNDED_RECTANGLE and radius_pt > 0:
+            short_side = min(rect.w * CANVAS_WIDTH_PT, rect.h * CANVAS_HEIGHT_PT)
+            if short_side > 0:
+                shape.adjustments[0] = min(0.5, max(0.0, radius_pt / short_side))
+        return shape
+
+    def _add_number_badge(
+        self,
+        pptx_slide: PptxSlide,
+        rect: Rect,
+        fill: str,
+        text: str,
+    ) -> None:
+        left, top, width, height = (Emu(value) for value in rect.to_emu())
+        shape = pptx_slide.shapes.add_shape(MSO_SHAPE.OVAL, left, top, width, height)
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = to_rgb(fill)
+        shape.line.fill.background()
+        shape.shadow.inherit = False
+        frame = shape.text_frame
+        frame.word_wrap = False
+        frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        frame.margin_left = 0
+        frame.margin_right = 0
+        frame.margin_top = 0
+        frame.margin_bottom = 0
+        paragraph = frame.paragraphs[0]
+        paragraph.alignment = PP_ALIGN.CENTER
+        run = paragraph.add_run()
+        run.text = text
+        run.font.size = Pt(11)
+        run.font.bold = True
+        run.font.color.rgb = to_rgb(self.theme.palette.background)
 
     def _add_filled_rect(
         self,
@@ -198,39 +300,60 @@ class PptxRenderer:
     def _styled_textbox(
         self,
         pptx_slide: PptxSlide,
-        slot: Slot,
+        rect: Rect,
         style: BlockStyle | None,
     ):
         box = resolve_box(self.theme, style)
-        self._add_box_chrome(pptx_slide, slot.rect, box)
-        content_rect = self._padded_rect(slot.rect, box.padding_pt)
+        self._add_box_chrome(pptx_slide, rect, box)
+        content_rect = self._padded_rect(rect, box.padding_pt)
         return self._add_textbox(pptx_slide, content_rect), style.align if style else None
 
-    def _render_block(self, pptx_slide: PptxSlide, slot: Slot, block: Block) -> None:
+    def _render_block(
+        self,
+        pptx_slide: PptxSlide,
+        block: Block,
+        *,
+        rect: Rect,
+        text_style: str | None,
+    ) -> None:
         match block:
             case TextBlock():
-                self._render_text(pptx_slide, slot, block)
+                self._render_text(pptx_slide, block, rect=rect, text_style=text_style)
             case BulletsBlock():
-                self._render_bullets(pptx_slide, slot, block)
+                self._render_bullets(pptx_slide, block, rect=rect, text_style=text_style)
             case KpiBlock():
-                self._render_kpi(pptx_slide, slot, block)
+                self._render_kpi(pptx_slide, block, rect=rect)
             case TableBlock():
-                self._render_table(pptx_slide, slot, block)
+                self._render_table(pptx_slide, block, rect=rect)
             case ImageBlock():
-                self._render_image(pptx_slide, slot, block)
+                self._render_image(pptx_slide, block, rect=rect)
             case ChartBlock():
-                self._render_chart(pptx_slide, slot, block)
+                self._render_chart(pptx_slide, block, rect=rect)
 
-    def _render_text(self, pptx_slide: PptxSlide, slot: Slot, block: TextBlock) -> None:
-        style = merge_text_style(self.theme, slot.text_style or "body", block.style)
-        frame, align = self._styled_textbox(pptx_slide, slot, block.style)
+    def _render_text(
+        self,
+        pptx_slide: PptxSlide,
+        block: TextBlock,
+        *,
+        rect: Rect,
+        text_style: str | None,
+    ) -> None:
+        style = merge_text_style(self.theme, text_style or "body", block.style)
+        frame, align = self._styled_textbox(pptx_slide, rect, block.style)
         paragraph = frame.paragraphs[0]
         write_paragraph(paragraph, block.text, self.theme, style)
         self._apply_align(paragraph, align)
 
-    def _render_bullets(self, pptx_slide: PptxSlide, slot: Slot, block: BulletsBlock) -> None:
-        style = merge_text_style(self.theme, slot.text_style or "bullet", block.style)
-        frame, align = self._styled_textbox(pptx_slide, slot, block.style)
+    def _render_bullets(
+        self,
+        pptx_slide: PptxSlide,
+        block: BulletsBlock,
+        *,
+        rect: Rect,
+        text_style: str | None,
+    ) -> None:
+        style = merge_text_style(self.theme, text_style or "bullet", block.style)
+        frame, align = self._styled_textbox(pptx_slide, rect, block.style)
 
         for index, item in enumerate(block.items):
             paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
@@ -240,8 +363,8 @@ class PptxRenderer:
             apply_bullet(paragraph, self.theme, BULLET_INDENT_PT)
             self._apply_align(paragraph, align)
 
-    def _render_kpi(self, pptx_slide: PptxSlide, slot: Slot, block: KpiBlock) -> None:
-        frame, align = self._styled_textbox(pptx_slide, slot, block.style)
+    def _render_kpi(self, pptx_slide: PptxSlide, block: KpiBlock, *, rect: Rect) -> None:
+        frame, align = self._styled_textbox(pptx_slide, rect, block.style)
 
         lines = [("kpi_value", block.value), ("kpi_label", block.label)]
         if block.note:
@@ -252,12 +375,12 @@ class PptxRenderer:
             if index > 0:
                 paragraph.space_before = Pt(6)
             # KPI 各行共用同一份元素覆盖（字号/颜色/粗斜体）
-            text_style = merge_text_style(self.theme, style_name, block.style)
-            write_paragraph(paragraph, content, self.theme, text_style)
+            merged = merge_text_style(self.theme, style_name, block.style)
+            write_paragraph(paragraph, content, self.theme, merged)
             self._apply_align(paragraph, align)
 
-    def _render_table(self, pptx_slide: PptxSlide, slot: Slot, block: TableBlock) -> None:
-        left, top, width, height = (Emu(value) for value in slot.rect.to_emu())
+    def _render_table(self, pptx_slide: PptxSlide, block: TableBlock, *, rect: Rect) -> None:
+        left, top, width, height = (Emu(value) for value in rect.to_emu())
         row_count = len(block.rows) + 1
         column_count = len(block.header)
 
@@ -319,7 +442,7 @@ class PptxRenderer:
         picture.line.color.rgb = to_rgb(box.border_color)  # type: ignore[arg-type]
         picture.line.width = Pt(box.border_width_pt)
 
-    def _render_image(self, pptx_slide: PptxSlide, slot: Slot, block: ImageBlock) -> None:
+    def _render_image(self, pptx_slide: PptxSlide, block: ImageBlock, *, rect: Rect) -> None:
         """插入真实图片，或在缺失时用形状拼出与 Web 端同构的占位图形。
 
         真实图片本来就是位图对象，插入后在 PowerPoint 里仍可选中、移动和替换；
@@ -329,13 +452,12 @@ class PptxRenderer:
             key = media_key_from_url(block.url)
             if key is not None:
                 try:
-                    picture = self._add_cover_picture(pptx_slide, slot.rect, load_image(key))
+                    picture = self._add_cover_picture(pptx_slide, rect, load_image(key))
                     self._apply_image_border(picture, block.style)
                     return
                 except Exception as error:
                     logger.warning("图片读取或解码失败，回退占位图：key=%s error=%s", key, error)
 
-        rect = slot.rect
         accent = self.theme.palette.accent
         base = self.theme.palette.accent_soft
 
@@ -418,8 +540,8 @@ class PptxRenderer:
         shape.line.fill.background()
         shape.shadow.inherit = False
 
-    def _render_chart(self, pptx_slide: PptxSlide, slot: Slot, block: ChartBlock) -> None:
-        render_chart(pptx_slide, slot.rect, block, self.theme)
+    def _render_chart(self, pptx_slide: PptxSlide, block: ChartBlock, *, rect: Rect) -> None:
+        render_chart(pptx_slide, rect, block, self.theme)
 
 
 def render_deck_to_pptx(

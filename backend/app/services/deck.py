@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.redis import get_redis
 from app.domain.content import Block
 from app.domain.content import Slide as ContentSlide
+from app.domain.flex_layout import FlexContainer
 from app.domain.outline import OutlinePage
 from app.domain.theme import Theme
 from app.domain.validation import validate_slide
@@ -19,6 +20,29 @@ deck_events: EventStream[DeckEvent] = EventStream("deck", DeckEvent)
 
 CANCEL_TTL_SECONDS = 60 * 30
 _blocks_adapter = TypeAdapter(list[Block])
+
+
+def to_content_slide(slide: Slide) -> ContentSlide:
+    """ORM 行 → 领域 Slide（含 flex 布局树）。"""
+    layout_tree = (
+        FlexContainer.model_validate(slide.layout_tree) if slide.layout_tree is not None else None
+    )
+    # 有布局树却标成 fixed 时按 flex 解析，避免导出/校验走错几何路径
+    if layout_tree is not None:
+        mode: str = "flex"
+    elif slide.layout_mode in ("fixed", "flex"):
+        mode = slide.layout_mode
+    else:
+        mode = "flex"
+    return ContentSlide(
+        id=str(slide.id),
+        layout_id=slide.layout_id,
+        blocks=_blocks_adapter.validate_python(slide.blocks),
+        speaker_notes=slide.speaker_notes,
+        revision=slide.revision,
+        layout_mode=mode,  # type: ignore[arg-type]
+        layout_tree=layout_tree,
+    )
 
 
 def outline_pages(project: Project) -> list[OutlinePage]:
@@ -41,13 +65,7 @@ def refresh_slide_issues(
     theme: Theme | None = None,
 ) -> None:
     """按当前 blocks/layout/主题重算结构与溢出告警并写回 JSONB。"""
-    content = ContentSlide(
-        id=str(slide.id),
-        layout_id=slide.layout_id,
-        blocks=_blocks_adapter.validate_python(slide.blocks),
-        speaker_notes=slide.speaker_notes,
-        revision=slide.revision,
-    )
+    content = to_content_slide(slide)
     slide.issues = [
         issue.model_dump()
         for issue in validate_slide(content, theme_id=theme_id, theme=theme)
@@ -76,6 +94,8 @@ async def sync_slides(
             delete(Slide).where(Slide.project_id == project.id, Slide.outline_page_id.in_(stale))
         )
 
+    project_mode = project.layout_mode if project.layout_mode in ("fixed", "flex") else "flex"
+
     pending: list[Slide] = []
     for position, page in enumerate(pages, start=1):
         slide = existing.get(page.id)
@@ -89,6 +109,8 @@ async def sync_slides(
                 status="pending",
                 blocks=[],
                 issues=[],
+                layout_mode=project_mode,
+                layout_tree=None,
             )
             session.add(slide)
         else:
@@ -96,21 +118,30 @@ async def sync_slides(
             slide.title = page.title
             if regenerate_all or slide.layout_id != page.layout_id:
                 slide.layout_id = page.layout_id
-                _reset(slide)
+                _reset(slide, layout_mode=project_mode)
+            # 项目已是 flex，但旧页仍停在 fixed/无树：下次生成时自愈重跑
+            elif (
+                project_mode == "flex"
+                and slide.status == "ready"
+                and (slide.layout_mode != "flex" or slide.layout_tree is None)
+            ):
+                _reset(slide, layout_mode="flex")
 
         if slide.status != "ready":
-            _reset(slide)
+            _reset(slide, layout_mode=project_mode)
             pending.append(slide)
 
     await session.flush()
     return pending
 
 
-def _reset(slide: Slide) -> None:
+def _reset(slide: Slide, *, layout_mode: str = "flex") -> None:
     slide.status = "pending"
     slide.blocks = []
     slide.issues = []
     slide.error = None
+    slide.layout_mode = layout_mode if layout_mode in ("fixed", "flex") else "flex"
+    slide.layout_tree = None
 
 
 def deck_status(slides: list[Slide], *, project_status: str | None = None) -> DeckStatus:

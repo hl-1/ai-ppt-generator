@@ -3,7 +3,9 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.domain.content import Block, Deck, Slide
+from app.domain.geometry import Rect
 from app.domain.layout import Slot, get_layout
+from app.domain.slide_geometry import placed_by_block_id
 from app.domain.theme import Theme, get_theme
 
 IssueSeverity = Literal["error", "warning"]
@@ -71,27 +73,33 @@ def _capacity_issues(slide_id: str, slot: Slot, block: Block) -> list[StructureI
 
 
 def _overflow_issues(
-    slide_id: str, slot: Slot, block: Block, *, theme: Theme
+    slide_id: str,
+    block: Block,
+    *,
+    rect: Rect,
+    text_style: str | None,
+    theme: Theme,
+    ref_id: str | None = None,
 ) -> list[StructureIssue]:
     """基于字体度量的文字溢出检测；warning，不阻断。"""
     if block.type not in {"text", "bullets"}:
         return []
-    if slot.text_style is None:
+    if text_style is None:
         return []
 
     from app.domain.block_style import content_rect_pt, merge_text_style, resolve_box
     from app.domain.text_metrics import measure_bullets, measure_text
 
-    _x, _y, width_pt, height_pt = slot.rect.to_points()
+    _x, _y, width_pt, height_pt = rect.to_points()
     box = resolve_box(theme, block.style)
     avail_w, avail_h = content_rect_pt(width_pt, height_pt, padding_pt=box.padding_pt)
 
     if block.type == "text":
-        style = merge_text_style(theme, slot.text_style or "body", block.style)
+        style = merge_text_style(theme, text_style or "body", block.style)
         result = measure_text(block.text, style=style, width_pt=avail_w, height_pt=avail_h)
         label = "文字"
     else:
-        style = merge_text_style(theme, slot.text_style or "bullet", block.style)
+        style = merge_text_style(theme, text_style or "bullet", block.style)
         result = measure_bullets(block.items, style=style, width_pt=avail_w, height_pt=avail_h)
         label = "要点"
 
@@ -103,7 +111,7 @@ def _overflow_issues(
         StructureIssue(
             severity="warning",
             slide_id=slide_id,
-            slot_id=slot.id,
+            slot_id=ref_id,
             message=(
                 f"{label}可能溢出槽位{estimate_note}："
                 f"约需 {result.line_count} 行"
@@ -113,19 +121,9 @@ def _overflow_issues(
     ]
 
 
-def validate_slide(
-    slide: Slide,
-    *,
-    theme_id: str | None = None,
-    theme: Theme | None = None,
+def _validate_fixed_slide(
+    slide: Slide, *, theme: Theme
 ) -> list[StructureIssue]:
-    try:
-        resolved_theme = _resolve_theme(theme=theme, theme_id=theme_id)
-    except KeyError as error:
-        return [
-            StructureIssue(severity="error", slide_id=slide.id, slot_id=None, message=str(error))
-        ]
-
     try:
         layout = get_layout(slide.layout_id)
     except KeyError as error:
@@ -135,6 +133,7 @@ def validate_slide(
 
     issues: list[StructureIssue] = []
     seen: set[str] = set()
+    placed = placed_by_block_id(slide)
 
     for block in slide.blocks:
         slot = layout.slot_by_id(block.slot_id)
@@ -173,7 +172,18 @@ def validate_slide(
 
         # 字数上限是提示词约束依据，保留；度量溢出是更准的一层 warning
         issues.extend(_capacity_issues(slide.id, slot, block))
-        issues.extend(_overflow_issues(slide.id, slot, block, theme=resolved_theme))
+        placement = placed.get(block.id)
+        if placement is not None:
+            issues.extend(
+                _overflow_issues(
+                    slide.id,
+                    block,
+                    rect=placement.rect,
+                    text_style=placement.text_style,
+                    theme=theme,
+                    ref_id=slot.id,
+                )
+            )
 
     for slot in layout.slots:
         if slot.required and slot.id not in seen:
@@ -187,6 +197,90 @@ def validate_slide(
             )
 
     return issues
+
+
+def _validate_flex_slide(slide: Slide, *, theme: Theme) -> list[StructureIssue]:
+    from app.domain.flex_layout import iter_leaf_block_ids
+
+    issues: list[StructureIssue] = []
+    if slide.layout_tree is None:
+        return [
+            StructureIssue(
+                severity="error",
+                slide_id=slide.id,
+                slot_id=None,
+                message="灵活布局缺少 layout_tree",
+            )
+        ]
+
+    block_by_id = {block.id: block for block in slide.blocks}
+    leaf_ids = iter_leaf_block_ids(slide.layout_tree)
+    for block_id in leaf_ids:
+        if block_id not in block_by_id:
+            issues.append(
+                StructureIssue(
+                    severity="error",
+                    slide_id=slide.id,
+                    slot_id=block_id,
+                    message=f"布局树引用了不存在的内容块 {block_id}",
+                )
+            )
+
+    try:
+        placed = placed_by_block_id(slide)
+    except Exception as error:
+        return issues + [
+            StructureIssue(
+                severity="error",
+                slide_id=slide.id,
+                slot_id=None,
+                message=f"灵活布局求解失败：{error}",
+            )
+        ]
+
+    for block in slide.blocks:
+        placement = placed.get(block.id)
+        if placement is None:
+            issues.append(
+                StructureIssue(
+                    severity="error",
+                    slide_id=slide.id,
+                    slot_id=block.slot_id or block.id,
+                    message=f"内容块 {block.id} 在布局树中没有几何位置",
+                )
+            )
+            continue
+        # flex 无槽位 capacity，跳过容量检查；仍做溢出度量
+        issues.extend(
+            _overflow_issues(
+                slide.id,
+                block,
+                rect=placement.rect,
+                text_style=placement.text_style,
+                theme=theme,
+                ref_id=block.slot_id or block.id,
+            )
+        )
+
+    return issues
+
+
+def validate_slide(
+    slide: Slide,
+    *,
+    theme_id: str | None = None,
+    theme: Theme | None = None,
+) -> list[StructureIssue]:
+    try:
+        resolved_theme = _resolve_theme(theme=theme, theme_id=theme_id)
+    except KeyError as error:
+        return [
+            StructureIssue(severity="error", slide_id=slide.id, slot_id=None, message=str(error))
+        ]
+
+    if slide.layout_mode == "flex":
+        return _validate_flex_slide(slide, theme=resolved_theme)
+    return _validate_fixed_slide(slide, theme=resolved_theme)
 
 
 def validate_deck(deck: Deck, *, theme: Theme | None = None) -> list[StructureIssue]:

@@ -1,0 +1,27 @@
+{
+  "id": "title-bullets",
+  "name": "标题 + 要点",
+  "description": "纵向：标题在上，要点列表在下",
+  "tree": {
+    "type": "column",
+    "id": "root",
+    "gap_pt": 16,
+    "grow": 1.0,
+    "children": [
+      {
+        "type": "block",
+        "id": "leaf-title",
+        "block_id": "title",
+        "grow": 0.5,
+        "text_style": "title"
+      },
+      {
+        "type": "block",
+        "id": "leaf-body",
+        "block_id": "body",
+        "grow": 1.5,
+        "text_style": "bullet"
+      }
+    ]
+  }
+}

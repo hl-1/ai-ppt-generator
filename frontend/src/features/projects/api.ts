@@ -85,6 +85,7 @@ export interface DraftInput {
   tone: NonNullable<ProjectCreate['tone']>
   pageCount: number
   themeId: string
+  layoutMode?: 'fixed' | 'flex'
   onStep?: (step: string) => void
 }
 
@@ -108,6 +109,7 @@ export function useCreateDraft() {
           tone: input.tone,
           page_count: input.pageCount,
           theme_id: input.themeId,
+          layout_mode: input.layoutMode ?? 'flex',
         }),
       })
 

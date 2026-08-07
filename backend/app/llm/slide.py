@@ -5,8 +5,11 @@ import json
 from openai import AsyncOpenAI
 from pydantic import ValidationError
 
+from app.domain.flex_layout import iter_leaf_block_ids
+from app.domain.flex_normalize import normalize
+from app.domain.flex_presets import BlockRef, seed_layout_for_blocks
 from app.domain.layout import Layout, Slot, get_layout
-from app.domain.slide_draft import SlideDraft
+from app.domain.slide_draft import FlexSlideDraft, SlideDraft
 from app.llm.base import SlideGenerationInput
 from app.llm.client import JsonChatClient
 from app.llm.errors import InvalidSlideOutputError
@@ -36,7 +39,12 @@ class DeepSeekSlideGenerator:
             timeout_seconds=timeout_seconds,
         )
 
-    async def generate(self, payload: SlideGenerationInput) -> SlideDraft:
+    async def generate(self, payload: SlideGenerationInput) -> SlideDraft | FlexSlideDraft:
+        if payload.layout_mode == "flex":
+            return await self._generate_flex(payload)
+        return await self._generate_fixed(payload)
+
+    async def _generate_fixed(self, payload: SlideGenerationInput) -> SlideDraft:
         layout = get_layout(payload.layout_id)
         content = await self._chat.complete_json(
             system=self._system_prompt(layout),
@@ -51,6 +59,37 @@ class DeepSeekSlideGenerator:
 
         self._validate_draft(draft, layout)
         return draft
+
+    async def _generate_flex(self, payload: SlideGenerationInput) -> FlexSlideDraft:
+        content = await self._chat.complete_json(
+            system=self._flex_system_prompt(),
+            user=self._flex_user_prompt(payload),
+            purpose="生成灵活布局页面",
+        )
+
+        try:
+            draft = FlexSlideDraft.model_validate_json(content)
+        except ValidationError as error:
+            raise InvalidSlideOutputError("模型返回的灵活布局 JSON 不符合约定结构") from error
+
+        return self._finalize_flex_draft(draft)
+
+    def _finalize_flex_draft(self, draft: FlexSlideDraft) -> FlexSlideDraft:
+        """校验叶子与块 id；非法树时用预设种子替换。"""
+        block_ids = {block.id for block in draft.blocks}
+        if len(block_ids) != len(draft.blocks):
+            raise InvalidSlideOutputError("内容块 id 重复")
+
+        try:
+            tree = normalize(draft.layout_tree)
+            leaf_ids = set(iter_leaf_block_ids(tree))
+            if leaf_ids != block_ids:
+                raise InvalidSlideOutputError("布局树叶子与内容块 id 不一致")
+            return draft.model_copy(update={"layout_tree": tree})
+        except Exception:
+            refs = [BlockRef(id=block.id, type=block.type) for block in draft.blocks]
+            seeded = seed_layout_for_blocks(refs)
+            return draft.model_copy(update={"layout_tree": seeded})
 
     def _system_prompt(self, layout: Layout) -> str:
         return (
@@ -74,6 +113,33 @@ class DeepSeekSlideGenerator:
             f"本页布局为 {layout.id}（{layout.name}）：{layout.usage}"
         )
 
+    def _flex_system_prompt(self) -> str:
+        return (
+            "你是 PPT 正文与灵活排版助手。必须只输出一个 JSON 对象，不要 Markdown，不要额外说明。\n"
+            'JSON 结构必须为：{"blocks":[...],"layout_tree":{...},"speaker_notes":"..."}\n'
+            "blocks 使用本地 id（如 b1、title、body），每个元素带 id 与 type：\n"
+            '- text: {"id":"title","type":"text","text":"..."}\n'
+            '- bullets: {"id":"body","type":"bullets","items":["...","..."]}\n'
+            '- image: {"id":"visual","type":"image","alt":"这张图应该表达什么"}\n'
+            '- kpi: {"id":"kpi_1","type":"kpi","value":"37%","label":"...","note":"..."}\n'
+            '- table: {"id":"table","type":"table","header":["..."],"rows":[["..."]]}\n'
+            '- chart: {"id":"chart","type":"chart","chart_type":"bar",'
+            '"categories":["..."],"series":[{"name":"...","values":[1,2]}],"unit":"%"}\n'
+            "layout_tree 是嵌套的 row/column/block 树，不含坐标：\n"
+            '- 容器: {"type":"row"|"column","id":"...","gap_pt":16,"grow":1,'
+            '"ratios":[50,50],"children":[...]}\n'
+            '- 叶子: {"type":"block","id":"leaf-xxx","block_id":"<对应 blocks[].id>",'
+            '"grow":1,"text_style":"title"|"body"|"bullet"|null}\n'
+            "硬性约束：\n"
+            "1. layout_tree 所有叶子的 block_id 必须与 blocks[].id 一一对应，不多不少。\n"
+            "2. ratios 仅用于 row，且取值来自 {33,38,50,62,67}，两列之和应为 100。\n"
+            "3. 嵌套深度不超过 3；同一 row 最多 4 个子节点。\n"
+            "4. grow 建议在 0.25–4；标题类 text_style 用 title/subtitle，grow 宜偏小。\n"
+            "5. 正文使用中文，写具体结论与事实；数字须来自给定来源。\n"
+            "6. speaker_notes 用 2–3 句话给出讲稿提示。\n"
+            "7. 通常包含一个标题块 + 若干正文/要点/图/指标块，按内容选择合理排布。"
+        )
+
     def _user_prompt(self, payload: SlideGenerationInput, layout: Layout) -> str:
         body = {
             "deck_title": payload.deck_title,
@@ -93,6 +159,35 @@ class DeepSeekSlideGenerator:
             ],
         }
         prompt = f"请为以下页面生成正文 JSON。\n{json.dumps(body, ensure_ascii=False)}"
+        if payload.issues:
+            prompt += (
+                "\n上一次生成存在以下问题，请只修正这些问题并保持其余内容稳定：\n"
+                + "\n".join(f"- {issue}" for issue in payload.issues)
+            )
+        return prompt
+
+    def _flex_user_prompt(self, payload: SlideGenerationInput) -> str:
+        body = {
+            "deck_title": payload.deck_title,
+            "audience": payload.audience,
+            "tone": payload.tone,
+            "page": {
+                "position": payload.position,
+                "total_pages": payload.total_pages,
+                "title": payload.page_title,
+                "objective": payload.objective,
+                "key_points": payload.key_points,
+            },
+            "neighbor_titles": payload.neighbor_titles,
+            "hint_layout_id": payload.layout_id,
+            "sections": [
+                {"ref": s.ref, "heading": s.heading, "text": s.text} for s in payload.sections
+            ],
+        }
+        prompt = (
+            "请为以下页面生成灵活布局正文 JSON（blocks + layout_tree）。\n"
+            f"{json.dumps(body, ensure_ascii=False)}"
+        )
         if payload.issues:
             prompt += (
                 "\n上一次生成存在以下问题，请只修正这些问题并保持其余内容稳定：\n"

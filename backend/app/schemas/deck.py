@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domain.block_style import BlockStyle
 from app.domain.content import Block
+from app.domain.flex_layout import FlexContainer
 from app.domain.slide_patch import BlockPatch
 from app.domain.validation import StructureIssue
 
@@ -22,6 +23,8 @@ class SlidePublic(BaseModel):
     outline_page_id: uuid.UUID
     position: int
     layout_id: str
+    layout_mode: Literal["fixed", "flex"] = "flex"
+    layout_tree: FlexContainer | None = None
     title: str
     status: SlideStatus
     blocks: list[Block]
@@ -102,8 +105,22 @@ class TableBlockUpdate(BaseModel):
     rows: list[list[str]]
 
 
+class ChartSeriesUpdate(BaseModel):
+    name: str
+    values: list[float]
+
+
+class ChartBlockUpdate(BaseModel):
+    type: Literal["chart"]
+    revision: int
+    chart_type: Literal["bar", "column", "line", "pie"]
+    categories: list[str]
+    series: list[ChartSeriesUpdate]
+    unit: str | None = None
+
+
 BlockUpdate = Annotated[
-    TextBlockUpdate | BulletsBlockUpdate | KpiBlockUpdate | TableBlockUpdate,
+    TextBlockUpdate | BulletsBlockUpdate | KpiBlockUpdate | TableBlockUpdate | ChartBlockUpdate,
     Field(discriminator="type"),
 ]
 
@@ -113,6 +130,53 @@ class BlockStyleUpdate(BaseModel):
 
     revision: int
     style: BlockStyle | None = None
+
+
+class BlockCreateRequest(BaseModel):
+    revision: int
+    type: Literal["text", "bullets", "image", "chart", "table", "kpi"]
+    parent_id: str
+    index: int = 0
+
+
+class BlockDeleteRequest(BaseModel):
+    revision: int
+
+
+class FlexLayoutUpdateRequest(BaseModel):
+    revision: int
+    layout_tree: FlexContainer
+
+
+class FlexStateUpdateRequest(BaseModel):
+    """整页恢复灵活布局状态（撤销/重做增删块与换排布用）。"""
+
+    revision: int
+    blocks: list[Block]
+    layout_tree: FlexContainer
+
+
+class UnlockFlexRequest(BaseModel):
+    revision: int
+
+
+class RelayoutRequest(BaseModel):
+    revision: int
+
+
+class RelayoutCandidate(BaseModel):
+    id: str
+    layout_tree: FlexContainer
+
+
+class RelayoutProposalPublic(BaseModel):
+    revision: int
+    candidates: list[RelayoutCandidate]
+
+
+class RelayoutApplyRequest(BaseModel):
+    revision: int
+    layout_tree: FlexContainer
 
 
 class SlideOrderRequest(BaseModel):

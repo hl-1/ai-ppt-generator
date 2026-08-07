@@ -1,4 +1,5 @@
 import type { components } from '@/api/schema'
+import type { FlexContainer } from '@/render/flexLayout'
 import type { ImageBlock, Slide } from '@/render/types'
 
 type Schemas = components['schemas']
@@ -22,6 +23,16 @@ export type AiEditPatch =
 export type DiscardedOperation = Schemas['DiscardedOperationPublic']
 export type StructureIssue = Schemas['StructureIssue']
 export type ExportCheckReport = Schemas['ExportCheckReport']
+
+/** relayout 接口尚未写入 OpenAPI schema 时的本地契约 */
+export interface RelayoutCandidate {
+  id: string
+  layout_tree: FlexContainer
+}
+export interface RelayoutProposal {
+  revision: number
+  candidates: RelayoutCandidate[]
+}
 /** 回读验证问题不在 OpenAPI schema 里，与后端 VerifyIssue 字段对齐 */
 export interface ExportVerifyIssue {
   check: string
@@ -29,17 +40,28 @@ export interface ExportVerifyIssue {
   shape: string | null
   message: string
 }
+export type ChartBlockUpdate = {
+  type: 'chart'
+  revision: number
+  chart_type: 'bar' | 'column' | 'line' | 'pie'
+  categories: string[]
+  series: Array<{ name: string; values: number[] }>
+  unit?: string | null
+}
+
 export type BlockUpdate =
   | Schemas['TextBlockUpdate']
   | Schemas['BulletsBlockUpdate']
   | Schemas['KpiBlockUpdate']
   | Schemas['TableBlockUpdate']
+  | ChartBlockUpdate
 /** Omit 不会自动分发联合类型，需逐个剥掉 revision */
 export type BlockUpdateBody =
   | Omit<Schemas['TextBlockUpdate'], 'revision'>
   | Omit<Schemas['BulletsBlockUpdate'], 'revision'>
   | Omit<Schemas['KpiBlockUpdate'], 'revision'>
   | Omit<Schemas['TableBlockUpdate'], 'revision'>
+  | Omit<ChartBlockUpdate, 'revision'>
 
 export interface DeckProgressEvent {
   type:
@@ -78,6 +100,8 @@ export function toRenderSlide(slide: DeckSlide): Slide {
   return {
     id: slide.id,
     layout_id: slide.layout_id,
+    layout_mode: slide.layout_mode,
+    layout_tree: slide.layout_tree,
     blocks: slide.blocks,
     speaker_notes: slide.speaker_notes,
     revision: slide.revision,

@@ -30,6 +30,8 @@ class Project(Base):
     theme_id: Mapped[str] = mapped_column(String(50), nullable=False)
     # 相对 theme_id 预设的局部覆盖；空对象表示纯预设
     theme_overrides: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # fixed=槽位布局；flex=布局树（新项目默认）
+    layout_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="flex")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
 
     created_at: Mapped[datetime] = mapped_column(

@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from app.domain.block_style import BlockStyle
+from app.domain.flex_layout import FlexContainer
 
 BlockType = Literal["text", "bullets", "image", "chart", "table", "kpi"]
 ImageSource = Literal["generated", "stock", "upload", "placeholder"]
@@ -79,6 +80,9 @@ class Slide(BaseModel):
     speaker_notes: str | None = None
     # 乐观锁版本号：AI 修改提交时带上它，不一致即判定冲突而非后写覆盖
     revision: int = 1
+    # 缺省 fixed：样本页与旧夹具未写该字段；flex 页须显式带 layout_tree
+    layout_mode: Literal["fixed", "flex"] = "fixed"
+    layout_tree: FlexContainer | None = None
 
 
 class Deck(BaseModel):

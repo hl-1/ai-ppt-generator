@@ -6,6 +6,8 @@ import {
   Italic,
   MoreHorizontal,
   RotateCcw,
+  TableProperties,
+  Trash2,
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
@@ -16,8 +18,17 @@ import {
   patchStyle,
   styleCapability,
 } from '@/render/blockStyle'
+import type { GroupPreset } from '@/render/flexLayout'
 import { resolveColor } from '@/render/style'
-import type { Block, Theme } from '@/render/types'
+import type { Block, EditableBlockCommit, TableBlock, Theme } from '@/render/types'
+
+const PRESET_CHIPS: { value: GroupPreset; label: string }[] = [
+  { value: 'solid_boxes', label: '实心' },
+  { value: 'outline_boxes', label: '描边' },
+  { value: 'side_line', label: '侧线' },
+  { value: 'numbered_steps', label: '步骤' },
+  { value: 'timeline', label: '时间线' },
+]
 
 interface ElementToolbarProps {
   articleEl: HTMLElement | null
@@ -26,6 +37,13 @@ interface ElementToolbarProps {
   theme: Theme
   disabled?: boolean
   onChange: (style: BlockStyle | null) => void
+  /** 表格结构 / 图表数据等整包内容提交 */
+  onCommitContent?: (change: EditableBlockCommit) => void
+  /** flex 模式删除内容块 */
+  onDelete?: () => void
+  /** flex：选中块父容器的预设皮肤 */
+  flexPreset?: GroupPreset | null
+  onFlexPresetChange?: (preset: GroupPreset | null) => void
   onDismiss: () => void
 }
 
@@ -41,6 +59,10 @@ export function ElementToolbar({
   block,
   theme,
   disabled,
+  onDelete,
+  onCommitContent,
+  flexPreset = null,
+  onFlexPresetChange,
   onChange,
   onDismiss,
 }: ElementToolbarProps) {
@@ -52,6 +74,9 @@ export function ElementToolbar({
   const style = block.style ?? null
   const caps = styleCapability(block.type)
   const supported = caps.text || caps.box || caps.borderOnly
+  const showPreset = Boolean(onFlexPresetChange)
+  const showTableOps = block.type === 'table' && Boolean(onCommitContent)
+  const showBar = supported || Boolean(onDelete) || showPreset || showTableOps
 
   const resolvedSize = style?.size_pt != null ? Math.round(style.size_pt) : null
 
@@ -82,12 +107,12 @@ export function ElementToolbar({
   }
 
   useLayoutEffect(() => {
-    if (!supported) return
+    if (!showBar) return
     reposition()
-  }, [supported, articleEl, blockEl, block.id])
+  }, [showBar, articleEl, blockEl, block.id])
 
   useEffect(() => {
-    if (!supported || !articleEl || !blockEl) return
+    if (!showBar || !articleEl || !blockEl) return
     const ro = new ResizeObserver(() => reposition())
     ro.observe(articleEl)
     ro.observe(blockEl)
@@ -96,10 +121,10 @@ export function ElementToolbar({
       ro.disconnect()
       window.removeEventListener('scroll', reposition, true)
     }
-  }, [articleEl, blockEl, supported])
+  }, [articleEl, blockEl, showBar])
 
   useEffect(() => {
-    if (!supported) return
+    if (!showBar) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -108,9 +133,9 @@ export function ElementToolbar({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onDismiss, supported])
+  }, [onDismiss, showBar])
 
-  if (!supported) return null
+  if (!showBar) return null
 
   const bold = (style?.weight ?? 400) >= 600
   const italic = Boolean(style?.italic)
@@ -360,7 +385,7 @@ export function ElementToolbar({
         </>
       )}
 
-      {!isStyleEmpty(style) && (
+      {!isStyleEmpty(style) && supported && (
         <>
           <Sep />
           <ToolBtn
@@ -372,6 +397,124 @@ export function ElementToolbar({
           </ToolBtn>
         </>
       )}
+
+      {showTableOps && block.type === 'table' && onCommitContent && (
+        <>
+          {(supported || !isStyleEmpty(style)) && <Sep />}
+          <TableStructureOps
+            block={block}
+            disabled={disabled}
+            onCommitContent={onCommitContent}
+          />
+        </>
+      )}
+
+      {showPreset && (
+        <>
+          {(supported || !isStyleEmpty(style) || showTableOps) && <Sep />}
+          <div
+            role="group"
+            aria-label="容器皮肤"
+            className="flex items-center gap-0.5 px-0.5"
+          >
+            {PRESET_CHIPS.map((chip) => {
+              const active = flexPreset === chip.value
+              return (
+                <button
+                  key={chip.value}
+                  type="button"
+                  title={chip.label}
+                  aria-label={chip.label}
+                  aria-pressed={active}
+                  disabled={disabled}
+                  onClick={() =>
+                    onFlexPresetChange?.(active ? null : chip.value)
+                  }
+                  className={cn(
+                    'grid size-7 place-items-center rounded-md border transition-colors disabled:opacity-40',
+                    active
+                      ? 'border-accent bg-accent-soft'
+                      : 'border-line hover:border-line-strong hover:bg-surface-soft',
+                  )}
+                >
+                  <SkinChipPreview preset={chip.value} />
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      {onDelete && (
+        <>
+          {(supported || !isStyleEmpty(style) || showPreset || showTableOps) && <Sep />}
+          <ToolBtn label="删除" disabled={disabled} onClick={onDelete}>
+            <Trash2 className="size-3.5" />
+          </ToolBtn>
+        </>
+      )}
+    </div>
+  )
+}
+
+function TableStructureOps({
+  block,
+  disabled,
+  onCommitContent,
+}: {
+  block: TableBlock
+  disabled?: boolean
+  onCommitContent: (change: EditableBlockCommit) => void
+}) {
+  const replace = (header: string[], rows: string[][]) => {
+    onCommitContent({ type: 'table', kind: 'replace', header, rows })
+  }
+
+  const cols = Math.max(block.header.length, 1)
+
+  return (
+    <div className="flex items-center gap-0.5" role="group" aria-label="表格结构">
+      <TableProperties className="mx-0.5 size-3.5 text-ink-muted" />
+      <ToolBtn
+        label="加行"
+        disabled={disabled}
+        onClick={() =>
+          replace(block.header, [...block.rows, Array.from({ length: cols }, () => '')])
+        }
+      >
+        <span className="text-[10px] font-medium">+行</span>
+      </ToolBtn>
+      <ToolBtn
+        label="加列"
+        disabled={disabled}
+        onClick={() =>
+          replace(
+            [...block.header, `列${block.header.length + 1}`],
+            block.rows.map((row) => [...row, '']),
+          )
+        }
+      >
+        <span className="text-[10px] font-medium">+列</span>
+      </ToolBtn>
+      <ToolBtn
+        label="删行"
+        disabled={disabled || block.rows.length <= 1}
+        onClick={() => replace(block.header, block.rows.slice(0, -1))}
+      >
+        <span className="text-[10px] font-medium">−行</span>
+      </ToolBtn>
+      <ToolBtn
+        label="删列"
+        disabled={disabled || block.header.length <= 1}
+        onClick={() =>
+          replace(
+            block.header.slice(0, -1),
+            block.rows.map((row) => row.slice(0, -1)),
+          )
+        }
+      >
+        <span className="text-[10px] font-medium">−列</span>
+      </ToolBtn>
     </div>
   )
 }
@@ -410,6 +553,56 @@ function ToolBtn({
 
 function Sep() {
   return <span aria-hidden className="mx-0.5 h-4 w-px bg-line" />
+}
+
+/** 工具条内的迷你皮肤预览 */
+function SkinChipPreview({ preset }: { preset: GroupPreset }) {
+  switch (preset) {
+    case 'solid_boxes':
+      return (
+        <span aria-hidden className="flex gap-0.5">
+          <span className="size-2 rounded-[2px] bg-ink/55" />
+          <span className="size-2 rounded-[2px] bg-ink/35" />
+        </span>
+      )
+    case 'outline_boxes':
+      return (
+        <span aria-hidden className="flex gap-0.5">
+          <span className="size-2 rounded-[2px] border border-ink/55" />
+          <span className="size-2 rounded-[2px] border border-ink/35" />
+        </span>
+      )
+    case 'side_line':
+      return (
+        <span aria-hidden className="flex h-2.5 w-3.5 items-stretch gap-0.5">
+          <span className="w-0.5 rounded-full bg-accent" />
+          <span className="flex flex-1 flex-col justify-center gap-0.5">
+            <span className="h-px w-full bg-ink/40" />
+            <span className="h-px w-2/3 bg-ink/25" />
+          </span>
+        </span>
+      )
+    case 'numbered_steps':
+      return (
+        <span aria-hidden className="flex items-center gap-0.5">
+          <span className="grid size-2 place-items-center rounded-full bg-accent text-[5px] leading-none text-white">
+            1
+          </span>
+          <span className="h-px w-1.5 bg-ink/30" />
+          <span className="grid size-2 place-items-center rounded-full bg-ink/35 text-[5px] leading-none text-white">
+            2
+          </span>
+        </span>
+      )
+    case 'timeline':
+      return (
+        <span aria-hidden className="relative flex h-2.5 w-3.5 items-center">
+          <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-ink/30" />
+          <span className="relative z-10 size-1.5 rounded-full bg-accent" />
+          <span className="relative z-10 ml-auto size-1.5 rounded-full bg-ink/40" />
+        </span>
+      )
+  }
 }
 
 function ColorSwatch({

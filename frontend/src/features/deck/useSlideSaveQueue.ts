@@ -3,7 +3,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '@/api/client'
 import {
   commitSlideToCache,
+  createSlideBlock,
   deckKey,
+  deleteSlideBlock,
+  updateFlexLayout,
+  updateFlexState,
   updateSlideBlock,
   updateSlideBlockStyle,
 } from '@/features/deck/api'
@@ -14,17 +18,31 @@ import {
   sameStyle,
   styleFromBlock,
 } from '@/features/deck/blockSnapshot'
+import type { FlexBlockType } from '@/features/deck/flexTree'
 import { mergeBlockCommit } from '@/features/deck/mergeBlockCommit'
 import type { BlockUpdateBody, Deck, DeckSlide } from '@/features/deck/types'
 import { errorMessage } from '@/lib/errors'
 import type { BlockStyle } from '@/render/blockStyle'
+import type { FlexContainer } from '@/render/flexLayout'
 import type { EditableBlockCommit } from '@/render/types'
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'conflict' | 'error'
 
+export type StructureSnap = {
+  blocks: DeckSlide['blocks']
+  layout_tree: FlexContainer
+}
+
 type PendingJob =
   | { kind: 'content'; blockId: string; body: BlockUpdateBody }
   | { kind: 'style'; blockId: string; style: BlockStyle | null }
+  | { kind: 'flex'; tree: FlexContainer }
+  | { kind: 'structure'; state: StructureSnap }
+  | {
+      kind: 'mutate'
+      run: (slide: DeckSlide) => Promise<DeckSlide>
+      record: boolean
+    }
 
 type HistoryEntry =
   | {
@@ -39,13 +57,36 @@ type HistoryEntry =
       before: BlockStyle | null
       after: BlockStyle | null
     }
+  | {
+      kind: 'structure'
+      before: StructureSnap
+      after: StructureSnap
+    }
 
 const MAX_HISTORY = 50
 
+function cloneSnap(snap: StructureSnap): StructureSnap {
+  return {
+    blocks: structuredClone(snap.blocks),
+    layout_tree: structuredClone(snap.layout_tree),
+  }
+}
+
+function structureSnap(slide: DeckSlide): StructureSnap | null {
+  if (slide.layout_mode !== 'flex' || slide.layout_tree == null) return null
+  return {
+    blocks: structuredClone(slide.blocks),
+    layout_tree: structuredClone(slide.layout_tree as FlexContainer),
+  }
+}
+
+function sameStructure(a: StructureSnap, b: StructureSnap): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
 /**
  * 同一页的块保存必须串行：每次成功 revision +1，并发必然 409。
- * 内容与样式共用队列；同块同 kind 多次提交合并为最新载荷。
- * 同时维护本页撤销/重做栈。
+ * 内容、样式、灵活布局结构共用队列；同时维护本页撤销/重做栈。
  */
 export function useSlideSaveQueue(projectId: string, slideId: string) {
   const queryClient = useQueryClient()
@@ -110,12 +151,62 @@ export function useSlideSaveQueue(projectId: string, slideId: string) {
     [projectId, queryClient, slideId],
   )
 
+  const paintStructure = useCallback(
+    (state: StructureSnap) => {
+      queryClient.setQueryData<Deck>(deckKey(projectId), (current) => {
+        if (!current) return current
+        return {
+          ...current,
+          slides: current.slides.map((slide) => {
+            if (slide.id !== slideId) return slide
+            return {
+              ...slide,
+              layout_mode: 'flex' as const,
+              blocks: state.blocks,
+              layout_tree: state.layout_tree,
+            }
+          }),
+        }
+      })
+    },
+    [projectId, queryClient, slideId],
+  )
+
+  const paintTree = useCallback(
+    (tree: FlexContainer) => {
+      queryClient.setQueryData<Deck>(deckKey(projectId), (current) => {
+        if (!current) return current
+        return {
+          ...current,
+          slides: current.slides.map((slide) => {
+            if (slide.id !== slideId) return slide
+            return { ...slide, layout_tree: tree }
+          }),
+        }
+      })
+    },
+    [projectId, queryClient, slideId],
+  )
+
   const enqueue = (job: PendingJob) => {
-    const existing = queueRef.current.findIndex(
-      (item) => item.kind === job.kind && item.blockId === job.blockId,
-    )
-    if (existing >= 0) queueRef.current[existing] = job
-    else queueRef.current.push(job)
+    if (job.kind === 'content' || job.kind === 'style') {
+      const existing = queueRef.current.findIndex(
+        (item) => item.kind === job.kind && item.blockId === job.blockId,
+      )
+      if (existing >= 0) queueRef.current[existing] = job
+      else queueRef.current.push(job)
+      return
+    }
+    queueRef.current.push(job)
+  }
+
+  const markSaved = () => {
+    if (savedTimerRef.current != null) window.clearTimeout(savedTimerRef.current)
+    setStatus('saved')
+    savedTimerRef.current = window.setTimeout(() => {
+      setStatus((current) => (current === 'saved' ? 'idle' : current))
+      savedTimerRef.current = null
+    }, 1600)
   }
 
   const pump = useCallback(async () => {
@@ -151,7 +242,7 @@ export function useSlideSaveQueue(projectId: string, slideId: string) {
           ) {
             contentOverridesRef.current.delete(job.blockId)
           }
-        } else {
+        } else if (job.kind === 'style') {
           const style = styleOverridesRef.current.has(job.blockId)
             ? styleOverridesRef.current.get(job.blockId)!
             : job.style
@@ -166,15 +257,33 @@ export function useSlideSaveQueue(projectId: string, slideId: string) {
           ) {
             styleOverridesRef.current.delete(job.blockId)
           }
+        } else if (job.kind === 'flex') {
+          const before = structureSnap(slide)
+          updated = await updateFlexLayout(projectId, slideId, {
+            revision: slide.revision,
+            layout_tree: job.tree,
+          })
+          const after = structureSnap(updated)
+          if (before && after && !sameStructure(before, after) && !applyingHistoryRef.current) {
+            pushHistory({ kind: 'structure', before, after })
+          }
+        } else if (job.kind === 'structure') {
+          updated = await updateFlexState(projectId, slideId, {
+            revision: slide.revision,
+            blocks: job.state.blocks,
+            layout_tree: job.state.layout_tree,
+          })
+        } else {
+          const before = job.record ? structureSnap(slide) : null
+          updated = await job.run(slide)
+          const after = structureSnap(updated)
+          if (before && after && !sameStructure(before, after) && !applyingHistoryRef.current) {
+            pushHistory({ kind: 'structure', before, after })
+          }
         }
 
         commitSlideToCache(queryClient, projectId, updated)
-        if (savedTimerRef.current != null) window.clearTimeout(savedTimerRef.current)
-        setStatus('saved')
-        savedTimerRef.current = window.setTimeout(() => {
-          setStatus((current) => (current === 'saved' ? 'idle' : current))
-          savedTimerRef.current = null
-        }, 1600)
+        markSaved()
       } catch (cause) {
         const message = errorMessage(cause instanceof Error ? cause : null)
         const conflict =
@@ -262,20 +371,76 @@ export function useSlideSaveQueue(projectId: string, slideId: string) {
     [applyStyle],
   )
 
+  const commitFlex = useCallback(
+    (layout_tree: FlexContainer) => {
+      const slide = readSlide()
+      if (!slide || slide.layout_mode !== 'flex') return
+      paintTree(layout_tree)
+      enqueue({ kind: 'flex', tree: layout_tree })
+      void pump()
+    },
+    [paintTree, pump, readSlide],
+  )
+
+  const commitCreateBlock = useCallback(
+    (body: { type: FlexBlockType; parent_id: string; index?: number }) => {
+      enqueue({
+        kind: 'mutate',
+        record: true,
+        run: (current) =>
+          createSlideBlock(projectId, slideId, {
+            revision: current.revision,
+            type: body.type,
+            parent_id: body.parent_id,
+            index: body.index ?? 0,
+          }),
+      })
+      void pump()
+    },
+    [projectId, pump, slideId],
+  )
+
+  const commitDeleteBlock = useCallback(
+    (blockId: string) => {
+      enqueue({
+        kind: 'mutate',
+        record: true,
+        run: (current) =>
+          deleteSlideBlock(projectId, slideId, blockId, { revision: current.revision }),
+      })
+      void pump()
+    },
+    [projectId, pump, slideId],
+  )
+
+  /** 多步结构变更（如插入多列）串行执行并记一条撤销 */
+  const commitMutate = useCallback(
+    (run: (slide: DeckSlide) => Promise<DeckSlide>) => {
+      enqueue({ kind: 'mutate', record: true, run })
+      void pump()
+    },
+    [pump],
+  )
+
   const applyEntry = useCallback(
     (entry: HistoryEntry, side: 'before' | 'after') => {
       applyingHistoryRef.current = true
       try {
         if (entry.kind === 'content') {
           applyContent(entry.blockId, entry[side], false)
-        } else {
+        } else if (entry.kind === 'style') {
           applyStyle(entry.blockId, entry[side], false)
+        } else {
+          const state = cloneSnap(entry[side])
+          paintStructure(state)
+          enqueue({ kind: 'structure', state })
+          void pump()
         }
       } finally {
         applyingHistoryRef.current = false
       }
     },
-    [applyContent, applyStyle],
+    [applyContent, applyStyle, paintStructure, pump],
   )
 
   const undo = useCallback((): boolean => {
@@ -311,6 +476,10 @@ export function useSlideSaveQueue(projectId: string, slideId: string) {
   return {
     commit,
     commitStyle,
+    commitFlex,
+    commitCreateBlock,
+    commitDeleteBlock,
+    commitMutate,
     undo,
     redo,
     canUndo: undoStackRef.current.length > 0,

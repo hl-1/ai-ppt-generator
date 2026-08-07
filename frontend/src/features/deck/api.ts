@@ -1,6 +1,7 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { request, requestBinary } from '@/api/client'
 import { replaceSlideInDeck, replaceSlidesInDeck } from '@/features/deck/cache'
+import type { FlexBlockType } from '@/features/deck/flexTree'
 import type {
   AiEditAction,
   AiEditPatch,
@@ -11,9 +12,11 @@ import type {
   DeckSlide,
   ExportCheckReport,
   LayoutCandidate,
+  RelayoutProposal,
 } from '@/features/deck/types'
 import { filenameFromDisposition, saveBlob } from '@/lib/download'
 import type { BlockStyle } from '@/render/blockStyle'
+import type { FlexContainer } from '@/render/flexLayout'
 
 export const deckKey = (projectId: string) => ['projects', projectId, 'deck'] as const
 const projectKey = (projectId: string) => ['projects', projectId] as const
@@ -192,6 +195,135 @@ export function useSwitchSlideLayout(projectId: string, slideId: string) {
       commitSlideToCache(queryClient, projectId, slide)
       void queryClient.invalidateQueries({ queryKey: slideLayoutsKey(projectId, slideId) })
     },
+  })
+}
+
+export function createSlideBlock(
+  projectId: string,
+  slideId: string,
+  body: {
+    revision: number
+    type: FlexBlockType
+    parent_id: string
+    index?: number
+  },
+) {
+  return request<DeckSlide>(`/projects/${projectId}/deck/slides/${slideId}/blocks`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteSlideBlock(
+  projectId: string,
+  slideId: string,
+  blockId: string,
+  body: { revision: number },
+) {
+  return request<DeckSlide>(
+    `/projects/${projectId}/deck/slides/${slideId}/blocks/${blockId}`,
+    { method: 'DELETE', body: JSON.stringify(body) },
+  )
+}
+
+export function updateFlexLayout(
+  projectId: string,
+  slideId: string,
+  body: { revision: number; layout_tree: FlexContainer },
+) {
+  return request<DeckSlide>(
+    `/projects/${projectId}/deck/slides/${slideId}/flex-layout`,
+    { method: 'PUT', body: JSON.stringify(body) },
+  )
+}
+
+export function updateFlexState(
+  projectId: string,
+  slideId: string,
+  body: {
+    revision: number
+    blocks: DeckSlide['blocks']
+    layout_tree: FlexContainer
+  },
+) {
+  return request<DeckSlide>(
+    `/projects/${projectId}/deck/slides/${slideId}/flex-state`,
+    { method: 'PUT', body: JSON.stringify(body) },
+  )
+}
+
+export function unlockSlideFlex(
+  projectId: string,
+  slideId: string,
+  body: { revision: number },
+) {
+  return request<DeckSlide>(
+    `/projects/${projectId}/deck/slides/${slideId}/unlock-flex`,
+    { method: 'POST', body: JSON.stringify(body) },
+  )
+}
+
+export function useCreateSlideBlock(projectId: string, slideId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: {
+      revision: number
+      type: FlexBlockType
+      parent_id: string
+      index?: number
+    }) => createSlideBlock(projectId, slideId, body),
+    onSuccess: (slide) => commitSlideToCache(queryClient, projectId, slide),
+  })
+}
+
+export function useDeleteSlideBlock(projectId: string, slideId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { blockId: string; revision: number }) =>
+      deleteSlideBlock(projectId, slideId, vars.blockId, { revision: vars.revision }),
+    onSuccess: (slide) => commitSlideToCache(queryClient, projectId, slide),
+  })
+}
+
+export function useUpdateFlexLayout(projectId: string, slideId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { revision: number; layout_tree: FlexContainer }) =>
+      updateFlexLayout(projectId, slideId, body),
+    onSuccess: (slide) => commitSlideToCache(queryClient, projectId, slide),
+  })
+}
+
+export function useUnlockSlideFlex(projectId: string, slideId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { revision: number }) => unlockSlideFlex(projectId, slideId, body),
+    onSuccess: (slide) => {
+      commitSlideToCache(queryClient, projectId, slide)
+      void queryClient.invalidateQueries({ queryKey: slideLayoutsKey(projectId, slideId) })
+    },
+  })
+}
+
+export function useProposeRelayout(projectId: string, slideId: string) {
+  return useMutation({
+    mutationFn: (body: { revision: number }) =>
+      request<RelayoutProposal>(`/projects/${projectId}/deck/slides/${slideId}/relayout`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+  })
+}
+
+export function useApplyRelayout(projectId: string, slideId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { revision: number; layout_tree: FlexContainer }) =>
+      request<DeckSlide>(`/projects/${projectId}/deck/slides/${slideId}/relayout/apply`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (slide) => commitSlideToCache(queryClient, projectId, slide),
   })
 }
 

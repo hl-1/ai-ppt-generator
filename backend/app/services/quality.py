@@ -4,37 +4,23 @@ from __future__ import annotations
 
 import uuid
 
-from pydantic import TypeAdapter
-
-from app.domain.content import Block
 from app.domain.content import Deck as ContentDeck
-from app.domain.content import Slide as ContentSlide
 from app.domain.export_check import ExportCheckReport, run_export_check
 from app.domain.outline import OutlinePage
 from app.domain.theme import resolve_project_theme
 from app.llm.base import OutlineSourceSection
 from app.models.project import Project
 from app.models.slide import Slide
-from app.services.deck import outline_pages
+from app.services.deck import outline_pages, to_content_slide
 from app.services.media import load_image, media_key_from_url
-
-_blocks_adapter = TypeAdapter(list[Block])
 
 
 def project_to_content_deck(project: Project, slides: list[Slide]) -> ContentDeck:
-    content_slides: list[ContentSlide] = []
+    content_slides = []
     for slide in slides:
         if slide.status != "ready" or not slide.blocks:
             continue
-        content_slides.append(
-            ContentSlide(
-                id=str(slide.id),
-                layout_id=slide.layout_id,
-                blocks=_blocks_adapter.validate_python(slide.blocks),
-                speaker_notes=slide.speaker_notes,
-                revision=slide.revision,
-            )
-        )
+        content_slides.append(to_content_slide(slide))
     return ContentDeck(
         id=str(project.id),
         title=project.title,

@@ -231,6 +231,7 @@ function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ta
               {editable && onCommit ? (
                 <EditableText
                   value={cell}
+                  multiline
                   ariaLabel={`编辑表头 ${index + 1}`}
                   style={headerStyle}
                   onFocus={() => onSelect?.(block.id)}
@@ -256,6 +257,7 @@ function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ta
                 {editable && onCommit ? (
                   <EditableText
                     value={cell}
+                    multiline
                     ariaLabel={`编辑单元格 ${rowIndex + 1}-${cellIndex + 1}`}
                     style={cellStyle}
                     onFocus={() => onSelect?.(block.id)}

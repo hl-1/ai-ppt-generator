@@ -95,6 +95,7 @@ async def _generate_one(
         objective=page.page.objective,
         key_points=page.page.key_points,
         layout_id=page.page.layout_id,
+        layout_mode=context.layout_mode,
         sections=[
             context.sections[ref] for ref in page.page.source_refs if ref in context.sections
         ],
@@ -122,7 +123,7 @@ async def _generate_one(
         page_title=page.page.title,
         slide=slide,
     )
-    await _save_ready(slide_id, slide, issues)
+    await _save_ready(slide_id, slide, issues, intended_mode=context.layout_mode)
     await _publish(project_id, "slide_completed", f"第 {page.position} 页已完成", slide_id, page)
 
 
@@ -138,6 +139,7 @@ class DeckContext:
         tone: str,
         theme_id: str,
         theme_overrides: dict,
+        layout_mode: str,
         sections: dict[str, OutlineSourceSection],
         pages: dict[uuid.UUID, "SlideTarget"],
         ordered_titles: list[str],
@@ -148,6 +150,7 @@ class DeckContext:
         self.tone = tone
         self.theme_id = theme_id
         self.theme_overrides = theme_overrides
+        self.layout_mode = layout_mode if layout_mode in ("fixed", "flex") else "flex"
         self.sections = sections
         self.pages = pages
         self.total = len(ordered_titles)
@@ -204,6 +207,7 @@ async def _load_context(project_id: uuid.UUID) -> DeckContext | None:
             tone=project.tone,
             theme_id=project.theme_id,
             theme_overrides=dict(project.theme_overrides or {}),
+            layout_mode=getattr(project, "layout_mode", None) or "flex",
             sections=sections,
             pages=targets,
             ordered_titles=[page.title for page in pages],
@@ -225,6 +229,8 @@ async def _save_ready(
     slide_id: uuid.UUID,
     content: SlideContent,
     issues: list[StructureIssue],
+    *,
+    intended_mode: str,
 ) -> None:
     async with async_session_factory() as session:
         slide = await session.get(Slide, slide_id, with_for_update=True)
@@ -232,6 +238,18 @@ async def _save_ready(
             return
         slide.blocks = [block.model_dump(mode="json") for block in content.blocks]
         slide.speaker_notes = content.speaker_notes
+        # 以项目编排意图为准，避免内容默认值把 flex 页落成 fixed
+        mode = intended_mode if intended_mode in ("fixed", "flex") else content.layout_mode
+        if mode == "flex":
+            slide.layout_mode = "flex"
+            slide.layout_tree = (
+                content.layout_tree.model_dump(mode="json")
+                if content.layout_tree is not None
+                else None
+            )
+        else:
+            slide.layout_mode = "fixed"
+            slide.layout_tree = None
         # 修复一轮后仍留下的问题不阻断生成，交给质量检查节点统一收口
         slide.issues = [issue.model_dump(mode="json") for issue in issues]
         slide.status = "ready"

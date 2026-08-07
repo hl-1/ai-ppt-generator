@@ -48,6 +48,7 @@ export default function CreatePage() {
   const [audience, setAudience] = useState('')
   const [tone, setTone] = useState<NonNullable<Tone>>('professional')
   const [pageCount, setPageCount] = useState(10)
+  const [layoutMode, setLayoutMode] = useState<'fixed' | 'flex'>('flex')
   const [step, setStep] = useState<string | null>(null)
   const create = useCreateDraft()
 
@@ -66,6 +67,7 @@ export default function CreatePage() {
         tone,
         pageCount,
         themeId: DEFAULT_THEME_ID,
+        layoutMode,
         onStep: setStep,
       },
       {
@@ -139,6 +141,16 @@ export default function CreatePage() {
               value={pageCount}
               options={PAGE_COUNT_OPTIONS}
               onChange={(event) => setPageCount(Number(event.target.value))}
+            />
+            <PillSelect
+              label="排版"
+              disabled={busy}
+              value={layoutMode}
+              options={[
+                { value: 'flex', label: '灵活排版' },
+                { value: 'fixed', label: '固定版式' },
+              ]}
+              onChange={(event) => setLayoutMode(event.target.value as 'fixed' | 'flex')}
             />
             <PillSelect
               label="语气"

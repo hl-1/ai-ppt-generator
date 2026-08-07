@@ -1,0 +1,57 @@
+{
+  "id": "golden-image-left",
+  "name": "图左文右（golden）",
+  "description": "前后端 solver 对齐用的基准树；expected_rects 由 backend solve 产出",
+  "tree": {
+    "type": "row",
+    "id": "root",
+    "gap_pt": 16,
+    "ratios": [38, 62],
+    "grow": 1.0,
+    "children": [
+      {
+        "type": "block",
+        "id": "leaf-image",
+        "block_id": "image",
+        "grow": 1.0
+      },
+      {
+        "type": "column",
+        "id": "text-col",
+        "gap_pt": 16,
+        "grow": 1.0,
+        "children": [
+          {
+            "type": "block",
+            "id": "leaf-title",
+            "block_id": "title",
+            "grow": 0.5,
+            "text_style": "title"
+          },
+          {
+            "type": "block",
+            "id": "leaf-body",
+            "block_id": "body",
+            "grow": 1.5,
+            "text_style": "bullet"
+          }
+        ]
+      }
+    ]
+  },
+  "expected_rects": {
+    "image": { "x": 0.0, "y": 0.0, "w": 0.37366666666666665, "h": 1.0 },
+    "title": {
+      "x": 0.3903333333333333,
+      "y": 0.0,
+      "w": 0.6096666666666666,
+      "h": 0.24259259259259258
+    },
+    "body": {
+      "x": 0.3903333333333333,
+      "y": 0.2722222222222222,
+      "w": 0.6096666666666666,
+      "h": 0.7277777777777777
+    }
+  }
+}

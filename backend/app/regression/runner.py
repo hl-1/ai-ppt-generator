@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.domain.content import Block, Deck
 from app.domain.export_check import run_export_check
-from app.domain.layout import get_layout
+from app.domain.slide_geometry import placed_by_block_id
 from app.domain.text_metrics import fonts_available
 from app.domain.theme import load_themes
 from app.regression.corpus import DENSITIES, load_corpus_decks
@@ -123,12 +123,15 @@ def count_measurable_slots(deck: Deck) -> int:
     """可做文字溢出度量的槽位数（text/bullets 且布局声明了 text_style）。"""
     total = 0
     for slide in deck.slides:
-        layout = get_layout(slide.layout_id)
+        try:
+            placements = placed_by_block_id(slide)
+        except KeyError:
+            continue
         for block in slide.blocks:
             if block.type not in {"text", "bullets"}:
                 continue
-            slot = layout.slot_by_id(block.slot_id)
-            if slot is not None and slot.text_style is not None:
+            placed = placements.get(block.id)
+            if placed is not None and placed.text_style is not None:
                 total += 1
     return total
 

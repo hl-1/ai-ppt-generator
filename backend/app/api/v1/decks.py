@@ -25,6 +25,20 @@ from app.api.sse import event_stream_response
 from app.api.v1.projects import OwnedProject
 from app.core.db import get_session
 from app.domain.export_check import ExportCheckReport
+from app.domain.flex_edit import (
+    build_flex_tree_from_fixed,
+    default_block_dict,
+    default_text_style_for_type,
+)
+from app.domain.flex_layout import (
+    FlexContainer,
+    FlexLeaf,
+    insert_leaf,
+    iter_leaf_block_ids,
+    prune_empty_containers,
+    remove_leaf_by_block_id,
+)
+from app.domain.flex_normalize import normalize
 from app.domain.layout import get_layout
 from app.domain.layout_switch import (
     LayoutSwitchOk,
@@ -40,7 +54,11 @@ from app.domain.slide_patch import (
 from app.domain.theme import resolve_project_theme
 from app.images.validate import ImageRejected, validate_image
 from app.llm.base import SlideEditInput
-from app.llm.errors import InvalidSlideEditOutputError, LLMNotConfiguredError
+from app.llm.errors import (
+    InvalidSlideEditOutputError,
+    InvalidSlideOutputError,
+    LLMNotConfiguredError,
+)
 from app.llm.slide_edit import block_to_edit_input
 from app.models.project import Project
 from app.models.slide import Slide
@@ -51,6 +69,8 @@ from app.schemas.deck import (
     AiEditOperationPublic,
     AiEditProposalPublic,
     AiEditRequest,
+    BlockCreateRequest,
+    BlockDeleteRequest,
     BlockStyleUpdate,
     BlockUpdate,
     DeckEvent,
@@ -58,10 +78,17 @@ from app.schemas.deck import (
     DeckGenerateRequest,
     DeckPublic,
     DiscardedOperationPublic,
+    FlexLayoutUpdateRequest,
+    FlexStateUpdateRequest,
     LayoutCandidatePublic,
     LayoutSwitchRequest,
+    RelayoutApplyRequest,
+    RelayoutCandidate,
+    RelayoutProposalPublic,
+    RelayoutRequest,
     SlideOrderRequest,
     SlidePublic,
+    UnlockFlexRequest,
 )
 from app.services.deck import (
     clear_cancel,
@@ -75,7 +102,8 @@ from app.services.deck import (
 )
 from app.services.media import media_url, store_image
 from app.services.quality import build_quality_report, project_to_content_deck
-from app.worker.context import create_slide_edit_generator
+from app.llm.relayout import build_relayout_candidates
+from app.worker.context import create_relayout_generator, create_slide_edit_generator
 from app.workflows.slide_edit import (
     build_slide_edit_workflow,
     parse_slide_blocks,
@@ -123,6 +151,38 @@ def _ensure_editable(slide: Slide, revision: int) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail="页面已被其他操作更新，请刷新后重试",
         )
+
+
+def _require_flex_tree(slide: Slide) -> FlexContainer:
+    if slide.layout_mode != "flex" or slide.layout_tree is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="当前页面不是灵活布局，请先解锁",
+        )
+    return FlexContainer.model_validate(slide.layout_tree)
+
+
+def _dump_layout_tree(tree: FlexContainer) -> dict:
+    return tree.model_dump(mode="json")
+
+
+def _apply_flex_tree(slide: Slide, layout_tree: FlexContainer) -> None:
+    tree = normalize(layout_tree)
+    leaf_ids = set(iter_leaf_block_ids(tree))
+    block_ids = {str(block.get("id")) for block in slide.blocks}
+    unknown = leaf_ids - block_ids
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"布局树引用了不存在的内容块：{', '.join(sorted(unknown))}",
+        )
+    unplaced = block_ids - leaf_ids
+    if unplaced:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"仍有内容块未放入布局树：{', '.join(sorted(unplaced))}",
+        )
+    slide.layout_tree = _dump_layout_tree(tree)
 
 
 async def _enqueue(
@@ -404,6 +464,11 @@ async def update_slide_block(
         updated["value"] = body.value
         updated["label"] = body.label
         updated["note"] = body.note
+    elif body.type == "chart":
+        updated["chart_type"] = body.chart_type
+        updated["categories"] = body.categories
+        updated["series"] = [item.model_dump() for item in body.series]
+        updated["unit"] = body.unit
     else:
         updated["header"] = body.header
         updated["rows"] = body.rows
@@ -450,6 +515,247 @@ async def update_slide_block_style(
         updated["style"] = body.style.model_dump(mode="json", exclude_none=True)
 
     slide.blocks = [updated if block.get("id") == block_id else block for block in slide.blocks]
+    refresh_slide_issues(slide, theme=resolve_project_theme(project))
+    slide.revision += 1
+    await session.commit()
+    await session.refresh(slide)
+    return SlidePublic.model_validate(slide)
+
+
+@router.post(
+    "/slides/{slide_id}/blocks",
+    response_model=SlidePublic,
+)
+async def create_slide_block(
+    slide_id: uuid.UUID,
+    body: BlockCreateRequest,
+    project: OwnedProject,
+    session: SessionDep,
+) -> SlidePublic:
+    slides = await load_slides(session, project.id)
+    slide = _find_slide(slides, slide_id)
+    _ensure_editable(slide, body.revision)
+    tree = _require_flex_tree(slide)
+
+    block_id = uuid.uuid4().hex[:12]
+    leaf = FlexLeaf(
+        id=f"leaf-{block_id}",
+        block_id=block_id,
+        text_style=default_text_style_for_type(body.type),
+    )
+    if not insert_leaf(tree, body.parent_id, body.index, leaf):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="目标容器不存在",
+        )
+
+    slide.layout_tree = _dump_layout_tree(normalize(tree))
+    slide.blocks = [*slide.blocks, default_block_dict(body.type, block_id)]
+    refresh_slide_issues(slide, theme=resolve_project_theme(project))
+    slide.revision += 1
+    await session.commit()
+    await session.refresh(slide)
+    return SlidePublic.model_validate(slide)
+
+
+@router.delete(
+    "/slides/{slide_id}/blocks/{block_id}",
+    response_model=SlidePublic,
+)
+async def delete_slide_block(
+    slide_id: uuid.UUID,
+    block_id: str,
+    body: BlockDeleteRequest,
+    project: OwnedProject,
+    session: SessionDep,
+) -> SlidePublic:
+    slides = await load_slides(session, project.id)
+    slide = _find_slide(slides, slide_id)
+    _ensure_editable(slide, body.revision)
+    tree = _require_flex_tree(slide)
+
+    if not any(block.get("id") == block_id for block in slide.blocks):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="内容块不存在")
+
+    leaf_ids = iter_leaf_block_ids(tree)
+    if block_id in leaf_ids and len(leaf_ids) <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="至少保留一个内容块",
+        )
+
+    if not remove_leaf_by_block_id(tree, block_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="布局树中不存在该内容块",
+        )
+    pruned = prune_empty_containers(tree)
+    if not iter_leaf_block_ids(pruned):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="至少保留一个内容块",
+        )
+
+    slide.layout_tree = _dump_layout_tree(normalize(pruned))
+    slide.blocks = [block for block in slide.blocks if block.get("id") != block_id]
+    refresh_slide_issues(slide, theme=resolve_project_theme(project))
+    slide.revision += 1
+    await session.commit()
+    await session.refresh(slide)
+    return SlidePublic.model_validate(slide)
+
+
+@router.put(
+    "/slides/{slide_id}/flex-layout",
+    response_model=SlidePublic,
+)
+async def update_flex_layout(
+    slide_id: uuid.UUID,
+    body: FlexLayoutUpdateRequest,
+    project: OwnedProject,
+    session: SessionDep,
+) -> SlidePublic:
+    slides = await load_slides(session, project.id)
+    slide = _find_slide(slides, slide_id)
+    _ensure_editable(slide, body.revision)
+    _require_flex_tree(slide)
+    _apply_flex_tree(slide, body.layout_tree)
+    refresh_slide_issues(slide, theme=resolve_project_theme(project))
+    slide.revision += 1
+    await session.commit()
+    await session.refresh(slide)
+    return SlidePublic.model_validate(slide)
+
+
+@router.put(
+    "/slides/{slide_id}/flex-state",
+    response_model=SlidePublic,
+)
+async def update_flex_state(
+    slide_id: uuid.UUID,
+    body: FlexStateUpdateRequest,
+    project: OwnedProject,
+    session: SessionDep,
+) -> SlidePublic:
+    """原子写回 blocks + layout_tree，供撤销/重做恢复整页结构。"""
+    slides = await load_slides(session, project.id)
+    slide = _find_slide(slides, slide_id)
+    _ensure_editable(slide, body.revision)
+    _require_flex_tree(slide)
+
+    blocks = [block.model_dump(mode="json") for block in body.blocks]
+    if not blocks:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="至少保留一个内容块",
+        )
+    slide.blocks = blocks
+    slide.layout_mode = "flex"
+    _apply_flex_tree(slide, body.layout_tree)
+    refresh_slide_issues(slide, theme=resolve_project_theme(project))
+    slide.revision += 1
+    await session.commit()
+    await session.refresh(slide)
+    return SlidePublic.model_validate(slide)
+
+
+@router.post(
+    "/slides/{slide_id}/relayout",
+    response_model=RelayoutProposalPublic,
+)
+async def propose_relayout(
+    slide_id: uuid.UUID,
+    body: RelayoutRequest,
+    project: OwnedProject,
+    session: SessionDep,
+) -> RelayoutProposalPublic:
+    slides = await load_slides(session, project.id)
+    slide = _find_slide(slides, slide_id)
+    _ensure_editable(slide, body.revision)
+    tree = _require_flex_tree(slide)
+
+    generator = create_relayout_generator()
+    try:
+        llm_trees = await generator.propose(
+            blocks=slide.blocks,
+            current_tree=tree,
+            page_title=slide.title,
+            count=2,
+        )
+    except LLMNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(error),
+        ) from error
+    except InvalidSlideOutputError:
+        llm_trees = []
+
+    pairs = build_relayout_candidates(
+        llm_trees=llm_trees,
+        blocks=slide.blocks,
+        current_tree=tree,
+        limit=3,
+    )
+    return RelayoutProposalPublic(
+        revision=slide.revision,
+        candidates=[
+            RelayoutCandidate(id=candidate_id, layout_tree=candidate_tree)
+            for candidate_id, candidate_tree in pairs
+        ],
+    )
+
+
+@router.post(
+    "/slides/{slide_id}/relayout/apply",
+    response_model=SlidePublic,
+)
+async def apply_relayout(
+    slide_id: uuid.UUID,
+    body: RelayoutApplyRequest,
+    project: OwnedProject,
+    session: SessionDep,
+) -> SlidePublic:
+    slides = await load_slides(session, project.id)
+    slide = _find_slide(slides, slide_id)
+    _ensure_editable(slide, body.revision)
+    _require_flex_tree(slide)
+    _apply_flex_tree(slide, body.layout_tree)
+    refresh_slide_issues(slide, theme=resolve_project_theme(project))
+    slide.revision += 1
+    await session.commit()
+    await session.refresh(slide)
+    return SlidePublic.model_validate(slide)
+
+
+@router.post(
+    "/slides/{slide_id}/unlock-flex",
+    response_model=SlidePublic,
+)
+async def unlock_flex(
+    slide_id: uuid.UUID,
+    body: UnlockFlexRequest,
+    project: OwnedProject,
+    session: SessionDep,
+) -> SlidePublic:
+    slides = await load_slides(session, project.id)
+    slide = _find_slide(slides, slide_id)
+    _ensure_editable(slide, body.revision)
+    if slide.layout_mode == "flex" and slide.layout_tree is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="页面已是灵活布局",
+        )
+
+    layout = get_layout(slide.layout_id)
+    tree = normalize(build_flex_tree_from_fixed(layout, slide.blocks))
+    if not iter_leaf_block_ids(tree):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无法从当前页面生成灵活布局",
+        )
+
+    slide.layout_mode = "flex"
+    slide.layout_tree = _dump_layout_tree(tree)
     refresh_slide_issues(slide, theme=resolve_project_theme(project))
     slide.revision += 1
     await session.commit()

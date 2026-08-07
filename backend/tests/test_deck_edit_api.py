@@ -350,3 +350,61 @@ async def test_list_layouts_returns_compat_flags(client: AsyncClient) -> None:
     chart = next(item for item in body if item["layout_id"] == "chart")
     assert chart["compatible"] is False
     assert chart["reason"]
+
+
+@pytest.mark.asyncio
+async def test_update_chart_block_data(client: AsyncClient) -> None:
+    headers = await _sign_up(client)
+    project, slides = await _project_with_slides(
+        client,
+        headers,
+        [
+            {
+                "title": "图表页",
+                "layout_id": "chart",
+                "blocks": [
+                    {
+                        "id": "t1",
+                        "slot_id": "title",
+                        "type": "text",
+                        "text": "增长",
+                        "locked": False,
+                    },
+                    {
+                        "id": "c1",
+                        "slot_id": "chart",
+                        "type": "chart",
+                        "chart_type": "bar",
+                        "categories": ["A", "B"],
+                        "series": [{"name": "系列1", "values": [3.0, 5.0]}],
+                        "locked": False,
+                    },
+                ],
+            }
+        ],
+    )
+    slide = slides[0]
+    response = await client.patch(
+        f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/blocks/c1",
+        headers=headers,
+        json={
+            "type": "chart",
+            "revision": slide.revision,
+            "chart_type": "column",
+            "categories": ["Q1", "Q2", "Q3"],
+            "series": [
+                {"name": "营收", "values": [10, 20, 15]},
+                {"name": "成本", "values": [4, 8, 6]},
+            ],
+            "unit": "万",
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    chart = next(block for block in body["blocks"] if block["id"] == "c1")
+    assert chart["chart_type"] == "column"
+    assert chart["categories"] == ["Q1", "Q2", "Q3"]
+    assert chart["series"][0]["name"] == "营收"
+    assert chart["series"][0]["values"] == [10, 20, 15]
+    assert chart["unit"] == "万"
+    assert chart["locked"] is True

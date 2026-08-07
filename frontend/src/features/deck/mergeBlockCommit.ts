@@ -42,6 +42,14 @@ export function mergeBlockCommit(
   }
 
   if (commit.type === 'table' && block.type === 'table') {
+    if (commit.kind === 'replace') {
+      return {
+        type: 'table',
+        header: commit.header,
+        rows: commit.rows,
+      }
+    }
+
     const base =
       previous?.type === 'table'
         ? { header: previous.header, rows: previous.rows }
@@ -67,6 +75,16 @@ export function mergeBlockCommit(
             )
           : row,
       ),
+    }
+  }
+
+  if (commit.type === 'chart' && block.type === 'chart') {
+    return {
+      type: 'chart',
+      chart_type: commit.chart_type,
+      categories: commit.categories,
+      series: commit.series,
+      unit: commit.unit ?? null,
     }
   }
 

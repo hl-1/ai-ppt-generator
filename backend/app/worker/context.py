@@ -7,6 +7,7 @@ from app.core.config import get_settings
 from app.images.pipeline import create_image_pipeline
 from app.llm.base import OutlineGenerator, SlideEditGenerator, SlideGenerator
 from app.llm.deepseek import DeepSeekOutlineGenerator
+from app.llm.relayout import DeepSeekRelayoutGenerator
 from app.llm.slide import DeepSeekSlideGenerator
 from app.llm.slide_edit import DeepSeekSlideEditGenerator
 
@@ -46,6 +47,17 @@ def create_slide_generator(client: AsyncOpenAI | None = None) -> SlideGenerator:
 def create_slide_edit_generator(client: AsyncOpenAI | None = None) -> SlideEditGenerator:
     settings = get_settings()
     return DeepSeekSlideEditGenerator(
+        client=client or create_llm_client(),
+        model=settings.llm_model,
+        api_key=settings.llm_api_key,
+        thinking_enabled=settings.llm_thinking_enabled,
+        timeout_seconds=settings.llm_timeout_seconds,
+    )
+
+
+def create_relayout_generator(client: AsyncOpenAI | None = None) -> DeepSeekRelayoutGenerator:
+    settings = get_settings()
+    return DeepSeekRelayoutGenerator(
         client=client or create_llm_client(),
         model=settings.llm_model,
         api_key=settings.llm_api_key,

@@ -42,6 +42,8 @@ class Slide(Base):
 
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     layout_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    layout_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="flex")
+    layout_tree: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # 大纲标题先行落库，页面还没生成时进度列表也能显示这一页是什么
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")

@@ -23,6 +23,17 @@ export function contentBodyFromBlock(block: Block): BlockUpdateBody | null {
         header: [...block.header],
         rows: block.rows.map((row) => [...row]),
       }
+    case 'chart':
+      return {
+        type: 'chart',
+        chart_type: block.chart_type,
+        categories: [...block.categories],
+        series: block.series.map((item) => ({
+          name: item.name,
+          values: [...item.values],
+        })),
+        unit: block.unit ?? null,
+      }
     default:
       return null
   }
@@ -50,6 +61,15 @@ export function applyContentBody(block: Block, body: BlockUpdateBody): Block {
   }
   if (body.type === 'table' && block.type === 'table') {
     return { ...block, header: body.header, rows: body.rows }
+  }
+  if (body.type === 'chart' && block.type === 'chart') {
+    return {
+      ...block,
+      chart_type: body.chart_type,
+      categories: body.categories,
+      series: body.series,
+      unit: body.unit ?? null,
+    }
   }
   return block
 }

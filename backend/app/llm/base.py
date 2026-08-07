@@ -3,7 +3,7 @@ from typing import Literal, Protocol
 from pydantic import BaseModel, Field
 
 from app.domain.outline import OutlineDraft
-from app.domain.slide_draft import SlideDraft
+from app.domain.slide_draft import FlexSlideDraft, SlideDraft
 from app.domain.slide_patch import BlockPatch
 
 
@@ -52,6 +52,7 @@ class SlideGenerationInput(BaseModel):
     objective: str
     key_points: list[str]
     layout_id: str
+    layout_mode: Literal["fixed", "flex"] = "flex"
     sections: list[OutlineSourceSection] = Field(default_factory=list)
     # 相邻页标题，用来避免内容重复或衔接断裂
     neighbor_titles: list[str] = Field(default_factory=list)
@@ -60,8 +61,8 @@ class SlideGenerationInput(BaseModel):
 
 
 class SlideGenerator(Protocol):
-    async def generate(self, payload: SlideGenerationInput) -> SlideDraft:
-        """根据大纲页与布局槽位生成单页正文草稿。"""
+    async def generate(self, payload: SlideGenerationInput) -> SlideDraft | FlexSlideDraft:
+        """根据大纲页生成单页正文草稿（fixed 槽位或 flex 布局树）。"""
 
 
 SlideEditAction = Literal["rewrite", "condense", "expand", "instruct"]

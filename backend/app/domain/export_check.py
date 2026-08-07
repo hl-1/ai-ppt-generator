@@ -12,9 +12,10 @@ from collections.abc import Callable, Mapping
 from pydantic import BaseModel, Field
 
 from app.domain.content import Deck, ImageBlock, Slide
-from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT
+from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, Rect
 from app.domain.layout import get_layout
 from app.domain.quality import check_deck_content_quality
+from app.domain.slide_geometry import placed_by_block_id, resolve_slide_geometry
 from app.domain.theme import Theme, get_theme
 from app.domain.validation import StructureIssue, has_blocking_issue, validate_deck
 
@@ -38,26 +39,51 @@ def allow_export(issues: list[StructureIssue]) -> bool:
     return not has_blocking_issue(issues)
 
 
+def _rect_out_of_bounds(rect: Rect) -> tuple[float, float] | None:
+    right = rect.x + rect.w
+    bottom = rect.y + rect.h
+    if right > 1.0001 or bottom > 1.0001 or rect.x < -1e-6 or rect.y < -1e-6:
+        return right, bottom
+    return None
+
+
 def check_slot_bounds(deck: Deck) -> list[StructureIssue]:
-    """槽位矩形超出 16:9 画布边界 → error。"""
+    """槽位/放置矩形超出 16:9 画布边界 → error。"""
     issues: list[StructureIssue] = []
     for slide in deck.slides:
+        if slide.layout_mode == "flex":
+            for placed in resolve_slide_geometry(slide):
+                out = _rect_out_of_bounds(placed.rect)
+                if out is None:
+                    continue
+                right, bottom = out
+                issues.append(
+                    StructureIssue(
+                        severity="error",
+                        slide_id=slide.id,
+                        slot_id=placed.block_id,
+                        message=(f"槽位超出 16:9 画布边界（右 {right:.3f} / 下 {bottom:.3f}）"),
+                    )
+                )
+            continue
+
         try:
             layout = get_layout(slide.layout_id)
         except KeyError:
             continue
         for slot in layout.slots:
-            right = slot.rect.x + slot.rect.w
-            bottom = slot.rect.y + slot.rect.h
-            if right > 1.0001 or bottom > 1.0001 or slot.rect.x < -1e-6 or slot.rect.y < -1e-6:
-                issues.append(
-                    StructureIssue(
-                        severity="error",
-                        slide_id=slide.id,
-                        slot_id=slot.id,
-                        message=(f"槽位超出 16:9 画布边界（右 {right:.3f} / 下 {bottom:.3f}）"),
-                    )
+            out = _rect_out_of_bounds(slot.rect)
+            if out is None:
+                continue
+            right, bottom = out
+            issues.append(
+                StructureIssue(
+                    severity="error",
+                    slide_id=slide.id,
+                    slot_id=slot.id,
+                    message=(f"槽位超出 16:9 画布边界（右 {right:.3f} / 下 {bottom:.3f}）"),
                 )
+            )
     return issues
 
 
@@ -205,14 +231,14 @@ def check_content_overflows_canvas(
     issues: list[StructureIssue] = []
     for slide in deck.slides:
         try:
-            layout = get_layout(slide.layout_id)
+            placements = placed_by_block_id(slide)
         except KeyError:
             continue
         for block in slide.blocks:
-            slot = layout.slot_by_id(block.slot_id)
-            if slot is None:
+            placed = placements.get(block.id)
+            if placed is None:
                 continue
-            _x, y_pt, w_pt, h_pt = slot.rect.to_points()
+            _x, y_pt, w_pt, h_pt = placed.rect.to_points()
             used_height: float | None = None
 
             if block.type == "text":
@@ -220,7 +246,7 @@ def check_content_overflows_canvas(
 
                 box = resolve_box(theme, block.style)
                 avail_w, avail_h = content_rect_pt(w_pt, h_pt, padding_pt=box.padding_pt)
-                style = merge_text_style(theme, slot.text_style or "body", block.style)
+                style = merge_text_style(theme, placed.text_style or "body", block.style)
                 used_height = measure_text(
                     block.text, style=style, width_pt=avail_w, height_pt=avail_h
                 ).height_pt
@@ -229,7 +255,7 @@ def check_content_overflows_canvas(
 
                 box = resolve_box(theme, block.style)
                 avail_w, avail_h = content_rect_pt(w_pt, h_pt, padding_pt=box.padding_pt)
-                style = merge_text_style(theme, slot.text_style or "bullet", block.style)
+                style = merge_text_style(theme, placed.text_style or "bullet", block.style)
                 used_height = measure_bullets(
                     block.items, style=style, width_pt=avail_w, height_pt=avail_h
                 ).height_pt
@@ -241,7 +267,7 @@ def check_content_overflows_canvas(
                     StructureIssue(
                         severity="error",
                         slide_id=slide.id,
-                        slot_id=slot.id,
+                        slot_id=block.slot_id or block.id,
                         message="内容渲染后将超出页面底边，请缩短文字或调整布局",
                     )
                 )

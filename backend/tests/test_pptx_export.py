@@ -6,11 +6,20 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 from pptx.util import Pt
 
-from app.domain.content import ChartBlock, ChartSeries, Deck, Slide, TextBlock
+from app.domain.content import (
+    BulletsBlock,
+    ChartBlock,
+    ChartSeries,
+    Deck,
+    ImageBlock,
+    Slide,
+    TextBlock,
+)
+from app.domain.flex_layout import FlexContainer, FlexLeaf
 from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT
 from app.domain.sample import load_sample_deck
 from app.domain.theme import get_theme, load_themes
-from app.domain.validation import validate_slide
+from app.domain.validation import has_blocking_issue, validate_slide
 from app.main import app
 from app.render.color import to_rgb
 from app.render.pptx import render_deck_to_pptx
@@ -317,3 +326,76 @@ def test_chart_capacity_overflow_is_warning_not_error() -> None:
     assert not errors
     assert any("系列" in issue.message for issue in warnings)
     assert any("分类" in issue.message for issue in warnings)
+
+
+def _flex_image_left_slide() -> Slide:
+    return Slide(
+        id="flex-1",
+        layout_id="image-left",
+        layout_mode="flex",
+        layout_tree=FlexContainer(
+            type="row",
+            id="root",
+            gap_pt=16,
+            ratios=[38, 62],
+            children=[
+                FlexLeaf(id="leaf-image", block_id="image"),
+                FlexContainer(
+                    type="column",
+                    id="text-col",
+                    gap_pt=16,
+                    children=[
+                        FlexLeaf(
+                            id="leaf-title",
+                            block_id="title",
+                            grow=0.5,
+                            text_style="title",
+                        ),
+                        FlexLeaf(
+                            id="leaf-body",
+                            block_id="body",
+                            grow=1.5,
+                            text_style="bullet",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        blocks=[
+            ImageBlock(id="image", slot_id="image", alt="配图", source="placeholder"),
+            TextBlock(id="title", slot_id="title", text="灵活布局标题"),
+            BulletsBlock(id="body", slot_id="body", items=["要点一", "要点二"]),
+        ],
+    )
+
+
+def test_flex_slide_validates_and_renders_pptx() -> None:
+    slide = _flex_image_left_slide()
+    issues = validate_slide(slide, theme_id="ivory")
+    assert not has_blocking_issue(issues)
+
+    deck = Deck(id="d-flex", title="flex", theme_id="ivory", slides=[slide])
+    buffer = render_deck_to_pptx(deck, theme_id="ivory")
+    assert buffer.getvalue()[:2] == b"PK"
+    presentation = Presentation(buffer)
+    assert len(presentation.slides) == 1
+    texts = []
+    for shape in presentation.slides[0].shapes:
+        if shape.has_text_frame:
+            for paragraph in shape.text_frame.paragraphs:
+                texts.append("".join(run.text for run in paragraph.runs))
+    joined = "\n".join(texts)
+    assert "灵活布局标题" in joined
+    assert "要点一" in joined
+
+
+def test_flex_slide_with_preset_renders_pptx() -> None:
+    slide = _flex_image_left_slide()
+    assert slide.layout_tree is not None
+    slide.layout_tree.preset = "solid_boxes"
+    deck = Deck(id="d-flex-skin", title="flex-skin", theme_id="ivory", slides=[slide])
+    buffer = render_deck_to_pptx(deck, theme_id="ivory")
+    assert buffer.getvalue()[:2] == b"PK"
+    presentation = Presentation(buffer)
+    # 背景 + 2 个 fill_box 皮肤 + 内容形状，至少多于无皮肤时
+    assert len(presentation.slides[0].shapes) >= 4

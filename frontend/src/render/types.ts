@@ -34,4 +34,12 @@ export type EditableBlockCommit =
   | { type: 'kpi'; field: 'value' | 'label' | 'note'; text: string }
   | { type: 'table'; kind: 'header'; index: number; text: string }
   | { type: 'table'; kind: 'cell'; row: number; col: number; text: string }
+  | { type: 'table'; kind: 'replace'; header: string[]; rows: string[][] }
+  | {
+      type: 'chart'
+      chart_type: ChartBlock['chart_type']
+      categories: string[]
+      series: ChartBlock['series']
+      unit?: string | null
+    }
   | { type: 'style'; style: import('@/render/blockStyle').BlockStyle | null }

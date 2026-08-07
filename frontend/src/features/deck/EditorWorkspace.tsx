@@ -25,23 +25,29 @@ import {
   useRetrySlide,
 } from '@/features/deck/api'
 import { AiEditPanel } from '@/features/deck/AiEditPanel'
+import { ChartDataEditor } from '@/features/deck/ChartDataEditor'
 import { ElementToolbar } from '@/features/deck/ElementToolbar'
 import { ExportDialog } from '@/features/deck/ExportDialog'
 import { Filmstrip } from '@/features/deck/Filmstrip'
+import { FlexEditLayer } from '@/features/deck/FlexEditLayer'
+import { findLeafParent, setContainerPreset } from '@/features/deck/flexTree'
 import { ImagePanel } from '@/features/deck/ImagePanel'
 import { LayoutPanel } from '@/features/deck/LayoutPanel'
 import { PresentMode } from '@/features/deck/PresentMode'
+import { RelayoutDock } from '@/features/deck/RelayoutPanel'
 import { ThemePanel } from '@/features/deck/ThemePanel'
 import { type DeckSlide, toRenderSlide } from '@/features/deck/types'
 import { useDeckProgress } from '@/features/deck/useDeckProgress'
+import { registerSlideSaveHandlers } from '@/features/deck/slideSaveBridge'
 import { type SaveStatus, useSlideSaveQueue } from '@/features/deck/useSlideSaveQueue'
 import type { ProjectDetail } from '@/features/projects/types'
 import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import type { BlockStyle } from '@/render/blockStyle'
+import type { FlexContainer } from '@/render/flexLayout'
 import { SlideView } from '@/render/SlideView'
 import { resolveTheme, type ThemeOverrides } from '@/render/themeOverrides'
-import type { Theme } from '@/render/types'
+import type { Slide, Theme } from '@/render/types'
 
 type BlockSelection = { slideId: string; blockId: string }
 
@@ -86,7 +92,9 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
 
   const [activeId, setActiveId] = useState<string | null>(null)
   const [scrollRequest, setScrollRequest] = useState<{ id: string; nonce: number } | null>(null)
+  const [selection, setSelection] = useState<BlockSelection | null>(null)
   const [rail, setRail] = useState<RailTab | null>(null)
+  const [relayoutOpen, setRelayoutOpen] = useState(false)
   const [zoomIndex, setZoomIndex] = useState(1)
   const [presenting, setPresenting] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -97,6 +105,25 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
     const ids = slideIdsKey ? slideIdsKey.split('|') : []
     setActiveId((current) => (current && ids.includes(current) ? current : (ids[0] ?? null)))
   }, [slideIdsKey])
+
+  useEffect(() => {
+    setSelection((current) => {
+      if (!current) return null
+      if (!slides.some((slide) => slide.id === current.slideId)) return null
+      return current
+    })
+  }, [slideIdsKey])
+
+  useEffect(() => {
+    if (!activeId) return
+    setSelection((current) =>
+      current && current.slideId !== activeId ? null : current,
+    )
+  }, [activeId])
+
+  useEffect(() => {
+    setRelayoutOpen(false)
+  }, [activeId])
 
   const focusSlide = (id: string) => {
     setActiveId(id)
@@ -206,7 +233,13 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
             zoom={ZOOM_STEPS[zoomIndex]}
             canZoomOut={zoomIndex > 0}
             canZoomIn={zoomIndex < ZOOM_STEPS.length - 1}
+            selection={selection}
+            onSelectionChange={setSelection}
             onActiveChange={setActiveId}
+            onOpenRelayout={() => {
+              setRelayoutOpen(true)
+              setRail(null)
+            }}
             onZoom={(delta) =>
               setZoomIndex((current) =>
                 Math.min(Math.max(current + delta, 0), ZOOM_STEPS.length - 1),
@@ -215,13 +248,35 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
           />
         )}
 
+        {active && relayoutOpen && active.layout_mode === 'flex' && (
+          <RelayoutDock
+            projectId={project.id}
+            slide={active}
+            theme={theme}
+            open={relayoutOpen}
+            disabled={generating || active.status !== 'ready'}
+            onClose={() => setRelayoutOpen(false)}
+          />
+        )}
+
         {active && (
           <Rail
             project={project}
             slide={active}
+            theme={theme}
             tab={rail}
             locked={generating}
-            onTab={(next) => setRail((current) => (current === next ? null : next))}
+            selectedBlockId={
+              selection?.slideId === active.id ? selection.blockId : null
+            }
+            onTab={(next) => {
+              setRelayoutOpen(false)
+              setRail((current) => (current === next ? null : next))
+            }}
+            onOpenRelayout={() => {
+              setRelayoutOpen(true)
+              setRail(null)
+            }}
           />
         )}
       </div>
@@ -260,7 +315,10 @@ function SlideStage({
   zoom,
   canZoomIn,
   canZoomOut,
+  selection,
+  onSelectionChange,
   onActiveChange,
+  onOpenRelayout,
   onZoom,
 }: {
   projectId: string
@@ -272,33 +330,19 @@ function SlideStage({
   zoom: number
   canZoomIn: boolean
   canZoomOut: boolean
+  selection: BlockSelection | null
+  onSelectionChange: (selection: BlockSelection | null) => void
   onActiveChange: (slideId: string) => void
+  onOpenRelayout: () => void
   onZoom: (delta: 1 | -1) => void
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null)
   const slideElsRef = useRef(new Map<string, HTMLElement>())
   const ignoreObserverRef = useRef(false)
-  const [selection, setSelection] = useState<BlockSelection | null>(null)
   const slideIdsKey = slides.map((slide) => slide.id).join('|')
   const active = slides.find((slide) => slide.id === activeId) ?? null
   const warnings =
     active?.issues.filter((issue) => issue.severity === 'warning') ?? []
-
-  // 翻页或选中页失效时清掉元素选中
-  useEffect(() => {
-    setSelection((current) => {
-      if (!current) return null
-      if (!slides.some((slide) => slide.id === current.slideId)) return null
-      return current
-    })
-  }, [slideIdsKey])
-
-  useEffect(() => {
-    if (!activeId) return
-    setSelection((current) =>
-      current && current.slideId !== activeId ? null : current,
-    )
-  }, [activeId])
 
   const bindSlideEl = (slideId: string, node: HTMLElement | null) => {
     if (node) slideElsRef.current.set(slideId, node)
@@ -372,8 +416,9 @@ function SlideStage({
                 selection?.slideId === slide.id ? selection.blockId : null
               }
               onSelectBlock={(blockId) =>
-                setSelection(blockId ? { slideId: slide.id, blockId } : null)
+                onSelectionChange(blockId ? { slideId: slide.id, blockId } : null)
               }
+              onOpenRelayout={onOpenRelayout}
               bindEl={bindSlideEl}
             />
           ))}
@@ -435,6 +480,7 @@ function SlidePage({
   active,
   selectedBlockId,
   onSelectBlock,
+  onOpenRelayout,
   bindEl,
 }: {
   projectId: string
@@ -447,11 +493,16 @@ function SlidePage({
   active: boolean
   selectedBlockId: string | null
   onSelectBlock: (blockId: string | null) => void
+  onOpenRelayout: () => void
   bindEl: (slideId: string, node: HTMLElement | null) => void
 }) {
   const {
     commit,
     commitStyle,
+    commitFlex,
+    commitCreateBlock,
+    commitDeleteBlock,
+    commitMutate,
     undo,
     redo,
     canUndo,
@@ -463,12 +514,39 @@ function SlidePage({
   } = useSlideSaveQueue(projectId, slide.id)
   const retry = useRetrySlide(projectId)
   const editable = slide.status === 'ready' && !locked && status !== 'conflict'
+  const isFlex = slide.layout_mode === 'flex' && slide.layout_tree != null
+
+  useEffect(() => {
+    return registerSlideSaveHandlers(slide.id, {
+      commitFlex,
+      commitCreateBlock,
+      commitDeleteBlock,
+      commitMutate,
+      undo,
+    })
+  }, [
+    slide.id,
+    commitFlex,
+    commitCreateBlock,
+    commitDeleteBlock,
+    commitMutate,
+    undo,
+  ])
   const articleRef = useRef<HTMLElement | null>(null)
   const [blockEl, setBlockEl] = useState<HTMLElement | null>(null)
+  const [flexPreview, setFlexPreview] = useState<FlexContainer | null>(null)
+  const [flexDragging, setFlexDragging] = useState(false)
   const selectedBlock =
     selectedBlockId != null
       ? (slide.blocks.find((block) => block.id === selectedBlockId) ?? null)
       : null
+  const renderSlide: Slide = flexPreview
+    ? ({ ...toRenderSlide(slide), layout_tree: flexPreview } as Slide)
+    : toRenderSlide(slide)
+
+  useEffect(() => {
+    setFlexPreview(null)
+  }, [slide.id, slide.revision])
 
   useEffect(() => {
     if (!selectedBlockId || !articleRef.current) {
@@ -479,13 +557,35 @@ function SlidePage({
       `[data-block-id="${CSS.escape(selectedBlockId)}"]`,
     )
     setBlockEl(node)
-  }, [selectedBlockId, slide.blocks, zoom])
+  }, [selectedBlockId, slide.blocks, zoom, flexPreview])
 
   // 仅当前可视页响应撤销/重做，避免多页 SlidePage 抢同一快捷键
   useEffect(() => {
     if (!active || !editable) return
 
     const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const editingText =
+        target?.isContentEditable ||
+        target?.closest('[contenteditable="true"]') != null ||
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA'
+
+      if (
+        isFlex &&
+        selectedBlockId &&
+        !editingText &&
+        (event.key === 'Delete' || event.key === 'Backspace') &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
+        event.preventDefault()
+        commitDeleteBlock(selectedBlockId)
+        onSelectBlock(null)
+        return
+      }
+
       const mod = event.metaKey || event.ctrlKey
       if (!mod) return
       const key = event.key.toLowerCase()
@@ -493,7 +593,6 @@ function SlidePage({
       const isRedo = (key === 'z' && event.shiftKey) || key === 'y'
       if (!isUndo && !isRedo) return
 
-      const target = event.target as HTMLElement | null
       // 系统输入框（若有）不拦截；画布 contenteditable 的未提交草稿由 EditableText 处理
       if (
         target &&
@@ -516,7 +615,19 @@ function SlidePage({
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [active, editable, canUndo, canRedo, undo, redo, historyTick])
+  }, [
+    active,
+    editable,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    historyTick,
+    isFlex,
+    selectedBlockId,
+    commitDeleteBlock,
+    onSelectBlock,
+  ])
 
   return (
     <article
@@ -539,24 +650,49 @@ function SlidePage({
         </span>
         <span className="truncate text-[11px] text-ink-muted">{slide.title}</span>
         <SaveIndicator status={status} error={error} onRefresh={refresh} />
+        {active && isFlex && editable && (
+          <button
+            type="button"
+            onClick={onOpenRelayout}
+            className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-ink-soft transition-colors hover:bg-surface-soft hover:text-ink"
+          >
+            <RefreshCw className="size-3" />
+            换排布
+          </button>
+        )}
       </div>
 
       {slide.status === 'ready' ? (
         <div
           style={{ width: `${zoom * 100}%`, maxWidth: zoom <= 1 ? '76rem' : 'none' }}
           className={cn(
-            'shrink-0 overflow-hidden shadow-slide transition-[box-shadow,outline-color]',
+            'relative shrink-0 shadow-slide transition-[box-shadow,outline-color]',
             active ? 'outline-2 outline-accent/35 outline-offset-4' : 'outline-none',
           )}
         >
-          <SlideView
-            slide={toRenderSlide(slide)}
-            theme={theme}
-            editable={editable}
-            selectedBlockId={selectedBlockId}
-            onSelectBlock={onSelectBlock}
-            onCommit={commit}
-          />
+          <div className="relative overflow-hidden">
+            <SlideView
+              slide={renderSlide}
+              theme={theme}
+              editable={editable}
+              selectedBlockId={selectedBlockId}
+              onSelectBlock={onSelectBlock}
+              onCommit={commit}
+            />
+            {isFlex && editable && (
+              <FlexEditLayer
+                projectId={projectId}
+                slide={slide}
+                tree={slide.layout_tree as FlexContainer}
+                selectedBlockId={selectedBlockId}
+                disabled={status === 'saving'}
+                onPreviewTree={setFlexPreview}
+                onCommitTree={commitFlex}
+                onSelectBlock={(blockId) => onSelectBlock(blockId)}
+                onDraggingChange={setFlexDragging}
+              />
+            )}
+          </div>
         </div>
       ) : (
         <div
@@ -571,7 +707,7 @@ function SlidePage({
         </div>
       )}
 
-      {editable && selectedBlock && (
+      {editable && selectedBlock && !flexDragging && (
         <ElementToolbar
           articleEl={articleRef.current}
           blockEl={blockEl}
@@ -579,9 +715,48 @@ function SlidePage({
           theme={theme}
           disabled={status === 'saving'}
           onChange={(style: BlockStyle | null) => commitStyle(selectedBlock.id, style)}
+          onCommitContent={(change) => commit(selectedBlock.id, change)}
+          flexPreset={
+            isFlex && slide.layout_tree != null
+              ? (findLeafParent(slide.layout_tree as FlexContainer, selectedBlock.id)
+                  ?.parent.preset ?? null)
+              : null
+          }
+          onFlexPresetChange={
+            isFlex && slide.layout_tree != null
+              ? (preset) => {
+                  const tree = slide.layout_tree as FlexContainer
+                  const found = findLeafParent(tree, selectedBlock.id)
+                  if (!found) return
+                  const next = setContainerPreset(tree, found.parent.id, preset)
+                  if (!next) return
+                  commitFlex(next)
+                }
+              : undefined
+          }
+          onDelete={
+            isFlex
+              ? () => {
+                  commitDeleteBlock(selectedBlock.id)
+                  onSelectBlock(null)
+                }
+              : undefined
+          }
           onDismiss={() => onSelectBlock(null)}
         />
       )}
+      {editable &&
+        selectedBlock?.type === 'chart' &&
+        !flexDragging && (
+          <ChartDataEditor
+            articleEl={articleRef.current}
+            blockEl={blockEl}
+            block={selectedBlock}
+            disabled={status === 'saving'}
+            onCommit={(change) => commit(selectedBlock.id, change)}
+            onDismiss={() => onSelectBlock(null)}
+          />
+        )}
     </article>
   )
 }
@@ -640,24 +815,39 @@ function EmptyStage({ pending, onGenerate }: { pending: boolean; onGenerate: () 
 function Rail({
   project,
   slide,
+  theme,
   tab,
   locked,
+  selectedBlockId,
   onTab,
+  onOpenRelayout,
 }: {
   project: ProjectDetail
   slide: DeckSlide
+  theme: Theme
   tab: RailTab | null
   locked: boolean
+  selectedBlockId: string | null
   onTab: (tab: RailTab) => void
+  onOpenRelayout: () => void
 }) {
+  const panelOpen = Boolean(tab)
+
   return (
     <div className="flex shrink-0">
-      {tab && (
+      {panelOpen && (
         <aside className="scrollbar-slim w-80 overflow-y-auto border-l border-line bg-surface px-4 py-4">
           {tab === 'ai' && <AiEditPanel projectId={project.id} slide={slide} />}
           {tab === 'theme' && <ThemePanel project={project} disabled={locked} />}
           {tab === 'layout' && (
-            <LayoutPanel projectId={project.id} slide={slide} disabled={locked} />
+            <LayoutPanel
+              projectId={project.id}
+              slide={slide}
+              theme={theme}
+              selectedBlockId={selectedBlockId}
+              disabled={locked}
+              onOpenRelayout={onOpenRelayout}
+            />
           )}
           {tab === 'image' && (
             <ImagePanel projectId={project.id} slide={slide} disabled={locked} />

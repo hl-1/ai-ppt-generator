@@ -816,6 +816,34 @@ export interface components {
             /** Values */
             values: number[];
         };
+        /** ChartSeriesUpdate */
+        ChartSeriesUpdate: {
+            /** Name */
+            name: string;
+            /** Values */
+            values: number[];
+        };
+        /** ChartBlockUpdate */
+        ChartBlockUpdate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "chart";
+            /** Revision */
+            revision: number;
+            /**
+             * Chart Type
+             * @enum {string}
+             */
+            chart_type: "bar" | "column" | "line" | "pie";
+            /** Categories */
+            categories: string[];
+            /** Series */
+            series: components["schemas"]["ChartSeriesUpdate"][];
+            /** Unit */
+            unit?: string | null;
+        };
         /**
          * Deck
          * @description PPT 的统一内容模型。
@@ -916,6 +944,51 @@ export interface components {
              * @default true
              */
             fonts_precise: boolean;
+        };
+        /** FlexContainer */
+        FlexContainer: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "column" | "row";
+            /** Id */
+            id: string;
+            /** Children */
+            children: (components["schemas"]["FlexContainer"] | components["schemas"]["FlexLeaf"])[];
+            /**
+             * Gap Pt
+             * @default 16
+             */
+            gap_pt: number;
+            /** Ratios */
+            ratios?: number[] | null;
+            /** Preset */
+            preset?: ("solid_boxes" | "outline_boxes" | "side_line" | "numbered_steps" | "timeline") | null;
+            /**
+             * Grow
+             * @default 1
+             */
+            grow: number;
+        };
+        /** FlexLeaf */
+        FlexLeaf: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "block";
+            /** Id */
+            id: string;
+            /** Block Id */
+            block_id: string;
+            /**
+             * Grow
+             * @default 1
+             */
+            grow: number;
+            /** Text Style */
+            text_style?: string | null;
         };
         /**
          * FontFamily
@@ -1243,6 +1316,12 @@ export interface components {
              * @default ivory
              */
             theme_id: string;
+            /**
+             * Layout Mode
+             * @default flex
+             * @enum {string}
+             */
+            layout_mode: "fixed" | "flex";
         };
         /** ProjectDetail */
         ProjectDetail: {
@@ -1268,6 +1347,12 @@ export interface components {
             theme_overrides?: {
                 [key: string]: unknown;
             };
+            /**
+             * Layout Mode
+             * @default flex
+             * @enum {string}
+             */
+            layout_mode: "fixed" | "flex";
             /**
              * Status
              * @enum {string}
@@ -1311,6 +1396,12 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
+             * Layout Mode
+             * @default flex
+             * @enum {string}
+             */
+            layout_mode: "fixed" | "flex";
+            /**
              * Status
              * @enum {string}
              */
@@ -1347,6 +1438,8 @@ export interface components {
             page_count?: number | null;
             /** Theme Id */
             theme_id?: string | null;
+            /** Layout Mode */
+            layout_mode?: ("fixed" | "flex") | null;
         };
         /**
          * Rect
@@ -1409,6 +1502,13 @@ export interface components {
              * @default 1
              */
             revision: number;
+            /**
+             * Layout Mode
+             * @default fixed
+             * @enum {string}
+             */
+            layout_mode: "fixed" | "flex";
+            layout_tree?: components["schemas"]["FlexContainer"] | null;
         };
         /** SlideOrderRequest */
         SlideOrderRequest: {
@@ -1431,6 +1531,13 @@ export interface components {
             position: number;
             /** Layout Id */
             layout_id: string;
+            /**
+             * Layout Mode
+             * @default fixed
+             * @enum {string}
+             */
+            layout_mode: "fixed" | "flex";
+            layout_tree?: components["schemas"]["FlexContainer"] | null;
             /** Title */
             title: string;
             /**
@@ -2728,7 +2835,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["TextBlockUpdate"] | components["schemas"]["BulletsBlockUpdate"] | components["schemas"]["KpiBlockUpdate"] | components["schemas"]["TableBlockUpdate"];
+                "application/json": components["schemas"]["TextBlockUpdate"] | components["schemas"]["BulletsBlockUpdate"] | components["schemas"]["KpiBlockUpdate"] | components["schemas"]["TableBlockUpdate"] | components["schemas"]["ChartBlockUpdate"];
             };
         };
         responses: {

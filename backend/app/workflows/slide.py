@@ -6,7 +6,7 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from app.domain.content import Slide
-from app.domain.slide_draft import SlideDraft, draft_to_slide
+from app.domain.slide_draft import FlexSlideDraft, SlideDraft, draft_to_slide, flex_draft_to_slide
 from app.domain.theme import resolve_theme
 from app.domain.validation import StructureIssue, validate_slide
 from app.llm.base import SlideGenerationInput, SlideGenerator
@@ -25,7 +25,7 @@ class SlideWorkflowState(TypedDict, total=False):
     slide_id: str
     theme_id: str
     theme_overrides: dict[str, Any]
-    draft: SlideDraft
+    draft: SlideDraft | FlexSlideDraft
     slide: Slide
     issues: list[StructureIssue]
     repairs: int
@@ -73,7 +73,19 @@ def build_slide_workflow(generator: SlideGenerator):
 
     async def check(state: SlideWorkflowState) -> dict:
         slide_id = uuid.UUID(state["slide_id"])
-        slide = draft_to_slide(slide_id, state["input"].layout_id, state["draft"])
+        draft = state["draft"]
+        if isinstance(draft, FlexSlideDraft) or state["input"].layout_mode == "flex":
+            if not isinstance(draft, FlexSlideDraft):
+                raise InvalidSlideOutputError("灵活布局生成未返回 FlexSlideDraft")
+            slide = flex_draft_to_slide(
+                slide_id,
+                draft,
+                fallback_layout_id=state["input"].layout_id or "bullets",
+            )
+        else:
+            if not isinstance(draft, SlideDraft):
+                raise InvalidSlideOutputError("固定布局生成未返回 SlideDraft")
+            slide = draft_to_slide(slide_id, state["input"].layout_id, draft)
         theme = resolve_theme(
             state.get("theme_id") or "ivory", state.get("theme_overrides")
         )
