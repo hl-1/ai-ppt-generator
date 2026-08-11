@@ -8,8 +8,8 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_queue
 from app.core.db import async_session_factory
-from app.domain.layout import get_layout
 from app.domain.flex_layout import FlexContainer, FlexLeaf
+from app.domain.layout import get_layout
 from app.domain.slide_draft import (
     BulletsContent,
     FlexBlockContent,
@@ -63,10 +63,17 @@ class FakeSlideGenerator:
         )
 
 
+_RICH_BULLETS = [
+    "交付周期从六周缩短到三周，瓶颈在评审排队",
+    "重复建设占比过高，跨团队接口缺少统一契约",
+    "线上故障平均恢复时间仍超过四小时，需专人值班",
+]
+
+
 def _fill(slot_id: str, block_type: str) -> SlotContent:
     match block_type:
         case "bullets":
-            return BulletsContent(slot_id=slot_id, items=["要点一", "要点二"])
+            return BulletsContent(slot_id=slot_id, items=list(_RICH_BULLETS))
         case "image":
             return ImageContent(slot_id=slot_id, alt="示意图")
         case "kpi":
@@ -74,13 +81,13 @@ def _fill(slot_id: str, block_type: str) -> SlotContent:
         case "table":
             return TableContent(slot_id=slot_id, header=["项目", "结果"], rows=[["一", "二"]])
         case _:
-            return TextContent(slot_id=slot_id, text="正文")
+            return TextContent(slot_id=slot_id, text="本页核心结论与行动建议")
 
 
 def _fill_flex(block_id: str, block_type: str) -> FlexBlockContent:
     match block_type:
         case "bullets":
-            return FlexBulletsContent(id=block_id, items=["要点一", "要点二"])
+            return FlexBulletsContent(id=block_id, items=list(_RICH_BULLETS))
         case "image":
             return FlexImageContent(id=block_id, alt="示意图")
         case "kpi":
@@ -88,13 +95,16 @@ def _fill_flex(block_id: str, block_type: str) -> FlexBlockContent:
         case "table":
             return FlexTableContent(id=block_id, header=["项目", "结果"], rows=[["一", "二"]])
         case _:
-            return FlexTextContent(id=block_id, text="正文")
+            return FlexTextContent(id=block_id, text="本页核心结论与行动建议")
 
 
 def _fake_flex_draft(layout_id: str) -> FlexSlideDraft:
-    layout = get_layout(layout_id)
-    blocks = [
-        _fill_flex(slot.id, slot.accepts[0]) for slot in layout.slots if slot.required
+    """产出足够充实的多块 flex 页，避免触发过瘦 repair。"""
+    blocks: list[FlexBlockContent] = [
+        FlexTextContent(id="title", text="本页核心结论与行动建议"),
+        FlexBulletsContent(id="body", items=list(_RICH_BULLETS)),
+        FlexKpiContent(id="kpi_1", value="37%", label="增长"),
+        FlexImageContent(id="visual", alt="示意图"),
     ]
     tree = FlexContainer(
         type="column",
@@ -143,6 +153,7 @@ def _pages(count: int) -> list[dict]:
             "key_points": ["要点一", "要点二"],
             "source_refs": ["S1:1"],
             "layout_id": "cover" if index == 1 else "bullets",
+            "page_role": "cover" if index == 1 else "content",
         }
         for index in range(1, count + 1)
     ]

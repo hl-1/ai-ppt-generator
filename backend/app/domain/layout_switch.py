@@ -19,6 +19,8 @@ _TYPE_LABELS: dict[str, str] = {
     "chart": "图表",
     "table": "表格",
     "kpi": "指标",
+    "cards": "卡片",
+    "callout": "提示",
 }
 
 

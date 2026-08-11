@@ -3,6 +3,7 @@ from arq.connections import RedisSettings
 from app.core.config import get_settings
 from app.worker.context import shutdown, startup
 from app.worker.deck_tasks import generate_deck
+from app.worker.retry import MAX_TRIES
 from app.worker.tasks import generate_outline
 
 
@@ -14,5 +15,5 @@ class WorkerSettings:
     max_jobs = 3
     # 整份生成在任务内部并发，耗时随页数增长，超时需要比大纲宽松得多
     job_timeout = 15 * 60
-    max_tries = 2
+    max_tries = MAX_TRIES
     allow_abort_jobs = True

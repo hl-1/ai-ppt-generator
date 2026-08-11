@@ -16,6 +16,8 @@ const TYPE_LABEL: Record<AiEditOperation['type'], string> = {
   bullets: '列表',
   kpi: '指标',
   table: '表格',
+  cards: '卡片',
+  callout: '提示',
 }
 
 type ActiveSide = 'before' | 'after'
@@ -571,6 +573,33 @@ function PatchContent({
           </tbody>
         </table>
       </div>
+    )
+  }
+
+  if (type === 'cards' && patch.type === 'cards') {
+    if (patch.items.length === 0) return <p>（空卡片）</p>
+    return (
+      <ul className="flex flex-col gap-2">
+        {patch.items.map((item, index) => (
+          <li key={`${index}-${item.title.slice(0, 12)}`} className="flex flex-col gap-0.5">
+            <span className="font-medium">
+              {item.icon ? `${item.icon} ` : ''}
+              {item.title || '—'}
+            </span>
+            <span className="whitespace-pre-wrap text-ink-soft">{item.desc || '—'}</span>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+
+  if (type === 'callout' && patch.type === 'callout') {
+    return (
+      <p className="whitespace-pre-wrap">
+        {patch.icon ? `${patch.icon} ` : ''}
+        {patch.text || '（空）'}
+        <span className="ml-2 text-[10px] text-ink-soft">[{patch.variant}]</span>
+      </p>
     )
   }
 

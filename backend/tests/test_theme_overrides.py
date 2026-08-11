@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.core.db import async_session_factory
 from app.domain.theme import (
     ThemeOverrides,
     fonts_are_whitelisted,
@@ -16,7 +17,6 @@ from app.domain.theme import (
 from app.main import app
 from app.models.project import Project, ProjectOutline
 from app.models.slide import Slide as SlideRow
-from app.core.db import async_session_factory
 
 
 @pytest.fixture
@@ -109,6 +109,7 @@ async def test_theme_api_after_outline_confirmed(client: AsyncClient) -> None:
                 outline_page_id=page_id,
                 position=1,
                 layout_id="bullets",
+                layout_mode="fixed",
                 title="页",
                 status="ready",
                 blocks=[

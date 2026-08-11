@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { useRef, useState, type CSSProperties } from 'react'
 import { boxCss, mergeTextCss } from '@/render/blockStyle'
 import { ChartView } from '@/render/ChartView'
 import { EditableText } from '@/render/EditableText'
@@ -6,6 +6,8 @@ import { pt, resolveColor } from '@/render/style'
 import type {
   Block,
   BulletsBlock,
+  CalloutBlock,
+  CardsBlock,
   EditableBlockCommit,
   ImageBlock,
   KpiBlock,
@@ -115,6 +117,15 @@ function BulletsView({
 }: BlockProps<BulletsBlock>) {
   const textStyle = mergeTextCss(theme, slot.text_style ?? 'bullet', block.style)
   const chrome = boxCss(theme, block.style)
+  const [focus, setFocus] = useState<{ index: number; token: number; caret: 'start' | 'end' } | null>(
+    null,
+  )
+  const focusSeq = useRef(0)
+
+  const jumpTo = (index: number, caret: 'start' | 'end' = 'start') => {
+    focusSeq.current += 1
+    setFocus({ index, token: focusSeq.current, caret })
+  }
 
   return (
     <div style={chrome}>
@@ -137,8 +148,19 @@ function BulletsView({
                 value={item}
                 ariaLabel={`编辑要点 ${index + 1}`}
                 style={{ ...textStyle, flex: 1 }}
+                focusToken={focus?.index === index ? focus.token : null}
+                focusCaret={focus?.index === index ? focus.caret : 'start'}
                 onFocus={() => onSelect?.(block.id)}
                 onCommit={(text) => onCommit(block.id, { type: 'bullets', index, text })}
+                onEnter={() => {
+                  onCommit(block.id, { type: 'bullets', kind: 'insert', index })
+                  jumpTo(index + 1, 'start')
+                }}
+                onBackspaceWhenEmpty={() => {
+                  if (block.items.length <= 1) return
+                  onCommit(block.id, { type: 'bullets', kind: 'remove', index })
+                  jumpTo(Math.max(0, index - 1), 'end')
+                }}
               />
             ) : (
               <span>{item}</span>
@@ -288,11 +310,33 @@ function KpiView({ block, theme, editable, onCommit, onSelect }: BlockProps<KpiB
   const labelStyle = mergeTextCss(theme, 'kpi_label', block.style)
   const noteStyle = mergeTextCss(theme, 'kpi_note', block.style)
   const chrome = boxCss(theme, block.style)
+  // 衬线大字号侧轴承常超出 em 盒；窄列 + 槽位裁切时需整块留白（盖过 chrome.padding）
+  const shell: CSSProperties = {
+    ...chrome,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: pt(8),
+    boxSizing: 'border-box',
+    width: '100%',
+    height: '100%',
+    minWidth: 0,
+    padding: undefined,
+    paddingInline: pt(14),
+    paddingBlock: pt(8),
+    overflow: 'visible',
+  }
+  const valueCss = {
+    ...valueStyle,
+    whiteSpace: 'nowrap' as const,
+    overflow: 'visible' as const,
+    // 再给首字一点光学边距，避免 Instrument Serif「5」贴边
+    paddingInlineStart: '0.12em',
+  }
 
   if (!editable || !onCommit) {
     return (
-      <div style={{ ...chrome, display: 'flex', flexDirection: 'column', gap: pt(8) }}>
-        <span style={{ ...valueStyle, whiteSpace: 'nowrap' }}>{block.value}</span>
+      <div style={shell}>
+        <span style={valueCss}>{block.value}</span>
         <span style={labelStyle}>{block.label}</span>
         {block.note && <span style={noteStyle}>{block.note}</span>}
       </div>
@@ -300,11 +344,11 @@ function KpiView({ block, theme, editable, onCommit, onSelect }: BlockProps<KpiB
   }
 
   return (
-    <div style={{ ...chrome, display: 'flex', flexDirection: 'column', gap: pt(8) }}>
+    <div style={shell}>
       <EditableText
         value={block.value}
         ariaLabel="编辑指标数值"
-        style={{ ...valueStyle, whiteSpace: 'nowrap' }}
+        style={valueCss}
         onFocus={() => onSelect?.(block.id)}
         onCommit={(text) => onCommit(block.id, { type: 'kpi', field: 'value', text })}
       />
@@ -322,6 +366,136 @@ function KpiView({ block, theme, editable, onCommit, onSelect }: BlockProps<KpiB
         onFocus={() => onSelect?.(block.id)}
         onCommit={(text) => onCommit(block.id, { type: 'kpi', field: 'note', text })}
       />
+    </div>
+  )
+}
+
+const CARD_GAP_PT = 16
+const CARD_PAD_PT = 12
+
+function CardsView({ block, theme, editable, onCommit, onSelect }: BlockProps<CardsBlock>) {
+  const titleStyle = mergeTextCss(theme, 'subtitle', block.style)
+  const descStyle = mergeTextCss(theme, 'body', block.style)
+  const chrome = boxCss(theme, block.style)
+  const surface = resolveColor(theme, 'surface')
+  const radius = theme.shape.radius_pt
+
+  return (
+    <div
+      style={{
+        ...chrome,
+        display: 'flex',
+        flexDirection: 'row',
+        gap: pt(CARD_GAP_PT),
+        width: '100%',
+        height: '100%',
+        boxSizing: 'border-box',
+      }}
+    >
+      {block.items.map((item, index) => (
+        <div
+          key={`${block.id}-${index}`}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: pt(6),
+            padding: pt(CARD_PAD_PT),
+            background: surface,
+            borderRadius: pt(radius),
+            boxSizing: 'border-box',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: pt(6) }}>
+            {item.icon ? (
+              <span style={{ ...titleStyle, flexShrink: 0 }} aria-hidden>
+                {item.icon}
+              </span>
+            ) : null}
+            {editable && onCommit ? (
+              <EditableText
+                value={item.title}
+                ariaLabel={`编辑卡片标题 ${index + 1}`}
+                style={{ ...titleStyle, flex: 1 }}
+                onFocus={() => onSelect?.(block.id)}
+                onCommit={(text) =>
+                  onCommit(block.id, { type: 'cards', index, field: 'title', text })
+                }
+              />
+            ) : (
+              <span style={titleStyle}>{item.title}</span>
+            )}
+          </div>
+          {editable && onCommit ? (
+            <EditableText
+              value={item.desc}
+              ariaLabel={`编辑卡片描述 ${index + 1}`}
+              multiline
+              style={descStyle}
+              onFocus={() => onSelect?.(block.id)}
+              onCommit={(text) =>
+                onCommit(block.id, { type: 'cards', index, field: 'desc', text })
+              }
+            />
+          ) : (
+            <span style={descStyle}>{item.desc}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function CalloutView({
+  block,
+  theme,
+  editable,
+  onCommit,
+  onSelect,
+}: BlockProps<CalloutBlock>) {
+  const isSource = block.variant === 'source'
+  const textStyle = mergeTextCss(theme, isSource ? 'caption' : 'body', block.style)
+  const chrome = boxCss(theme, block.style)
+  const accent = resolveColor(theme, 'accent')
+  const surface = resolveColor(theme, 'surface')
+  const background = resolveColor(theme, 'background')
+  const fill = isSource
+    ? `color-mix(in srgb, ${surface} 35%, ${background})`
+    : `color-mix(in srgb, ${accent} 18%, ${background})`
+
+  return (
+    <div
+      style={{
+        ...chrome,
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: pt(8),
+        width: '100%',
+        height: '100%',
+        padding: `${pt(CARD_PAD_PT * 0.75)} ${pt(CARD_PAD_PT)}`,
+        background: chrome.background ?? fill,
+        borderRadius: pt(theme.shape.radius_pt),
+        boxSizing: 'border-box',
+      }}
+    >
+      {block.icon ? (
+        <span style={{ ...textStyle, flexShrink: 0 }} aria-hidden>
+          {block.icon}
+        </span>
+      ) : null}
+      {editable && onCommit ? (
+        <EditableText
+          value={block.text}
+          ariaLabel="编辑提示文字"
+          multiline
+          style={{ ...textStyle, flex: 1 }}
+          onFocus={() => onSelect?.(block.id)}
+          onCommit={(text) => onCommit(block.id, { type: 'callout', text })}
+        />
+      ) : (
+        <span style={{ ...textStyle, flex: 1 }}>{block.text}</span>
+      )}
     </div>
   )
 }
@@ -375,6 +549,28 @@ export function BlockView({
     case 'kpi':
       return (
         <KpiView
+          block={block}
+          slot={slot}
+          theme={theme}
+          editable={editable}
+          onCommit={onCommit}
+          onSelect={onSelect}
+        />
+      )
+    case 'cards':
+      return (
+        <CardsView
+          block={block}
+          slot={slot}
+          theme={theme}
+          editable={editable}
+          onCommit={onCommit}
+          onSelect={onSelect}
+        />
+      )
+    case 'callout':
+      return (
+        <CalloutView
           block={block}
           slot={slot}
           theme={theme}

@@ -17,9 +17,15 @@ PRESETS_DIR = SHARED_DIR / "flex-presets"
 # 预设叶子 block_id 暗示的类型偏好（用于匹配真实块）
 _ROLE_TYPE_HINTS: dict[str, tuple[str, ...]] = {
     "title": ("text",),
-    "body": ("bullets", "text", "table"),
-    "body_left": ("bullets", "text"),
-    "body_right": ("bullets", "text"),
+    "kicker": ("text",),
+    "lead": ("text",),
+    "body": ("bullets", "text", "table", "cards"),
+    "body_left": ("bullets", "text", "cards"),
+    "body_right": ("bullets", "text", "cards"),
+    "cards": ("cards",),
+    "callout": ("callout",),
+    "note": ("callout",),
+    "source": ("callout",),
     "image": ("image", "chart"),
     "visual": ("image", "chart"),
     "kpi_1": ("kpi",),
@@ -35,6 +41,8 @@ _TYPE_TEXT_STYLE: dict[str, str | None] = {
     "image": None,
     "chart": None,
     "table": None,
+    "cards": None,
+    "callout": None,
 }
 
 
@@ -70,15 +78,26 @@ def clear_preset_cache() -> None:
     load_presets.cache_clear()
 
 
-def pick_preset_for_blocks(blocks: list[BlockRef]) -> FlexPreset | None:
-    """按块类型组成挑选最合适的预设。"""
+def pick_preset_for_blocks(
+    blocks: list[BlockRef],
+    *,
+    page_role: str | None = None,
+    key_points: list[str] | None = None,
+) -> FlexPreset | None:
+    """按块类型组成与语义信号挑选最合适的预设。"""
     presets = list(load_presets())
     if not presets:
         return None
     types = {block.type for block in blocks}
     scored: list[tuple[int, FlexPreset]] = []
     for preset in presets:
-        score = _score_preset(preset, types, len(blocks))
+        score = _score_preset(
+            preset,
+            types,
+            len(blocks),
+            page_role=page_role,
+            key_points=key_points,
+        )
         scored.append((score, preset))
     scored.sort(key=lambda item: (-item[0], item[1].id))
     return scored[0][1]
@@ -109,9 +128,16 @@ def adapt_preset_to_blocks(
     return normalize(result)
 
 
-def seed_layout_for_blocks(blocks: list[BlockRef]) -> FlexContainer:
+def seed_layout_for_blocks(
+    blocks: list[BlockRef],
+    *,
+    page_role: str | None = None,
+    key_points: list[str] | None = None,
+) -> FlexContainer:
     """从预设池选出一棵树并适配到当前块。"""
-    preset = pick_preset_for_blocks(blocks)
+    preset = pick_preset_for_blocks(
+        blocks, page_role=page_role, key_points=key_points
+    )
     if preset is None:
         return normalize(
             FlexContainer(
@@ -150,18 +176,65 @@ def alternate_preset_trees(
     return results
 
 
-def _score_preset(preset: FlexPreset, types: set[str], block_count: int) -> int:
+_STEP_KEYWORDS = ("步骤", "流程", "清单", "方法", "怎么做", "如何")
+_TIMELINE_KEYWORDS = ("阶段", "时间", "里程碑", "路线", "演进", "历程", "节奏")
+
+
+def _score_preset(
+    preset: FlexPreset,
+    types: set[str],
+    block_count: int,
+    *,
+    page_role: str | None = None,
+    key_points: list[str] | None = None,
+) -> int:
     leaf_roles = _collect_roles(preset.tree)
+    leaf_count = len(leaf_roles)
+    preset_skins = _collect_presets(preset.tree)
     score = 0
     if "image" in types and any(role in ("image", "visual") for role in leaf_roles):
         score += 3
+    if "chart" in types and any(role in ("image", "visual") for role in leaf_roles):
+        score += 2
     if "kpi" in types and any(role.startswith("kpi") for role in leaf_roles):
         score += 3
     if "bullets" in types and any(role.startswith("body") for role in leaf_roles):
         score += 2
-    # 叶子数接近加分
-    score -= abs(len(leaf_roles) - block_count)
+    if "cards" in types and any(role == "cards" or "cards" in role for role in leaf_roles):
+        score += 4
+    if "callout" in types and any(
+        role in ("callout", "note", "source") for role in leaf_roles
+    ):
+        score += 3
+    # 叶子数接近加分；多块页面偏好更密预设
+    score -= abs(leaf_count - block_count) * 2
+    if block_count >= 4 and leaf_count >= 4:
+        score += 2
+    if block_count >= 5 and leaf_count >= 5:
+        score += 2
+
+    # 语义信号：步骤/时间类文案加权对应皮肤预设
+    blob = " ".join(key_points or [])
+    if any(word in blob for word in _STEP_KEYWORDS) and "numbered_steps" in preset_skins:
+        score += 4
+    if any(word in blob for word in _TIMELINE_KEYWORDS) and "timeline" in preset_skins:
+        score += 4
+    if page_role == "summary" and "callout" in types:
+        score += 1
+    if page_role == "content" and "kicker" in leaf_roles and "text" in types:
+        score += 1
     return score
+
+
+def _collect_presets(node: FlexNode) -> set[str]:
+    if isinstance(node, FlexLeaf):
+        return set()
+    found: set[str] = set()
+    if node.preset is not None:
+        found.add(node.preset)
+    for child in node.children:
+        found |= _collect_presets(child)
+    return found
 
 
 def _collect_roles(node: FlexNode) -> list[str]:
@@ -214,10 +287,14 @@ def _claim_block(role: str, remaining: list[BlockRef]) -> BlockRef | None:
 
 
 def _text_style_for(block: BlockRef) -> str | None:
-    if block.type == "text" and (
-        "title" in block.id.lower() or block.id.endswith("-title") or block.id == "title"
-    ):
-        return "title"
+    lower = block.id.lower()
+    if block.type == "text":
+        if "kicker" in lower or "eyebrow" in lower:
+            return "caption"
+        if "lead" in lower or "subtitle" in lower:
+            return "subtitle"
+        if "title" in lower or lower.endswith("-title") or lower == "title":
+            return "title"
     return _TYPE_TEXT_STYLE.get(block.type)
 
 

@@ -21,6 +21,9 @@ def _payload(**overrides) -> SlideGenerationInput:
         "objective": "让听众认清当前瓶颈",
         "key_points": ["交付慢", "重复建设"],
         "layout_id": "bullets",
+        "layout_mode": "fixed",
+        "content_density": "medium",
+        "page_role": "content",
     }
     return SlideGenerationInput(**{**base, **overrides})
 
@@ -35,10 +38,10 @@ class ScriptedGenerator:
         return self._drafts[min(len(self.prompts) - 1, len(self._drafts) - 1)]
 
 
-def _draft(items: list[str]) -> SlideDraft:
+def _draft(items: list[str], *, title: str = "现状与问题") -> SlideDraft:
     return SlideDraft(
         blocks=[
-            TextContent(slot_id="title", text="现状与问题"),
+            TextContent(slot_id="title", text=title),
             BulletsContent(slot_id="body", items=items),
         ]
     )
@@ -60,27 +63,47 @@ def test_prepare_trims_sections_within_budget() -> None:
 
 
 @pytest.mark.asyncio
-async def test_workflow_repairs_capacity_overflow_once() -> None:
+async def test_workflow_skips_repair_for_capacity_overflow() -> None:
+    """容量/溢出 warning 只提示，不触发整页重写。"""
     too_long = ["超出容量的要点" * 12] * 9
-    generator = ScriptedGenerator([_draft(too_long), _draft(["精简要点一", "精简要点二"])])
+    generator = ScriptedGenerator([_draft(too_long)])
     workflow = build_slide_workflow(generator)
 
     slide, issues = await run_slide_workflow(workflow, _payload(), uuid.uuid4())
 
-    # 第二轮带上了结构问题，说明修复是定向的而不是无脑重试
+    assert len(generator.prompts) == 1
     assert generator.prompts[0] == []
-    assert generator.prompts[1]
-    assert issues == []
-    assert slide.blocks[1].items == ["精简要点一", "精简要点二"]
+    assert any(issue.code == "capacity" for issue in issues)
+    assert slide.blocks[1].items == too_long
 
 
 @pytest.mark.asyncio
-async def test_workflow_gives_up_after_one_repair() -> None:
-    too_long = ["超出容量的要点" * 12] * 9
-    generator = ScriptedGenerator([_draft(too_long)])
+async def test_workflow_repairs_thin_content_once() -> None:
+    thin = ["短", "也短"]
+    rich = [
+        "交付周期从六周缩短到三周，瓶颈在评审排队",
+        "重复建设占比过高，跨团队接口缺少统一契约",
+        "线上故障平均恢复时间仍超过四小时，需专人值班",
+    ]
+    generator = ScriptedGenerator([_draft(thin), _draft(rich)])
+    workflow = build_slide_workflow(generator)
+
+    slide, issues = await run_slide_workflow(workflow, _payload(), uuid.uuid4())
+
+    assert generator.prompts[0] == []
+    assert generator.prompts[1]
+    assert any("偏" in msg or "过短" in msg or "空话" in msg for msg in generator.prompts[1])
+    assert slide.blocks[1].items == rich
+    assert not any(issue.code == "thin_content" for issue in issues)
+
+
+@pytest.mark.asyncio
+async def test_workflow_gives_up_after_one_thin_repair() -> None:
+    thin = ["短", "也短"]
+    generator = ScriptedGenerator([_draft(thin)])
     workflow = build_slide_workflow(generator)
 
     _, issues = await run_slide_workflow(workflow, _payload(), uuid.uuid4())
 
     assert len(generator.prompts) == 2
-    assert issues
+    assert any(issue.code == "thin_content" for issue in issues)

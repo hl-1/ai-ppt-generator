@@ -1,11 +1,43 @@
-import { AlertTriangle, CheckCircle2, Download, Loader2, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, Loader2, RotateCcw, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { useDeckQuality, useExportDeck } from '@/features/deck/api'
 import { classifyExportError, type ExportFailure } from '@/features/deck/exportErrors'
-import type { Deck, DeckSlide, StructureIssue } from '@/features/deck/types'
+import type { Deck, DeckSlide, ExportCheckReport, StructureIssue } from '@/features/deck/types'
+import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
+
+/** 导出前的检查结论。拿不到报告与「报告说有错」是两回事，必须分开表达。 */
+type CheckState =
+  | { kind: 'unavailable'; message: string }
+  | { kind: 'incomplete' }
+  | { kind: 'blocked'; errorCount: number }
+  | { kind: 'ready'; warningCount: number }
+
+function resolveCheckState({
+  report,
+  error,
+  incomplete,
+  errorCount,
+  warningCount,
+}: {
+  report: ExportCheckReport | undefined
+  error: Error | null
+  incomplete: boolean
+  errorCount: number
+  warningCount: number
+}): CheckState {
+  if (incomplete) return { kind: 'incomplete' }
+  if (!report) {
+    return {
+      kind: 'unavailable',
+      message: errorMessage(error, '检查没能完成，可能是服务未启动或网络中断。'),
+    }
+  }
+  if (!report.export_allowed || errorCount > 0) return { kind: 'blocked', errorCount }
+  return { kind: 'ready', warningCount }
+}
 
 /**
  * 导出面板：先给结论，再给可点击定位的问题清单。
@@ -32,7 +64,14 @@ export function ExportDialog({
   const errors = issues.filter((issue) => issue.severity === 'error')
   const warnings = issues.filter((issue) => issue.severity === 'warning')
   const incomplete = deck.slides.some((slide) => slide.status !== 'ready')
-  const allowed = report?.export_allowed === true && !incomplete
+  const state = resolveCheckState({
+    report,
+    error: quality.error,
+    incomplete,
+    errorCount: errors.length,
+    warningCount: warnings.length,
+  })
+  const allowed = state.kind === 'ready'
   const failure = exporter.isError ? classifyExportError(exporter.error) : null
 
   const locate = (slideId: string) => {
@@ -57,7 +96,7 @@ export function ExportDialog({
             关闭
           </Button>
           <Button
-            disabled={!allowed || exporter.isPending || quality.isPending}
+            disabled={!allowed || exporter.isPending}
             onClick={() => {
               setDone(false)
               exporter.mutate(undefined, { onSuccess: () => setDone(true) })
@@ -73,17 +112,16 @@ export function ExportDialog({
         </>
       }
     >
-      {quality.isPending ? (
+      {quality.isPending && quality.isFetching ? (
         <p className="py-6 text-center text-sm text-ink-muted" aria-live="polite">
           正在检查…
         </p>
       ) : (
         <div className="flex flex-col gap-4">
           <Verdict
-            allowed={allowed}
-            incomplete={incomplete}
-            errorCount={errors.length}
-            warningCount={warnings.length}
+            state={state}
+            retrying={quality.isFetching}
+            onRetry={() => void quality.refetch()}
           />
 
           {report && !report.fonts_precise && (
@@ -119,39 +157,73 @@ export function ExportDialog({
   )
 }
 
+function verdictText(state: CheckState): { title: string; summary: string } {
+  switch (state.kind) {
+    case 'unavailable':
+      return { title: '检查没有完成', summary: `${state.message}重试检查后才能判断能否导出。` }
+    case 'incomplete':
+      return { title: '暂时不能导出', summary: '仍有页面没有生成成功，先重试失败页再导出。' }
+    case 'blocked':
+      return {
+        title: '暂时不能导出',
+        summary:
+          state.errorCount > 0
+            ? `有 ${state.errorCount} 处必须修复，修好后即可导出。`
+            : '检查未通过但没有给出具体问题，请重试检查。',
+      }
+    case 'ready':
+      return {
+        title: '可以导出',
+        summary:
+          state.warningCount > 0
+            ? `可以导出，有 ${state.warningCount} 处建议关注。`
+            : '检查通过，可以导出。',
+      }
+  }
+}
+
 function Verdict({
-  allowed,
-  incomplete,
-  errorCount,
-  warningCount,
+  state,
+  retrying,
+  onRetry,
 }: {
-  allowed: boolean
-  incomplete: boolean
-  errorCount: number
-  warningCount: number
+  state: CheckState
+  retrying: boolean
+  onRetry: () => void
 }) {
-  const Icon = allowed ? CheckCircle2 : XCircle
-  const summary = incomplete
-    ? '仍有页面没有生成成功，先重试失败页再导出。'
-    : allowed
-      ? warningCount > 0
-        ? `可以导出，有 ${warningCount} 处建议关注。`
-        : '检查通过，可以导出。'
-      : `有 ${errorCount} 处必须修复，修好后即可导出。`
+  const allowed = state.kind === 'ready'
+  const Icon = allowed ? CheckCircle2 : state.kind === 'unavailable' ? AlertTriangle : XCircle
+  const tone = allowed ? 'text-positive' : state.kind === 'unavailable' ? 'text-warning' : 'text-negative'
+  const { title, summary } = verdictText(state)
+  const retryable = state.kind === 'unavailable' || (state.kind === 'blocked' && state.errorCount === 0)
 
   return (
     <div
       className={cn(
         'flex items-start gap-3 rounded-2xl px-4 py-3.5',
-        allowed ? 'bg-positive/8' : 'bg-negative/8',
+        allowed ? 'bg-positive/8' : state.kind === 'unavailable' ? 'bg-warning/8' : 'bg-negative/8',
       )}
     >
-      <Icon className={cn('mt-0.5 size-4.5 shrink-0', allowed ? 'text-positive' : 'text-negative')} />
-      <div>
-        <p className={cn('text-sm font-semibold', allowed ? 'text-positive' : 'text-negative')}>
-          {allowed ? '可以导出' : '暂时不能导出'}
-        </p>
+      <Icon className={cn('mt-0.5 size-4.5 shrink-0', tone)} />
+      <div className="min-w-0 flex-1">
+        <p className={cn('text-sm font-semibold', tone)}>{title}</p>
         <p className="mt-0.5 text-[13px] text-ink-soft">{summary}</p>
+        {retryable && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-2.5"
+            disabled={retrying}
+            onClick={onRetry}
+          >
+            {retrying ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="size-3.5" />
+            )}
+            重新检查
+          </Button>
+        )}
       </div>
     </div>
   )

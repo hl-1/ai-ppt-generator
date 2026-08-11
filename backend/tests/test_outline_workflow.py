@@ -288,3 +288,42 @@ async def test_deepseek_missing_api_key() -> None:
         await generator.generate(_input(page_count=2))
 
     assert client.chat.completions.last_kwargs is None
+
+
+def test_system_prompt_only_names_existing_layouts() -> None:
+    """提示词里出现过的 layout_id 都必须能通过校验，否则等于诱导模型踩坑。"""
+    layout_ids = frozenset({"bullets", "cover", "two-column"})
+    generator = DeepSeekOutlineGenerator(
+        client=FakeAsyncOpenAI(_valid_outline_json()),  # type: ignore[arg-type]
+        model="deepseek-v4-flash",
+        api_key="test-key",
+        layout_ids=layout_ids,
+    )
+
+    prompt = generator._system_prompt()
+
+    assert "two-column" in prompt
+    for absent in ("image-text", "kpi", "chart", "table", "image-left"):
+        assert absent not in prompt
+
+
+def test_system_prompt_without_multi_slot_layouts() -> None:
+    generator = DeepSeekOutlineGenerator(
+        client=FakeAsyncOpenAI(_valid_outline_json()),  # type: ignore[arg-type]
+        model="deepseek-v4-flash",
+        api_key="test-key",
+        layout_ids=frozenset({"bullets", "cover"}),
+    )
+
+    assert "多槽布局" not in generator._system_prompt()
+
+
+def test_real_layouts_cover_the_preferred_multi_slot_hints() -> None:
+    """提示里的推荐布局全部落空时只剩一句空话，等于悄悄退化。"""
+    generator = DeepSeekOutlineGenerator(
+        client=FakeAsyncOpenAI(_valid_outline_json()),  # type: ignore[arg-type]
+        model="deepseek-v4-flash",
+        api_key="test-key",
+    )
+
+    assert "多槽布局" in generator._system_prompt()

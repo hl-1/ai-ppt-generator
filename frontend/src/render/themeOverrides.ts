@@ -57,14 +57,14 @@ export const BULLET_MARKERS: Array<{
   { value: 'index', label: '序号' },
 ]
 
-/** 精选字体对：与三套预设主题的 fonts 一致 */
-export const FONT_PRESETS: Array<{ id: string; label: string; fonts: Fonts }> = themeList.map(
-  (theme) => ({
-    id: theme.id,
-    label: theme.name,
-    fonts: theme.fonts,
-  }),
-)
+/** 精选字体对：取自预设主题；字体组合相同的主题合并成一项，避免下拉里出现两条一模一样的选项 */
+export const FONT_PRESETS: Array<{ id: string; label: string; fonts: Fonts }> = themeList.reduce<
+  Array<{ id: string; label: string; fonts: Fonts }>
+>((presets, theme) => {
+  if (presets.some((preset) => sameFonts(preset.fonts, theme.fonts))) return presets
+  presets.push({ id: theme.id, label: theme.name, fonts: theme.fonts })
+  return presets
+}, [])
 
 function sameFonts(a: Fonts, b: Fonts): boolean {
   return (

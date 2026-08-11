@@ -2,9 +2,13 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field
 
+from app.domain.content_density import DEFAULT_CONTENT_DENSITY, DEFAULT_PAGE_ROLE
 from app.domain.outline import OutlineDraft
 from app.domain.slide_draft import FlexSlideDraft, SlideDraft
 from app.domain.slide_patch import BlockPatch
+
+ContentDensity = Literal["concise", "medium", "detailed"]
+PageRole = Literal["cover", "toc", "section", "content", "summary"]
 
 
 class OutlineSourceSection(BaseModel):
@@ -27,6 +31,7 @@ class OutlineGenerationInput(BaseModel):
     tone: str = Field(min_length=1, max_length=32)
     # 与产品页数区间对齐；工作流层不再二次放宽，避免模型按任意页数胡编
     page_count: int = Field(ge=1, le=20)
+    content_density: ContentDensity = DEFAULT_CONTENT_DENSITY
     sections: list[OutlineSourceSection] = Field(default_factory=list)
 
 
@@ -53,9 +58,16 @@ class SlideGenerationInput(BaseModel):
     key_points: list[str]
     layout_id: str
     layout_mode: Literal["fixed", "flex"] = "flex"
+    content_density: ContentDensity = DEFAULT_CONTENT_DENSITY
+    page_role: PageRole = DEFAULT_PAGE_ROLE
     sections: list[OutlineSourceSection] = Field(default_factory=list)
     # 相邻页标题，用来避免内容重复或衔接断裂
     neighbor_titles: list[str] = Field(default_factory=list)
+    # 大纲给的配图意图，非空时本页必须产出一个 image 块并以它作 alt
+    visual_hint: str | None = Field(default=None, max_length=120)
+    # 版式骨架与 callout 配额由编排层按页序分配，见 domain/page_rhythm
+    skeleton_hint: str | None = Field(default=None, max_length=200)
+    allow_callout: bool = True
     # 修复轮次带上上一轮的结构问题，让模型定向改而不是从头重来
     issues: list[str] = Field(default_factory=list)
 
@@ -68,12 +80,18 @@ class SlideGenerator(Protocol):
 SlideEditAction = Literal["rewrite", "condense", "expand", "instruct"]
 
 
+class SlideEditCardItem(BaseModel):
+    title: str
+    desc: str
+    icon: str | None = None
+
+
 class SlideEditBlockInput(BaseModel):
     """发给模型的可改块快照：不含 locked，也不含 image/chart。"""
 
     block_id: str
     slot_id: str
-    type: Literal["text", "bullets", "kpi", "table"]
+    type: Literal["text", "bullets", "kpi", "table", "cards", "callout"]
     text: str | None = None
     items: list[str] | None = None
     value: str | None = None
@@ -81,6 +99,9 @@ class SlideEditBlockInput(BaseModel):
     note: str | None = None
     header: list[str] | None = None
     rows: list[list[str]] | None = None
+    card_items: list[SlideEditCardItem] | None = None
+    icon: str | None = None
+    variant: Literal["note", "source"] | None = None
 
 
 class SlideEditInput(BaseModel):
@@ -95,6 +116,8 @@ class SlideEditInput(BaseModel):
     tone: str
     page_title: str
     layout_id: str
+    # flex 页没有固定槽位，提示词不能按 layout_id 去查槽位容量
+    layout_mode: Literal["fixed", "flex"] = "fixed"
     action: SlideEditAction
     instruction: str | None = None
     blocks: list[SlideEditBlockInput] = Field(default_factory=list)

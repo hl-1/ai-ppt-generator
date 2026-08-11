@@ -4,12 +4,13 @@ import {
   Columns3,
   Hash,
   Image as ImageIcon,
+  LayoutGrid,
   List,
-  Loader2,
+  MessageSquare,
   Table2,
   Type,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import {
   createSlideBlock,
   updateFlexLayout,
@@ -20,9 +21,11 @@ import {
   resolveInsertAnchor,
   wrapBlockIdsAsColumns,
 } from '@/features/deck/flexTree'
-import { getSlideSaveHandlers } from '@/features/deck/slideSaveBridge'
+import {
+  getSlideSaveHandlers,
+  requestInsertDrag,
+} from '@/features/deck/slideSaveBridge'
 import type { DeckSlide } from '@/features/deck/types'
-import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import type { FlexContainer } from '@/render/flexLayout'
 
@@ -35,13 +38,15 @@ const BLOCK_BUTTONS: Array<{
   { type: 'bullets', label: '列表', icon: List },
   { type: 'image', label: '图片', icon: ImageIcon },
   { type: 'kpi', label: 'KPI', icon: Hash },
+  { type: 'cards', label: '卡片', icon: LayoutGrid },
+  { type: 'callout', label: '提示', icon: MessageSquare },
   { type: 'table', label: '表格', icon: Table2 },
   { type: 'chart', label: '图表', icon: BarChart3 },
 ]
 
 export type InsertAnchor = { parentId: string; index: number }
 
-async function insertColumnsAt(
+export async function insertColumnsAt(
   projectId: string,
   slide: DeckSlide,
   anchor: InsertAnchor,
@@ -83,100 +88,7 @@ async function insertColumnsAt(
 }
 
 /**
- * 画布就地插入菜单：出现在间隙 + 旁。
- */
-export function InsertMenu({
-  projectId,
-  slide,
-  anchor,
-  disabled,
-  onClose,
-  onDone,
-}: {
-  projectId: string
-  slide: DeckSlide
-  anchor: InsertAnchor
-  disabled?: boolean
-  onClose: () => void
-  onDone?: () => void
-}) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const rootRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onClose()
-      }
-    }
-    const onPointer = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    window.addEventListener('pointerdown', onPointer, true)
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('pointerdown', onPointer, true)
-    }
-  }, [onClose])
-
-  if (slide.layout_mode !== 'flex' || slide.layout_tree == null) return null
-
-  const handlers = getSlideSaveHandlers(slide.id)
-  const locked = Boolean(disabled || busy || !handlers)
-
-  const insertBlock = (type: FlexBlockType) => {
-    if (locked || !handlers) return
-    setError(null)
-    handlers.commitCreateBlock({
-      type,
-      parent_id: anchor.parentId,
-      index: anchor.index,
-    })
-    onDone?.()
-    onClose()
-  }
-
-  const insertColumns = (count: 2 | 3) => {
-    if (locked || !handlers) return
-    setBusy(true)
-    setError(null)
-    handlers.commitMutate((current) =>
-      insertColumnsAt(projectId, current, anchor, count),
-    )
-    onDone?.()
-    onClose()
-    setBusy(false)
-  }
-
-  return (
-    <div
-      ref={rootRef}
-      role="menu"
-      aria-label="插入内容"
-      className="pointer-events-auto absolute z-30 w-44 rounded-xl border border-line bg-surface p-1.5 shadow-pop"
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <InsertButtons
-        locked={locked}
-        busy={busy}
-        onInsertBlock={insertBlock}
-        onInsertColumns={insertColumns}
-        compact
-      />
-      {error && (
-        <p role="alert" className="mt-1 px-1 text-[11px] text-negative">
-          {error}
-        </p>
-      )}
-    </div>
-  )
-}
-
-/**
- * 版式侧栏插入条：打开版式面板时显示，非常驻。
+ * 版式侧栏插入条：拖到画布落点插入；未拖动松手则落到选中块后/根末尾。
  */
 export function BlockInsertPanel({
   projectId,
@@ -189,19 +101,15 @@ export function BlockInsertPanel({
   selectedBlockId: string | null
   disabled?: boolean
 }) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
   if (slide.layout_mode !== 'flex' || slide.layout_tree == null) return null
 
   const tree = slide.layout_tree as FlexContainer
   const anchor = resolveInsertAnchor(tree, selectedBlockId)
   const handlers = getSlideSaveHandlers(slide.id)
-  const locked = Boolean(disabled || busy || !handlers)
+  const locked = Boolean(disabled || !handlers)
 
   const insertBlock = (type: FlexBlockType) => {
     if (locked || !handlers) return
-    setError(null)
     handlers.commitCreateBlock({
       type,
       parent_id: anchor.parentId,
@@ -209,18 +117,34 @@ export function BlockInsertPanel({
     })
   }
 
+  // 入队即返回，失败由保存队列的状态提示；这里不做本地 try/catch 以免看起来已兜住
   const insertColumns = (count: 2 | 3) => {
     if (locked || !handlers) return
-    setBusy(true)
-    setError(null)
-    try {
-      handlers.commitMutate((current) =>
-        insertColumnsAt(projectId, current, anchor, count),
+    handlers.commitMutate((current) =>
+      insertColumnsAt(projectId, current, anchor, count),
+    )
+  }
+
+  const beginDragBlock = (type: FlexBlockType, event: ReactPointerEvent) => {
+    if (locked) return
+    event.preventDefault()
+    if (!requestInsertDrag(slide.id, { kind: 'block', type }, event.clientX, event.clientY)) {
+      insertBlock(type)
+    }
+  }
+
+  const beginDragColumns = (count: 2 | 3, event: ReactPointerEvent) => {
+    if (locked) return
+    event.preventDefault()
+    if (
+      !requestInsertDrag(
+        slide.id,
+        { kind: 'columns', count },
+        event.clientX,
+        event.clientY,
       )
-    } catch (err) {
-      setError(errorMessage(err, '插入列失败'))
-    } finally {
-      setBusy(false)
+    ) {
+      insertColumns(count)
     }
   }
 
@@ -229,47 +153,35 @@ export function BlockInsertPanel({
       <p className="mb-2 text-[12px] font-medium text-ink-soft">插入内容</p>
       <InsertButtons
         locked={locked}
-        busy={busy}
-        onInsertBlock={insertBlock}
-        onInsertColumns={insertColumns}
+        onDragBlock={beginDragBlock}
+        onDragColumns={beginDragColumns}
       />
-      {error && (
-        <p role="alert" className="mt-2 text-[11px] text-negative">
-          {error}
-        </p>
-      )}
     </div>
   )
 }
 
 function InsertButtons({
   locked,
-  busy,
-  onInsertBlock,
-  onInsertColumns,
-  compact,
+  onDragBlock,
+  onDragColumns,
 }: {
   locked: boolean
-  busy: boolean
-  onInsertBlock: (type: FlexBlockType) => void
-  onInsertColumns: (count: 2 | 3) => void
-  compact?: boolean
+  onDragBlock: (type: FlexBlockType, event: ReactPointerEvent) => void
+  onDragColumns: (count: 2 | 3, event: ReactPointerEvent) => void
 }) {
   return (
     <>
-      <div className={cn('grid gap-0.5', compact ? 'grid-cols-3' : 'grid-cols-3')}>
+      <div className="grid grid-cols-3 gap-0.5">
         {BLOCK_BUTTONS.map(({ type, label, icon: Icon }) => (
           <button
             key={type}
             type="button"
-            role="menuitem"
-            title={label}
+            title={`拖入${label}，或轻点插入`}
             disabled={locked}
-            onClick={() => onInsertBlock(type)}
+            onPointerDown={(event) => onDragBlock(type, event)}
             className={cn(
-              'flex flex-col items-center gap-1 rounded-lg text-[11px] transition-colors',
-              compact ? 'px-1 py-2' : 'px-1.5 py-2.5',
-              'text-ink-soft hover:bg-surface hover:text-ink',
+              'flex cursor-grab flex-col items-center gap-1 rounded-lg px-1.5 py-2.5 text-[11px] transition-colors',
+              'text-ink-soft hover:bg-surface hover:text-ink active:cursor-grabbing',
               'disabled:opacity-40',
             )}
           >
@@ -278,30 +190,25 @@ function InsertButtons({
           </button>
         ))}
       </div>
-      <div
-        className={cn(
-          'grid grid-cols-2 gap-0.5 border-t border-line',
-          compact ? 'mt-1 pt-1' : 'mt-2 pt-2',
-        )}
-      >
+      <div className="mt-2 grid grid-cols-2 gap-0.5 border-t border-line pt-2">
         <button
           type="button"
-          role="menuitem"
           disabled={locked}
-          onClick={() => onInsertColumns(2)}
-          className="flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] text-ink-soft hover:bg-surface hover:text-ink disabled:opacity-40"
+          title="拖入 2 列，或轻点插入"
+          onPointerDown={(event) => onDragColumns(2, event)}
+          className="flex cursor-grab items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] text-ink-soft hover:bg-surface hover:text-ink active:cursor-grabbing disabled:opacity-40"
         >
-          {busy ? <Loader2 className="size-3 animate-spin" /> : <Columns2 className="size-3.5" />}
+          <Columns2 className="size-3.5" />
           2 列
         </button>
         <button
           type="button"
-          role="menuitem"
           disabled={locked}
-          onClick={() => onInsertColumns(3)}
-          className="flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] text-ink-soft hover:bg-surface hover:text-ink disabled:opacity-40"
+          title="拖入 3 列，或轻点插入"
+          onPointerDown={(event) => onDragColumns(3, event)}
+          className="flex cursor-grab items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] text-ink-soft hover:bg-surface hover:text-ink active:cursor-grabbing disabled:opacity-40"
         >
-          {busy ? <Loader2 className="size-3 animate-spin" /> : <Columns3 className="size-3.5" />}
+          <Columns3 className="size-3.5" />
           3 列
         </button>
       </div>

@@ -1,6 +1,7 @@
 import pytest
 
 from app.domain.content import BulletsBlock, TextBlock
+from app.domain.flex_layout import FlexContainer, FlexLeaf
 from app.domain.slide_patch import BulletsPatch, TextPatch
 from app.llm.base import SlideEditInput
 from app.workflows.slide_edit import build_slide_edit_workflow, run_slide_edit_workflow
@@ -97,6 +98,52 @@ async def test_workflow_keeps_warnings_after_one_repair() -> None:
     assert len(generator.prompts) == 2
     assert issues
     assert all(issue.severity == "warning" for issue in issues)
+
+
+@pytest.mark.asyncio
+async def test_workflow_validates_flex_slide_against_tree() -> None:
+    """flex 页的 slot_id 就是块自己的 id，拿固定布局槽位表比对会全判成非法槽位。"""
+    blocks = [
+        TextBlock(id="pg-title", slot_id="pg-title", text="云南七天深度游", locked=False),
+        TextBlock(id="pg-lead", slot_id="pg-lead", text="七天行程参考", locked=False),
+    ]
+    tree = FlexContainer(
+        type="column",
+        id="root",
+        children=[
+            FlexLeaf(id="leaf-title", block_id="pg-title", grow=0.6, text_style="title"),
+            FlexLeaf(id="leaf-lead", block_id="pg-lead", grow=1.4),
+        ],
+    )
+    generator = ScriptedEditGenerator(
+        [[TextPatch(block_id="pg-lead", text="七天行程、交通与预算参考")]]
+    )
+    workflow = build_slide_edit_workflow(generator)
+
+    operations, _, issues, patched = await run_slide_edit_workflow(
+        workflow,
+        payload=_payload(
+            layout_id="cover",
+            layout_mode="flex",
+            blocks=[
+                {
+                    "block_id": "pg-lead",
+                    "slot_id": "pg-lead",
+                    "type": "text",
+                    "text": "七天行程参考",
+                }
+            ],
+        ),
+        slide_id="slide-1",
+        layout_id="cover",
+        layout_mode="flex",
+        layout_tree=tree,
+        blocks=blocks,
+    )
+
+    assert [op.block_id for op in operations] == ["pg-lead"]
+    assert [issue for issue in issues if issue.severity == "error"] == []
+    assert patched[1].text == "七天行程、交通与预算参考"
 
 
 @pytest.mark.asyncio

@@ -18,8 +18,9 @@ import {
   sameStyle,
   styleFromBlock,
 } from '@/features/deck/blockSnapshot'
+import { normalizeGrows } from '@/features/deck/flexNormalize'
 import type { FlexBlockType } from '@/features/deck/flexTree'
-import { mergeBlockCommit } from '@/features/deck/mergeBlockCommit'
+import { mergeBlockCommit, sanitizeBulletsItems } from '@/features/deck/mergeBlockCommit'
 import type { BlockUpdateBody, Deck, DeckSlide } from '@/features/deck/types'
 import { errorMessage } from '@/lib/errors'
 import type { BlockStyle } from '@/render/blockStyle'
@@ -36,7 +37,7 @@ export type StructureSnap = {
 type PendingJob =
   | { kind: 'content'; blockId: string; body: BlockUpdateBody }
   | { kind: 'style'; blockId: string; style: BlockStyle | null }
-  | { kind: 'flex'; tree: FlexContainer }
+  | { kind: 'flex'; tree: FlexContainer; before: StructureSnap | null }
   | { kind: 'structure'; state: StructureSnap }
   | {
       kind: 'mutate'
@@ -229,7 +230,7 @@ export function useSlideSaveQueue(projectId: string, slideId: string) {
           const raw = contentOverridesRef.current.get(job.blockId) ?? job.body
           const body =
             raw.type === 'bullets'
-              ? { ...raw, items: raw.items.filter((item) => item.trim().length > 0) }
+              ? { ...raw, items: sanitizeBulletsItems(raw.items) }
               : raw
           updated = await updateSlideBlock(projectId, slideId, job.blockId, {
             ...body,
@@ -258,14 +259,18 @@ export function useSlideSaveQueue(projectId: string, slideId: string) {
             styleOverridesRef.current.delete(job.blockId)
           }
         } else if (job.kind === 'flex') {
-          const before = structureSnap(slide)
           updated = await updateFlexLayout(projectId, slideId, {
             revision: slide.revision,
             layout_tree: job.tree,
           })
           const after = structureSnap(updated)
-          if (before && after && !sameStructure(before, after) && !applyingHistoryRef.current) {
-            pushHistory({ kind: 'structure', before, after })
+          if (
+            job.before &&
+            after &&
+            !sameStructure(job.before, after) &&
+            !applyingHistoryRef.current
+          ) {
+            pushHistory({ kind: 'structure', before: job.before, after })
           }
         } else if (job.kind === 'structure') {
           updated = await updateFlexState(projectId, slideId, {
@@ -375,8 +380,12 @@ export function useSlideSaveQueue(projectId: string, slideId: string) {
     (layout_tree: FlexContainer) => {
       const slide = readSlide()
       if (!slide || slide.layout_mode !== 'flex') return
-      paintTree(layout_tree)
-      enqueue({ kind: 'flex', tree: layout_tree })
+      // 先按后端同款规则归一：否则乐观渲染的是草稿，响应回来又跳一次
+      const tree = normalizeGrows(layout_tree)
+      // 必须在 paint 前快照，否则 pump 里 before≈after，撤销栈进不去
+      const before = structureSnap(slide)
+      paintTree(tree)
+      enqueue({ kind: 'flex', tree, before })
       void pump()
     },
     [paintTree, pump, readSlide],

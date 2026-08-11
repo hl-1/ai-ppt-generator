@@ -1,4 +1,5 @@
 import logging
+import re
 
 import httpx
 
@@ -8,6 +9,11 @@ from app.images.base import ImageAsset, ImageRequest
 logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.unsplash.com"
+
+# Unsplash 对含部分中文标点的 query 会直接 410 Content removed（实测全角冒号必现）
+_PUNCT_RE = re.compile(r"[：:；;，,。.!！？?\u2014\u2013\-_/\\|（）()【】\[\]「」\"'“”‘’…·、]+")
+_SPACE_RE = re.compile(r"\s+")
+_MAX_QUERY_CHARS = 48
 
 
 class UnsplashImageProvider:
@@ -38,24 +44,41 @@ class UnsplashImageProvider:
             return None
 
         headers = {"Authorization": f"Client-ID {self._access_key}"}
+        orientation = _orientation(request.aspect_ratio)
+        queries = _search_queries(request.query)
         try:
-            search = await self._client.get(
-                f"{API_BASE}/search/photos",
-                headers=headers,
-                params={
-                    "query": request.query,
-                    "per_page": 1,
-                    "orientation": _orientation(request.aspect_ratio),
-                    "content_filter": "high",
-                },
-                timeout=self._timeout,
-            )
-            search.raise_for_status()
-            results = search.json().get("results") or []
-            if not results:
+            photo = None
+            for index, query in enumerate(queries):
+                search = await self._client.get(
+                    f"{API_BASE}/search/photos",
+                    headers=headers,
+                    params={
+                        "query": query,
+                        "per_page": 1,
+                        "orientation": orientation,
+                        "content_filter": "high",
+                    },
+                    timeout=self._timeout,
+                )
+                if search.status_code == 410:
+                    logger.warning(
+                        "Unsplash 拒绝 query（Content removed），尝试下一候选：%s",
+                        query[:40],
+                    )
+                    continue
+                search.raise_for_status()
+                results = search.json().get("results") or []
+                if not results:
+                    # 清洗后无结果时再试更短候选
+                    if index < len(queries) - 1:
+                        continue
+                    return None
+                photo = results[0]
+                break
+
+            if photo is None:
                 return None
 
-            photo = results[0]
             image = await self._client.get(
                 photo["urls"]["regular"],
                 timeout=self._timeout,
@@ -82,6 +105,32 @@ class UnsplashImageProvider:
         except httpx.HTTPError as error:
             # 回调失败不影响本次配图，仅记录
             logger.warning("Unsplash 下载回调失败：%s", error)
+
+
+def sanitize_unsplash_query(query: str) -> str:
+    """去掉易触发 Unsplash 410 的标点，压空白并截断。"""
+    cleaned = _PUNCT_RE.sub(" ", query)
+    cleaned = _SPACE_RE.sub(" ", cleaned).strip()
+    if len(cleaned) > _MAX_QUERY_CHARS:
+        cleaned = cleaned[:_MAX_QUERY_CHARS].rstrip()
+    return cleaned
+
+
+def _search_queries(raw: str) -> list[str]:
+    """主 query + 短关键词兜底，去重保序。"""
+    primary = sanitize_unsplash_query(raw)
+    if not primary:
+        return []
+    # 取前 2～3 个词/字块作短查询，避免长叙述被内容策略误伤
+    tokens = [part for part in primary.split(" ") if part]
+    short = " ".join(tokens[:3]) if tokens else primary
+    if len(short) > 16:
+        short = short[:16].rstrip()
+    out: list[str] = []
+    for item in (primary, short):
+        if item and item not in out:
+            out.append(item)
+    return out
 
 
 def _orientation(aspect_ratio: float) -> str:

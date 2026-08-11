@@ -135,5 +135,65 @@
     "radius_pt": 0,
     "border_width_pt": 1,
     "bullet_marker": "rule"
-  }
+  },
+  "ambient": [
+    {
+      "motif": "glow",
+      "color": "accent_soft",
+      "strength": 0.35,
+      "cx": 0.9,
+      "cy": 0.14,
+      "radius_pt": 260,
+      "layers": 4
+    },
+    {
+      "motif": "hairline_grid",
+      "color": "line_strong",
+      "strength": 0.4,
+      "columns": 4,
+      "thickness_pt": 0.5,
+      "avoid_content": true
+    },
+    {
+      "motif": "edge_band",
+      "color": "accent",
+      "strength": 1,
+      "edge": "top",
+      "thickness_pt": 4,
+      "start": 0,
+      "end": 0.14
+    },
+    {
+      "motif": "corner_bracket",
+      "color": "accent",
+      "strength": 0.35,
+      "corner": "bottom_right",
+      "size_pt": 84,
+      "thickness_pt": 1,
+      "inset_pt": 20,
+      "scope": [
+        "cover",
+        "section"
+      ]
+    },
+    {
+      "motif": "watermark",
+      "color": "line_strong",
+      "strength": 0.42,
+      "size_pt": 108,
+      "align": "right",
+      "font": "display",
+      "weight": 400,
+      "avoid_content": true,
+      "rect": {
+        "x": 0.75,
+        "y": 0.8,
+        "w": 0.24,
+        "h": 0.19
+      },
+      "scope": [
+        "content"
+      ]
+    }
+  ]
 }

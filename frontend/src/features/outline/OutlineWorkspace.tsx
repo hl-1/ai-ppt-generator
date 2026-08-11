@@ -16,6 +16,9 @@ import { ThemeCover } from '@/render/ThemeCover'
 
 const MAX_KEY_POINTS = 5
 const MIN_KEY_POINTS = 2
+/** 与后端 MIN_PAGE_COUNT / MAX_PAGE_COUNT 对齐 */
+const MIN_PAGE_COUNT = 5
+const MAX_PAGE_COUNT = 20
 
 export function OutlineWorkspace({ project }: { project: ProjectDetail }) {
   const outlineQuery = useOutline(project.id)
@@ -99,20 +102,30 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
   )
   const countValid = pages.length === target
   const incomplete = pages.some(pageIncomplete)
+  // 刚点「+ 要点」的空行：暂停 autosave，避免 normalize 后空行被立刻清掉
+  const draftingPoint = pages.some((page) => page.key_points.some((point) => point.trim().length === 0))
   const persisting = save.isPending || updateProject.isPending
   const autosave = useAutosave({
     revision: outline.revision,
     pages,
     pageCount: target,
     dirty,
+    draftingPoint,
     // 页数不一致时仍保存：先对齐 page_count，避免增删页后改动卡在「待保存」
-    enabled: dirty && !incomplete && !launch.isPending,
+    enabled: dirty && !incomplete && !draftingPoint && !launch.isPending,
     saving: persisting,
     save: async ({ revision, pages: nextPages }) => {
-      if (nextPages.length !== target) {
-        await updateProject.mutateAsync({ page_count: nextPages.length })
+      try {
+        if (nextPages.length !== target) {
+          await updateProject.mutateAsync({ page_count: nextPages.length })
+        }
+        await save.mutateAsync({ revision, pages: nextPages })
+        save.reset()
+        updateProject.reset()
+        launch.reset()
+      } catch {
+        // 错误由 actionError 展示
       }
-      await save.mutateAsync({ revision, pages: nextPages })
     },
   })
 
@@ -122,7 +135,7 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
     setPages((current) => current.map((page, i) => (i === index ? next : page)))
 
   const startGeneration = async () => {
-    if (incomplete || launch.isPending) return
+    if (incomplete || draftingPoint || launch.isPending) return
     // 页数被用户改过时先对齐目标，再走确认+生成
     if (!countValid) {
       await updateProject.mutateAsync({ page_count: pages.length })
@@ -157,14 +170,19 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
             variant="ghost"
             size="sm"
             disabled={regenerate.isPending || launch.isPending}
-            onClick={() => regenerate.mutate()}
+            onClick={() => {
+              launch.reset()
+              save.reset()
+              updateProject.reset()
+              regenerate.mutate()
+            }}
           >
             <RefreshCw className={cn('size-3.5', regenerate.isPending && 'animate-spin')} />
             重新生成
           </Button>
           <Button
             size="sm"
-            disabled={incomplete || launch.isPending || updateProject.isPending}
+            disabled={incomplete || draftingPoint || launch.isPending || updateProject.isPending}
             onClick={() => void startGeneration()}
           >
             {launch.isPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
@@ -197,38 +215,46 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
                 dragProps={drag.itemProps(index)}
                 dragOver={drag.overIndex === index}
                 dragging={drag.draggingIndex === index}
-                canRemove={pages.length > 1}
+                canRemove={pages.length > MIN_PAGE_COUNT}
                 onChange={(next) => changePage(index, next)}
                 onRemove={() => setPages((current) => current.filter((_, i) => i !== index))}
               />
             ))}
           </ol>
 
-          <button
-            type="button"
-            onClick={() => setPages((current) => [...current, blankPage(current.length + 1)])}
-            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-line-strong py-3.5 text-[13px] text-ink-muted transition-colors hover:border-accent hover:text-accent"
-          >
-            <Plus className="size-4" />
-            添加一页
-          </button>
+          {pages.length < MAX_PAGE_COUNT && (
+            <button
+              type="button"
+              onClick={() => setPages((current) => [...current, blankPage(current.length + 1)])}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-line-strong py-3.5 text-[13px] text-ink-muted transition-colors hover:border-accent hover:text-accent"
+            >
+              <Plus className="size-4" />
+              添加一页
+            </button>
+          )}
 
           {!countValid && (
             <p className="mt-3 text-center text-xs text-ink-muted">
               页数已改为 {pages.length}，保存时会同步目标页数。
             </p>
           )}
+          {pages.length === MIN_PAGE_COUNT && (
+            <p className="mt-3 text-center text-xs text-ink-muted">最少 {MIN_PAGE_COUNT} 页。</p>
+          )}
           {incomplete && (
             <p className="mt-3 text-center text-xs text-warning">
               每页都需要标题、目标和至少两条要点。
             </p>
+          )}
+          {draftingPoint && (
+            <p className="mt-3 text-center text-xs text-ink-muted">填写或删除空要点后自动保存。</p>
           )}
         </div>
 
         <aside className="flex flex-col gap-3 lg:sticky lg:top-20 lg:self-start">
           <div>
             <h3 className="text-sm font-semibold tracking-tight">外观</h3>
-            <p className="mt-1 text-xs text-ink-muted">决定成品的字体、配色与气质</p>
+            <p className="mt-1 text-xs text-ink-muted">决定成品的字体、配色与气质；切换后点「生成 PPT」时生效</p>
           </div>
           {themeList.map((theme) => (
             <button
@@ -381,6 +407,7 @@ function useAutosave({
   pages,
   pageCount,
   dirty,
+  draftingPoint,
   enabled,
   save,
   saving,
@@ -389,6 +416,7 @@ function useAutosave({
   pages: OutlinePage[]
   pageCount: number
   dirty: boolean
+  draftingPoint: boolean
   enabled: boolean
   save: (input: { revision: number; pages: OutlinePage[] }) => void | Promise<void>
   saving: boolean
@@ -407,6 +435,7 @@ function useAutosave({
   }, [dirty, enabled, saving, pages, revision, pageCount])
 
   if (saving) return '保存中…'
+  if (dirty && draftingPoint) return '编辑中…'
   if (dirty) return '待保存'
   return savedOnceRef.current ? '已保存' : ''
 }
@@ -451,6 +480,7 @@ function blankPage(index: number): OutlinePage {
     key_points: ['要点一', '要点二'],
     source_refs: [],
     layout_id: 'bullets',
+    page_role: 'content',
   }
 }
 

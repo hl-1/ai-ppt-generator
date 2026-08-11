@@ -1,10 +1,21 @@
 import type { components } from '@/api/schema'
+import type { AmbientMotif } from './ambient'
+import type { FlexContainer } from './flexLayout'
 
 type Schemas = components['schemas']
 
-export type Deck = Schemas['Deck']
-export type Slide = Schemas['Slide']
-export type Block = Slide['blocks'][number]
+/**
+ * 布局树以 flexLayout 里的 FlexContainer 为准：schema 生成的版本把 gap_pt / grow
+ * 标成必填，而编辑器构造出的树可以省略它们，两套同名类型混用会让赋值不兼容。
+ * blocks 含本地 Cards/Callout（schema 尚未 regenerate）。
+ */
+export type Slide = Omit<Schemas['Slide'], 'layout_tree' | 'blocks'> & {
+  layout_tree?: FlexContainer | null
+  blocks: Block[]
+}
+export type Deck = Omit<Schemas['Deck'], 'slides'> & {
+  slides: Slide[]
+}
 export type TextBlock = Schemas['TextBlock']
 export type BulletsBlock = Schemas['BulletsBlock']
 export type ImageBlock = Schemas['ImageBlock']
@@ -12,12 +23,56 @@ export type ChartBlock = Schemas['ChartBlock']
 export type TableBlock = Schemas['TableBlock']
 export type KpiBlock = Schemas['KpiBlock']
 
+/** schema 尚未 regenerate 时的本地块类型，与 backend content.py 对齐 */
+export type CardItem = {
+  title: string
+  desc: string
+  icon?: string | null
+}
+
+export type CardsBlock = {
+  id: string
+  slot_id: string
+  locked: boolean
+  style?: Schemas['BlockStyle'] | null
+  type: 'cards'
+  items: CardItem[]
+}
+
+export type CalloutBlock = {
+  id: string
+  slot_id: string
+  locked: boolean
+  style?: Schemas['BlockStyle'] | null
+  type: 'callout'
+  text: string
+  icon?: string | null
+  variant: 'note' | 'source'
+}
+
+export type Block =
+  | TextBlock
+  | BulletsBlock
+  | ImageBlock
+  | ChartBlock
+  | TableBlock
+  | KpiBlock
+  | CardsBlock
+  | CalloutBlock
+
 export type Layout = Schemas['Layout']
-export type Slot = Schemas['Slot']
+/** schema Slot.accepts 尚未含 cards/callout */
+export type Slot = Omit<Schemas['Slot'], 'accepts'> & {
+  accepts: Array<Block['type']>
+}
 export type Decoration = Schemas['Decoration']
 export type Rect = Schemas['Rect']
 
-export type Theme = Schemas['Theme']
+/**
+ * 氛围层以 ambient.ts 里的 AmbientMotif 为准：schema 生成的版本把带默认值的
+ * 字段标成必填，而 shared/themes/*.json 里这些字段本来就可以省略。
+ */
+export type Theme = Omit<Schemas['Theme'], 'ambient'> & { ambient?: AmbientMotif[] }
 export type TextStyle = Schemas['TextStyle']
 export type TextStyleName = NonNullable<Slot['text_style']>
 /** 色令牌从 palette 键派生；TextStyle.color 放宽后可能是 hex */
@@ -27,11 +82,33 @@ export type ColorToken = Exclude<keyof Theme['palette'], 'chart_series'>
 export const CANVAS_WIDTH_PT = 960
 export const CANVAS_HEIGHT_PT = 540
 
+/** 页面安全区：内容不贴画布边缘。必须与后端 geometry.py 的 SAFE_AREA 一致 */
+export const PAGE_MARGIN_X_PT = 52
+export const PAGE_MARGIN_TOP_PT = 42
+export const PAGE_MARGIN_BOTTOM_PT = 44
+
+export const SAFE_AREA: Rect = {
+  x: PAGE_MARGIN_X_PT / CANVAS_WIDTH_PT,
+  y: PAGE_MARGIN_TOP_PT / CANVAS_HEIGHT_PT,
+  w: (CANVAS_WIDTH_PT - 2 * PAGE_MARGIN_X_PT) / CANVAS_WIDTH_PT,
+  h: (CANVAS_HEIGHT_PT - PAGE_MARGIN_TOP_PT - PAGE_MARGIN_BOTTOM_PT) / CANVAS_HEIGHT_PT,
+}
+
+export const SAFE_AREA_WIDTH_PT = SAFE_AREA.w * CANVAS_WIDTH_PT
+export const SAFE_AREA_HEIGHT_PT = SAFE_AREA.h * CANVAS_HEIGHT_PT
+
 /** 就地编辑的字段级变更；多字段块由保存队列合并，避免并发丢字 */
 export type EditableBlockCommit =
   | { type: 'text'; text: string }
-  | { type: 'bullets'; index: number; text: string }
+  /** 未带 kind 或 kind=update：改某一项文案（可为空占位） */
+  | { type: 'bullets'; kind?: 'update'; index: number; text: string }
+  /** 在 index 之后插入空要点 */
+  | { type: 'bullets'; kind: 'insert'; index: number }
+  /** 删除 index；只剩一项时清空文案、不删块 */
+  | { type: 'bullets'; kind: 'remove'; index: number }
   | { type: 'kpi'; field: 'value' | 'label' | 'note'; text: string }
+  | { type: 'cards'; index: number; field: 'title' | 'desc'; text: string }
+  | { type: 'callout'; text: string }
   | { type: 'table'; kind: 'header'; index: number; text: string }
   | { type: 'table'; kind: 'cell'; row: number; col: number; text: string }
   | { type: 'table'; kind: 'replace'; header: string[]; rows: string[][] }

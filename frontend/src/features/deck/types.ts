@@ -1,13 +1,24 @@
 import type { components } from '@/api/schema'
 import type { FlexContainer } from '@/render/flexLayout'
-import type { ImageBlock, Slide } from '@/render/types'
+import type { Block, ImageBlock, Slide } from '@/render/types'
 
 type Schemas = components['schemas']
 
 export const ACCEPTED_IMAGE = 'image/png,image/jpeg,image/webp'
 
-export type Deck = Schemas['DeckPublic']
-export type DeckSlide = Schemas['SlidePublic']
+/**
+ * 布局树统一用渲染器侧的 FlexContainer。
+ * schema 生成的版本把 gap_pt / grow 标成必填，而编辑器构造出的树可以省略它们，
+ * 两套同名类型混用会让赋值不兼容（tsc -b 报 "Two different types with this name"）。
+ * blocks 含本地 Cards/Callout（schema 尚未 regenerate）。
+ */
+export type DeckSlide = Omit<Schemas['SlidePublic'], 'layout_tree' | 'blocks'> & {
+  layout_tree?: FlexContainer | null
+  blocks: Block[]
+}
+export type Deck = Omit<Schemas['DeckPublic'], 'slides'> & {
+  slides: DeckSlide[]
+}
 export type DeckStatus = Deck['status']
 export type SlideStatus = DeckSlide['status']
 export type DeckGenerateAccepted = Schemas['DeckGenerateAccepted']
@@ -20,6 +31,8 @@ export type AiEditPatch =
   | Schemas['BulletsPatch']
   | Schemas['KpiPatch']
   | Schemas['TablePatch']
+  | Schemas['CardsPatch']
+  | Schemas['CalloutPatch']
 export type DiscardedOperation = Schemas['DiscardedOperationPublic']
 export type StructureIssue = Schemas['StructureIssue']
 export type ExportCheckReport = Schemas['ExportCheckReport']
@@ -49,12 +62,28 @@ export type ChartBlockUpdate = {
   unit?: string | null
 }
 
+export type CardsBlockUpdate = {
+  type: 'cards'
+  revision: number
+  items: Array<{ title: string; desc: string; icon?: string | null }>
+}
+
+export type CalloutBlockUpdate = {
+  type: 'callout'
+  revision: number
+  text: string
+  icon?: string | null
+  variant: 'note' | 'source'
+}
+
 export type BlockUpdate =
   | Schemas['TextBlockUpdate']
   | Schemas['BulletsBlockUpdate']
   | Schemas['KpiBlockUpdate']
   | Schemas['TableBlockUpdate']
   | ChartBlockUpdate
+  | CardsBlockUpdate
+  | CalloutBlockUpdate
 /** Omit 不会自动分发联合类型，需逐个剥掉 revision */
 export type BlockUpdateBody =
   | Omit<Schemas['TextBlockUpdate'], 'revision'>
@@ -62,6 +91,8 @@ export type BlockUpdateBody =
   | Omit<Schemas['KpiBlockUpdate'], 'revision'>
   | Omit<Schemas['TableBlockUpdate'], 'revision'>
   | Omit<ChartBlockUpdate, 'revision'>
+  | Omit<CardsBlockUpdate, 'revision'>
+  | Omit<CalloutBlockUpdate, 'revision'>
 
 export interface DeckProgressEvent {
   type:

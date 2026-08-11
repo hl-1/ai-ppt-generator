@@ -37,6 +37,7 @@ from app.domain.flex_layout import (
     iter_leaf_block_ids,
     prune_empty_containers,
     remove_leaf_by_block_id,
+    restrict_bleed,
 )
 from app.domain.flex_normalize import normalize
 from app.domain.layout import get_layout
@@ -45,6 +46,7 @@ from app.domain.layout_switch import (
     list_layout_candidates,
     plan_layout_switch,
 )
+from app.domain.slide_draft import BLEEDABLE_TYPES
 from app.domain.slide_patch import (
     apply_patches,
     content_snapshot,
@@ -59,6 +61,7 @@ from app.llm.errors import (
     InvalidSlideOutputError,
     LLMNotConfiguredError,
 )
+from app.llm.relayout import build_relayout_candidates
 from app.llm.slide_edit import block_to_edit_input
 from app.models.project import Project
 from app.models.slide import Slide
@@ -102,7 +105,6 @@ from app.services.deck import (
 )
 from app.services.media import media_url, store_image
 from app.services.quality import build_quality_report, project_to_content_deck
-from app.llm.relayout import build_relayout_candidates
 from app.worker.context import create_relayout_generator, create_slide_edit_generator
 from app.workflows.slide_edit import (
     build_slide_edit_workflow,
@@ -167,7 +169,8 @@ def _dump_layout_tree(tree: FlexContainer) -> dict:
 
 
 def _apply_flex_tree(slide: Slide, layout_tree: FlexContainer) -> None:
-    tree = normalize(layout_tree)
+    # 用户显式调过的版面不再按标题上限回钳，否则拖出来的高度会被改回去
+    tree = normalize(layout_tree, clamp_title_grow=False)
     leaf_ids = set(iter_leaf_block_ids(tree))
     block_ids = {str(block.get("id")) for block in slide.blocks}
     unknown = leaf_ids - block_ids
@@ -182,7 +185,12 @@ def _apply_flex_tree(slide: Slide, layout_tree: FlexContainer) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"仍有内容块未放入布局树：{', '.join(sorted(unplaced))}",
         )
-    slide.layout_tree = _dump_layout_tree(tree)
+    bleedable = {
+        str(block.get("id"))
+        for block in slide.blocks
+        if str(block.get("type")) in BLEEDABLE_TYPES
+    }
+    slide.layout_tree = _dump_layout_tree(restrict_bleed(tree, bleedable))
 
 
 async def _enqueue(
@@ -469,6 +477,12 @@ async def update_slide_block(
         updated["categories"] = body.categories
         updated["series"] = [item.model_dump() for item in body.series]
         updated["unit"] = body.unit
+    elif body.type == "cards":
+        updated["items"] = [item.model_dump() for item in body.items]
+    elif body.type == "callout":
+        updated["text"] = body.text
+        updated["icon"] = body.icon
+        updated["variant"] = body.variant
     else:
         updated["header"] = body.header
         updated["rows"] = body.rows
@@ -549,7 +563,7 @@ async def create_slide_block(
             detail="目标容器不存在",
         )
 
-    slide.layout_tree = _dump_layout_tree(normalize(tree))
+    slide.layout_tree = _dump_layout_tree(normalize(tree, clamp_title_grow=False))
     slide.blocks = [*slide.blocks, default_block_dict(body.type, block_id)]
     refresh_slide_issues(slide, theme=resolve_project_theme(project))
     slide.revision += 1
@@ -596,7 +610,7 @@ async def delete_slide_block(
             detail="至少保留一个内容块",
         )
 
-    slide.layout_tree = _dump_layout_tree(normalize(pruned))
+    slide.layout_tree = _dump_layout_tree(normalize(pruned, clamp_title_grow=False))
     slide.blocks = [block for block in slide.blocks if block.get("id") != block_id]
     refresh_slide_issues(slide, theme=resolve_project_theme(project))
     slide.revision += 1
@@ -747,7 +761,8 @@ async def unlock_flex(
         )
 
     layout = get_layout(slide.layout_id)
-    tree = normalize(build_flex_tree_from_fixed(layout, slide.blocks))
+    # 高度来自固定布局的真实槽位矩形，回钳标题会让解锁瞬间重排版面
+    tree = normalize(build_flex_tree_from_fixed(layout, slide.blocks), clamp_title_grow=False)
     if not iter_leaf_block_ids(tree):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -878,12 +893,18 @@ async def propose_slide_ai_edit(
         )
 
     instruction = body.instruction.strip() if body.instruction else None
+    layout_tree = (
+        FlexContainer.model_validate(slide.layout_tree)
+        if slide.layout_mode == "flex" and slide.layout_tree is not None
+        else None
+    )
     payload = SlideEditInput(
         deck_title=project.title,
         audience=project.audience,
         tone=project.tone,
         page_title=slide.title,
         layout_id=slide.layout_id,
+        layout_mode=slide.layout_mode,
         action=body.action,
         instruction=instruction or None,
         blocks=[block_to_edit_input(block) for block in editable],
@@ -896,6 +917,8 @@ async def propose_slide_ai_edit(
             payload=payload,
             slide_id=str(slide.id),
             layout_id=slide.layout_id,
+            layout_mode=slide.layout_mode,
+            layout_tree=layout_tree,
             blocks=blocks,
             theme_id=project.theme_id,
             theme_overrides=dict(project.theme_overrides or {}),

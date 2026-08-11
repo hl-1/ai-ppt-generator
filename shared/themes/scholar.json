@@ -135,5 +135,74 @@
     "radius_pt": 0,
     "border_width_pt": 0.75,
     "bullet_marker": "index"
-  }
+  },
+  "ambient": [
+    {
+      "motif": "glow",
+      "color": "accent_soft",
+      "strength": 0.35,
+      "cx": 0.93,
+      "cy": 0.84,
+      "radius_pt": 220,
+      "layers": 4
+    },
+    {
+      "motif": "edge_band",
+      "color": "accent",
+      "strength": 1,
+      "edge": "top",
+      "thickness_pt": 2.5,
+      "start": 0,
+      "end": 0.12
+    },
+    {
+      "motif": "hairline_grid",
+      "color": "line",
+      "strength": 0.7,
+      "columns": 4,
+      "thickness_pt": 0.5,
+      "avoid_content": true,
+      "area": {
+        "x": 0.054,
+        "y": 0.2,
+        "w": 0.892,
+        "h": 0.72
+      },
+      "scope": [
+        "content"
+      ]
+    },
+    {
+      "motif": "corner_bracket",
+      "color": "line_strong",
+      "strength": 0.8,
+      "corner": "top_right",
+      "size_pt": 72,
+      "thickness_pt": 0.75,
+      "inset_pt": 18,
+      "scope": [
+        "cover",
+        "section"
+      ]
+    },
+    {
+      "motif": "watermark",
+      "color": "line_strong",
+      "strength": 0.45,
+      "size_pt": 104,
+      "align": "right",
+      "font": "display",
+      "weight": 400,
+      "avoid_content": true,
+      "rect": {
+        "x": 0.75,
+        "y": 0.8,
+        "w": 0.24,
+        "h": 0.19
+      },
+      "scope": [
+        "content"
+      ]
+    }
+  ]
 }

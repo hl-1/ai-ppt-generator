@@ -5,10 +5,18 @@ import json
 from openai import AsyncOpenAI
 from pydantic import ValidationError
 
-from app.domain.content import Block, BulletsBlock, KpiBlock, TableBlock, TextBlock
+from app.domain.content import (
+    Block,
+    BulletsBlock,
+    CalloutBlock,
+    CardsBlock,
+    KpiBlock,
+    TableBlock,
+    TextBlock,
+)
 from app.domain.layout import Layout, Slot, get_layout
 from app.domain.slide_patch import BlockPatch, parse_block_patches
-from app.llm.base import SlideEditBlockInput, SlideEditInput
+from app.llm.base import SlideEditBlockInput, SlideEditCardItem, SlideEditInput
 from app.llm.client import JsonChatClient
 from app.llm.errors import InvalidSlideEditOutputError
 
@@ -44,7 +52,8 @@ class DeepSeekSlideEditGenerator:
         )
 
     async def generate(self, payload: SlideEditInput) -> list[BlockPatch]:
-        layout = get_layout(payload.layout_id)
+        # flex 页的 layout_id 只是版式提示（甚至就是 "flex"），没有对应的固定布局定义
+        layout = None if payload.layout_mode == "flex" else get_layout(payload.layout_id)
         content = await self._chat.complete_json(
             system=self._system_prompt(layout, payload.action),
             user=self._user_prompt(payload, layout),
@@ -69,12 +78,12 @@ class DeepSeekSlideEditGenerator:
         self._validate_operations(operations, payload)
         return operations
 
-    def _system_prompt(self, layout: Layout, action: str) -> str:
+    def _system_prompt(self, layout: Layout | None, action: str) -> str:
         action_rule = {
             "rewrite": "改写＝保持信息量与结论不变，只更换表达方式，不要增删要点。",
             "condense": "压缩＝在容量上限内精简表述，保留关键结论与数字，删去冗余铺垫。",
             "expand": (
-                "扩写＝在容量上限内补充必要细节与过渡，使论证更完整；"
+                "扩写＝在容量上限内补充必要细节与过渡，使论证更完整，贴近容量中上沿；"
                 "不得超出字数/条目上限，不得编造数据。"
             ),
             "instruct": (
@@ -83,6 +92,17 @@ class DeepSeekSlideEditGenerator:
                 "不得超出字数/条目上限，不得编造数据。"
             ),
         }[action]
+        # 灵活布局没有槽位容量表，只能给「别把版面撑爆」这种软约束
+        capacity_rule = (
+            "篇幅与现有内容保持相近，不要明显变长，避免把版面撑爆。"
+            if layout is None
+            else "严格遵守每个槽位的字数与条目上限；在上限内保持信息充实，不要无故删瘦。"
+        )
+        layout_note = (
+            "本页为灵活布局，版面由布局树决定，块的位置与大小不由你控制。"
+            if layout is None
+            else f"本页布局为 {layout.id}（{layout.name}）：{layout.usage}"
+        )
         return (
             "你是 PPT 单页局部修改助手。必须只输出一个 JSON 对象，不要 Markdown，不要额外说明。\n"
             'JSON 结构必须为：{"operations":[...]}\n'
@@ -91,32 +111,39 @@ class DeepSeekSlideEditGenerator:
             '- bullets: {"block_id":"...","type":"bullets","items":["..."]}\n'
             '- kpi: {"block_id":"...","type":"kpi","value":"...","label":"...","note":"..."}\n'
             '- table: {"block_id":"...","type":"table","header":["..."],"rows":[["..."]]}\n'
+            '- cards: {"block_id":"...","type":"cards",'
+            '"items":[{"title":"...","desc":"...","icon":null}]}\n'
+            '- callout: {"block_id":"...","type":"callout","text":"...","icon":null,'
+            '"variant":"note"|"source"}\n'
             "硬性约束：\n"
             "1. 只能修改下面列出的 block_id，禁止新增、删除块，禁止改 slot_id 或块类型。\n"
             "2. 只输出确实需要改动的块；内容可保持不变的块不要出现在 operations 里。\n"
-            "3. 严格遵守每个槽位的字数与条目上限，宁可少写也不要超出。\n"
+            f"3. {capacity_rule}\n"
             "4. 正文使用中文，写具体结论与事实，不写空话。\n"
             "5. 数字必须来自给定内容，缺少数据时不要编造。\n"
             f"6. 本次动作是{ACTION_LABELS[action]}：{action_rule}\n"
-            f"本页布局为 {layout.id}（{layout.name}）：{layout.usage}"
+            f"{layout_note}"
         )
 
-    def _user_prompt(self, payload: SlideEditInput, layout: Layout) -> str:
+    def _user_prompt(self, payload: SlideEditInput, layout: Layout | None) -> str:
         body: dict = {
             "deck_title": payload.deck_title,
             "audience": payload.audience,
             "tone": payload.tone,
             "page_title": payload.page_title,
             "action": payload.action,
-            "blocks": [block.model_dump(exclude_none=True) for block in payload.blocks],
-            "slots": [
+            "blocks": [_dump_edit_block(block) for block in payload.blocks],
+        }
+        # flex 页的版面由布局树决定，没有槽位容量可给
+        if layout is not None:
+            body["slots"] = [
                 _slot_spec(slot)
                 for slot in layout.slots
                 if any(
-                    block_type in {"text", "bullets", "kpi", "table"} for block_type in slot.accepts
+                    block_type in {"text", "bullets", "kpi", "table", "cards", "callout"}
+                    for block_type in slot.accepts
                 )
-            ],
-        }
+            ]
         # 自由指令为空时不要往提示词里塞空字段
         if payload.instruction and payload.instruction.strip():
             body["instruction"] = payload.instruction.strip()
@@ -175,8 +202,34 @@ def block_to_edit_input(block: Block) -> SlideEditBlockInput:
                 header=list(block.header),
                 rows=[list(row) for row in block.rows],
             )
+        case CardsBlock():
+            return SlideEditBlockInput(
+                **common,
+                type="cards",
+                card_items=[
+                    SlideEditCardItem(title=item.title, desc=item.desc, icon=item.icon)
+                    for item in block.items
+                ],
+            )
+        case CalloutBlock():
+            return SlideEditBlockInput(
+                **common,
+                type="callout",
+                text=block.text,
+                icon=block.icon,
+                variant=block.variant,
+            )
         case _:
             raise TypeError(f"块类型 {block.type} 不能作为 AI 修改输入")
+
+
+def _dump_edit_block(block: SlideEditBlockInput) -> dict:
+    """cards 对外仍用 items（与 patch schema 对齐），内部字段叫 card_items。"""
+    data = block.model_dump(exclude_none=True)
+    if block.type == "cards" and block.card_items is not None:
+        data.pop("card_items", None)
+        data["items"] = [item.model_dump(exclude_none=True) for item in block.card_items]
+    return data
 
 
 def _slot_spec(slot: Slot) -> dict:

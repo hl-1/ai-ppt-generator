@@ -6,6 +6,7 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import TypeAdapter
 
 from app.domain.content import Block, Slide
+from app.domain.flex_layout import FlexContainer
 from app.domain.slide_patch import (
     BlockPatch,
     DiscardedPatch,
@@ -27,6 +28,8 @@ class SlideEditWorkflowState(TypedDict, total=False):
     input: SlideEditInput
     slide_id: str
     layout_id: str
+    layout_mode: str
+    layout_tree: FlexContainer | None
     theme_id: str
     theme_overrides: dict[str, Any]
     original_blocks: list[Block]
@@ -47,9 +50,13 @@ def build_slide_edit_workflow(generator: SlideEditGenerator):
     async def check(state: SlideEditWorkflowState) -> dict:
         filtered = filter_patches(state["original_blocks"], state["operations"])
         patched = apply_patches(state["original_blocks"], filtered.accepted)
+        # 校验必须知道页面是 fixed 还是 flex：flex 页的 slot_id 是块自己的 id，
+        # 拿固定布局的槽位表去比对会把每个块都判成「布局没有这个槽位」
         slide = Slide(
             id=state["slide_id"],
             layout_id=state["layout_id"],
+            layout_mode=state.get("layout_mode") or "fixed",
+            layout_tree=state.get("layout_tree"),
             blocks=patched,
         )
         return {
@@ -95,6 +102,8 @@ async def run_slide_edit_workflow(
     slide_id: str,
     layout_id: str,
     blocks: list[Block],
+    layout_mode: str = "fixed",
+    layout_tree: FlexContainer | None = None,
     theme_id: str | None = None,
     theme_overrides: dict[str, Any] | None = None,
 ) -> tuple[list[BlockPatch], list[DiscardedPatch], list[StructureIssue], list[Block]]:
@@ -103,6 +112,8 @@ async def run_slide_edit_workflow(
             "input": payload,
             "slide_id": slide_id,
             "layout_id": layout_id,
+            "layout_mode": layout_mode,
+            "layout_tree": layout_tree,
             "theme_id": theme_id or "ivory",
             "theme_overrides": theme_overrides or {},
             "original_blocks": blocks,

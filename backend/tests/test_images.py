@@ -20,7 +20,7 @@ from app.images.bailian import BailianImageProvider, _closest_size, _resolve_bas
 from app.images.base import ImageAsset, ImageRequest
 from app.images.generated import GeneratedImageProvider
 from app.images.pipeline import ImagePipeline
-from app.images.unsplash import UnsplashImageProvider
+from app.images.unsplash import UnsplashImageProvider, sanitize_unsplash_query
 from app.images.validate import ImageRejected, validate_image
 from app.main import app
 from app.models.project import Project, ProjectOutline
@@ -112,6 +112,7 @@ async def _project_with_image_slide(
             outline_page_id=uuid.UUID(page_id),
             position=1,
             layout_id="image-right",
+            layout_mode="fixed",
             title="示意图页",
             status=status,
             blocks=[
@@ -452,6 +453,62 @@ async def test_unsplash_empty_results_returns_none() -> None:
     async with httpx.AsyncClient(transport=transport) as client:
         provider = UnsplashImageProvider(client=client, access_key="unsplash-key")
         assert await provider.fetch(ImageRequest(prompt="p", query="q", aspect_ratio=1.0)) is None
+
+
+def test_sanitize_unsplash_query_strips_fullwidth_colon() -> None:
+    cleaned = sanitize_unsplash_query(
+        "抽象几何图形：三条交错的路径分别代表认知、行为与环境，寓意三者协同驱动成长"
+    )
+    assert "：" not in cleaned
+    assert ":" not in cleaned
+    assert "抽象几何图形" in cleaned
+    assert " " in cleaned
+
+
+@pytest.mark.asyncio
+async def test_unsplash_retries_after_content_removed() -> None:
+    """首个 query 若仍被 410，应继续尝试短候选。"""
+    seen: list[str] = []
+    png = MINIMAL_PNG
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/search/photos" in url:
+            query = request.url.params.get("query", "")
+            seen.append(query)
+            if len(seen) == 1:
+                return httpx.Response(410, json={"errors": ["Content removed"]})
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "urls": {"regular": "https://images.unsplash.com/photo.jpg"},
+                            "links": {},
+                            "user": {"name": "Ada"},
+                        }
+                    ]
+                },
+            )
+        if "images.unsplash.com" in url:
+            return httpx.Response(200, content=png, headers={"content-type": "image/png"})
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        provider = UnsplashImageProvider(client=client, access_key="unsplash-key")
+        asset = await provider.fetch(
+            ImageRequest(
+                prompt="p",
+                query="抽象几何图形：三条交错的路径分别代表认知、行为与环境",
+                aspect_ratio=1.6,
+            )
+        )
+
+    assert asset is not None
+    assert asset.source == "stock"
+    assert len(seen) >= 2
+    assert all("：" not in q for q in seen)
 
 
 # --- resolve_slide_images ---

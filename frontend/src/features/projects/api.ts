@@ -86,6 +86,7 @@ export interface DraftInput {
   pageCount: number
   themeId: string
   layoutMode?: 'fixed' | 'flex'
+  contentDensity?: 'concise' | 'medium' | 'detailed'
   onStep?: (step: string) => void
 }
 
@@ -110,6 +111,7 @@ export function useCreateDraft() {
           page_count: input.pageCount,
           theme_id: input.themeId,
           layout_mode: input.layoutMode ?? 'flex',
+          content_density: input.contentDensity ?? 'medium',
         }),
       })
 

@@ -144,7 +144,7 @@ export function PresentMode({
             height: `min(100vh, calc(100vw / ${ASPECT}))`,
           }}
         >
-          <SlideView slide={toRenderSlide(slide)} theme={theme} />
+          <SlideView slide={toRenderSlide(slide)} theme={theme} slideIndex={clamp(index)} />
         </div>
       </div>
 

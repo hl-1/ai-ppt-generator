@@ -1,6 +1,11 @@
 import type { BlockUpdateBody, DeckSlide } from '@/features/deck/types'
 import type { EditableBlockCommit } from '@/render/types'
 
+/** 落库前整理要点：保留空占位（刚 Enter 的新项），至少一项 */
+export function sanitizeBulletsItems(items: string[]): string[] {
+  return items.length > 0 ? items : ['']
+}
+
 /** 把字段级编辑叠到当前块（含尚未发出的覆盖）上，得到完整 PATCH 体 */
 export function mergeBlockCommit(
   slide: DeckSlide,
@@ -16,8 +21,22 @@ export function mergeBlockCommit(
   }
 
   if (commit.type === 'bullets' && block.type === 'bullets') {
-    // 清空的条目先保留占位，避免后续要点的 index 错位；真正提交前再剔除
+    // 清空的条目先保留占位，避免后续要点的 index 错位；
+    // Enter 新增的空项也要留着，保存时不再整表 strip
     const base = previous?.type === 'bullets' ? previous.items : block.items
+    if (commit.kind === 'insert') {
+      const items = [...base]
+      const at = Math.max(0, Math.min(commit.index + 1, items.length))
+      items.splice(at, 0, '')
+      return { type: 'bullets', items }
+    }
+    if (commit.kind === 'remove') {
+      if (base.length <= 1) return { type: 'bullets', items: [''] }
+      return {
+        type: 'bullets',
+        items: base.filter((_, index) => index !== commit.index),
+      }
+    }
     const items = base.map((item, index) => (index === commit.index ? commit.text : item))
     return { type: 'bullets', items }
   }
@@ -38,6 +57,44 @@ export function mergeBlockCommit(
       label: commit.field === 'label' ? commit.text : base.label,
       note:
         commit.field === 'note' ? commit.text || null : (base.note ?? null),
+    }
+  }
+
+  if (commit.type === 'cards' && block.type === 'cards') {
+    const base = previous?.type === 'cards' ? previous.items : block.items
+    return {
+      type: 'cards',
+      items: base.map((item, index) =>
+        index === commit.index
+          ? {
+              title: commit.field === 'title' ? commit.text : item.title,
+              desc: commit.field === 'desc' ? commit.text : item.desc,
+              icon: item.icon ?? null,
+            }
+          : {
+              title: item.title,
+              desc: item.desc,
+              icon: item.icon ?? null,
+            },
+      ),
+    }
+  }
+
+  if (commit.type === 'callout' && block.type === 'callout') {
+    const base =
+      previous?.type === 'callout'
+        ? previous
+        : {
+            type: 'callout' as const,
+            text: block.text,
+            icon: block.icon ?? null,
+            variant: block.variant,
+          }
+    return {
+      type: 'callout',
+      text: commit.text,
+      icon: base.icon ?? null,
+      variant: base.variant,
     }
   }
 

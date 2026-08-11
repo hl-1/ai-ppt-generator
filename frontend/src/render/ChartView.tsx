@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { resolveColor } from '@/render/style'
+import { resolveColor, webFontStack } from '@/render/style'
 import {
   CANVAS_HEIGHT_PT,
   CANVAS_WIDTH_PT,
@@ -48,7 +48,7 @@ function chartStyle(theme: Theme, seriesCount: number) {
   const label = theme.text_styles.chart_label
   const text = {
     fontSize: label.size_pt,
-    fontFamily: theme.fonts.body.web,
+    fontFamily: webFontStack(theme.fonts.body),
     fill: resolveColor(theme, label.color),
   }
 

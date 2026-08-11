@@ -1,4 +1,4 @@
-import { CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, type Rect } from './types'
+import { CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, SAFE_AREA, type Rect } from './types'
 
 export type GroupPreset =
   | 'solid_boxes'
@@ -23,6 +23,11 @@ export type FlexLeaf = {
   block_id: string
   grow?: number
   text_style?: string | null
+  /** 相对 solver 结果的像素级平移，只挪位置不改尺寸；solver 会钳制在画布内 */
+  offset_x_pt?: number
+  offset_y_pt?: number
+  /** 出血：贴着安全区边界的方向扩展到画布边缘，只给图片/图表用 */
+  bleed?: boolean
 }
 
 export type FlexNode = FlexContainer | FlexLeaf
@@ -52,6 +57,9 @@ export const PRESET_INSET_PT: Record<GroupPreset, number> = {
 const DEFAULT_GAP_PT = 16.0
 const DEFAULT_GROW = 1.0
 
+/** 判定叶子是否贴着安全区某条边的容差，约合 2pt；与后端 _EDGE_EPS 一致 */
+const EDGE_EPS = 0.0025
+
 function isLeaf(node: FlexNode): node is FlexLeaf {
   return node.type === 'block'
 }
@@ -75,13 +83,13 @@ export function solveNodeAreas(
       const child = node.children[i]!
       const content = applyPresetInset(node, childAreas[i]!)
       if (isLeaf(child)) {
-        areas.set(child.id, content)
+        areas.set(child.id, applyOffset(applyBleed(content, child), child))
       } else {
         walk(child, content)
       }
     }
   }
-  walk(root, canvas ?? { x: 0.0, y: 0.0, w: 1.0, h: 1.0 })
+  walk(root, canvas ?? SAFE_AREA)
   return areas
 }
 
@@ -89,7 +97,7 @@ export function solveWithFrames(
   root: FlexContainer,
   canvas?: Rect,
 ): { placed: PlacedBlock[]; frames: SkinFrame[] } {
-  const area = canvas ?? { x: 0.0, y: 0.0, w: 1.0, h: 1.0 }
+  const area = canvas ?? SAFE_AREA
   const frames: SkinFrame[] = []
   const placed = solveContainer(root, area, frames)
   return { placed, frames }
@@ -126,12 +134,61 @@ function solveNode(node: FlexNode, area: Rect, frames: SkinFrame[]): PlacedBlock
     return [
       {
         block_id: node.block_id,
-        rect: area,
+        rect: applyOffset(applyBleed(area, node), node),
         text_style: node.text_style,
       },
     ]
   }
   return solveContainer(node, area, frames)
+}
+
+/**
+ * 出血：把贴着安全区边界的叶子扩展到画布边缘。
+ * 与 backend/app/domain/flex_solve.py 的 _apply_bleed 保持一致。
+ */
+function applyBleed(area: Rect, leaf: FlexLeaf): Rect {
+  if (!leaf.bleed) return area
+  const areaRight = area.x + area.w
+  const areaBottom = area.y + area.h
+  const safeRight = SAFE_AREA.x + SAFE_AREA.w
+  const safeBottom = SAFE_AREA.y + SAFE_AREA.h
+  const left = area.x - SAFE_AREA.x <= EDGE_EPS ? 0.0 : area.x
+  const top = area.y - SAFE_AREA.y <= EDGE_EPS ? 0.0 : area.y
+  const right = safeRight - areaRight <= EDGE_EPS ? 1.0 : areaRight
+  const bottom = safeBottom - areaBottom <= EDGE_EPS ? 1.0 : areaBottom
+  return { x: left, y: top, w: right - left, h: bottom - top }
+}
+
+/**
+ * 应用叶子的像素级平移，并钳制在画布内。
+ * 与 backend/app/domain/flex_solve.py 的 _apply_offset 保持一致。
+ */
+function applyOffset(area: Rect, leaf: FlexLeaf): Rect {
+  const dxPt = leaf.offset_x_pt ?? 0
+  const dyPt = leaf.offset_y_pt ?? 0
+  if (!dxPt && !dyPt) return area
+  return {
+    x: clampStart(area.x + dxPt / CANVAS_WIDTH_PT, area.w),
+    y: clampStart(area.y + dyPt / CANVAS_HEIGHT_PT, area.h),
+    w: area.w,
+    h: area.h,
+  }
+}
+
+function clampStart(start: number, extent: number): number {
+  return Math.min(Math.max(start, 0.0), Math.max(1.0 - extent, 0.0))
+}
+
+/**
+ * 返回 [单个间隙, 间隙总量]；间隙总量超过可用长度时按比例压缩。
+ * 与 backend/app/domain/flex_solve.py 的 _fit_gaps 保持一致。
+ */
+function fitGaps(gapNorm: number, n: number, extent: number): [number, number] {
+  if (n <= 1 || gapNorm <= 0.0) return [0.0, 0.0]
+  const total = (n - 1) * gapNorm
+  if (total <= extent) return [gapNorm, total]
+  if (extent <= 0.0) return [0.0, 0.0]
+  return [extent / (n - 1), extent]
 }
 
 function splitArea(node: FlexContainer, area: Rect): Rect[] {
@@ -141,13 +198,15 @@ function splitArea(node: FlexContainer, area: Rect): Rect[] {
   const gapPt = node.gap_pt ?? DEFAULT_GAP_PT
 
   if (node.type === 'row') {
-    const gapNorm = n > 1 ? ((n - 1) * gapPt) / CANVAS_WIDTH_PT : 0.0
+    const [gapNorm, totalGap] = fitGaps(gapPt / CANVAS_WIDTH_PT, n, area.w)
     const weights = rowWeights(node.ratios, n)
-    const totalW = Math.max(area.w - gapNorm, 0.0)
+    const totalW = Math.max(area.w - totalGap, 0.0)
+    const end = area.x + area.w
     let cursor = area.x
     const rects: Rect[] = []
     for (let index = 0; index < weights.length; index++) {
-      const w = totalW * weights[index]!
+      // 末项贴紧父区域右缘，吸收浮点残差
+      const w = index === n - 1 ? end - cursor : totalW * weights[index]!
       rects.push({ x: cursor, y: area.y, w: Math.max(w, 1e-9), h: area.h })
       cursor += w
       if (index < n - 1) {
@@ -157,13 +216,14 @@ function splitArea(node: FlexContainer, area: Rect): Rect[] {
     return rects
   }
 
-  const gapNorm = n > 1 ? ((n - 1) * gapPt) / CANVAS_HEIGHT_PT : 0.0
+  const [gapNorm, totalGap] = fitGaps(gapPt / CANVAS_HEIGHT_PT, n, area.h)
   const weights = columnWeights(node.children)
-  const totalH = Math.max(area.h - gapNorm, 0.0)
+  const totalH = Math.max(area.h - totalGap, 0.0)
+  const end = area.y + area.h
   let cursor = area.y
   const rects: Rect[] = []
   for (let index = 0; index < weights.length; index++) {
-    const h = totalH * weights[index]!
+    const h = index === n - 1 ? end - cursor : totalH * weights[index]!
     rects.push({ x: area.x, y: cursor, w: area.w, h: Math.max(h, 1e-9) })
     cursor += h
     if (index < n - 1) {

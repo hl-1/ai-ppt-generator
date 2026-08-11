@@ -1,5 +1,10 @@
 from app.domain.flex_layout import iter_leaf_block_ids
-from app.domain.flex_presets import BlockRef, adapt_preset_to_blocks, load_presets, seed_layout_for_blocks
+from app.domain.flex_presets import (
+    BlockRef,
+    adapt_preset_to_blocks,
+    load_presets,
+    seed_layout_for_blocks,
+)
 
 
 def test_load_presets_excludes_golden() -> None:
@@ -11,6 +16,9 @@ def test_load_presets_excludes_golden() -> None:
     assert "image-text" in ids
     assert "three-columns" in ids
     assert "two-column-bullets" in ids
+    assert "title-bullets-kpi" in ids
+    assert "title-two-col-visual" in ids
+    assert "title-kpi-body-visual" in ids
 
 
 def test_adapt_preset_maps_all_blocks() -> None:

@@ -39,6 +39,20 @@ export function ptVertical(value: number): string {
   return `${(value / CANVAS_HEIGHT_PT) * 100}cqh`
 }
 
+/**
+ * emoji 兜底字体栈，接在任何主题字体后面。
+ *
+ * 主题的正文/标题字体里没有 emoji 码位，不给兜底就会退化成方框。导出侧
+ * 是给 emoji 单独开 run 换字体（见 backend/app/render/text.py），Web 端
+ * 靠字体栈的 fallback 达到同一效果。
+ */
+const EMOJI_FALLBACK = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"'
+
+/** 主题声明的 Web 字体栈 + emoji 兜底 */
+export function webFontStack(family: { web: string }): string {
+  return `${family.web}, ${EMOJI_FALLBACK}`
+}
+
 export function textStyleToCss(theme: Theme, name: TextStyleName): CSSProperties {
   const style = theme.text_styles[name]
   if (!style) throw new Error(`主题 ${theme.id} 未定义文本样式：${name}`)
@@ -46,7 +60,7 @@ export function textStyleToCss(theme: Theme, name: TextStyleName): CSSProperties
   const family = style.font === 'display' ? theme.fonts.display : theme.fonts.body
 
   return {
-    fontFamily: family.web,
+    fontFamily: webFontStack(family),
     fontSize: pt(style.size_pt),
     lineHeight: style.line_height,
     fontWeight: style.weight,

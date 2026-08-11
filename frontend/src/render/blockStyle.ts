@@ -100,7 +100,7 @@ export type StyleCapability = {
 }
 
 export function styleCapability(
-  type: 'text' | 'bullets' | 'image' | 'chart' | 'table' | 'kpi',
+  type: 'text' | 'bullets' | 'image' | 'chart' | 'table' | 'kpi' | 'cards' | 'callout',
 ): StyleCapability {
   if (type === 'chart') return { text: false, box: false, borderOnly: false }
   if (type === 'image') return { text: false, box: false, borderOnly: true }

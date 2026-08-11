@@ -13,6 +13,7 @@ from app.schemas.outline import OutlineEvent
 from app.services.outline_inputs import project_input_signature
 from app.services.outline_progress import publish_outline_event
 from app.worker.context import create_outline_generator
+from app.worker.retry import retry_after_failure
 from app.workflows.outline import build_outline_workflow, run_outline_workflow
 
 __all__ = ["create_outline_generator", "generate_outline"]
@@ -43,11 +44,10 @@ async def generate_outline(ctx: dict[str, Any], project_id: str, job_id: str) ->
             expected_revision,
         )
     except Exception as error:
-        # 配置错误重试也不会自愈；网络或限流错误由 ARQ 再试一次。
-        job_try = int(ctx.get("job_try", 1))
-        if not isinstance(error, LLMNotConfiguredError) and job_try < 2:
+        retry = retry_after_failure(ctx, error)
+        if retry is not None:
             await _progress(project_uuid, 30, "模型调用失败，正在重试")
-            raise
+            raise retry from error
         await _save_failed(project_uuid, job_id, _public_error(error))
         return
 
@@ -96,11 +96,14 @@ async def _load_generation_input(
             for source_index, source in enumerate(project.sources, start=1)
             for section_index, section in enumerate(source.sections, start=1)
         ]
+        from app.domain.content_density import normalize_density
+
         payload = OutlineGenerationInput(
             title=project.title,
             audience=project.audience,
             tone=project.tone,
             page_count=project.page_count,
+            content_density=normalize_density(getattr(project, "content_density", None)),
             sections=sections,
         )
         return payload, project_input_signature(project), project.outline.revision

@@ -492,7 +492,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Slide Block */
+        delete: operations["delete_slide_block_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__delete"];
         options?: never;
         head?: never;
         /** Update Slide Block */
@@ -517,6 +518,111 @@ export interface paths {
          * @description 更新元素级样式覆盖。不置 locked：改颜色不该挡住 AI 改写文字。
          */
         patch: operations["update_slide_block_style_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__style_patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/blocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Slide Block */
+        post: operations["create_slide_block_api_v1_projects__project_id__deck_slides__slide_id__blocks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/flex-layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Flex Layout */
+        put: operations["update_flex_layout_api_v1_projects__project_id__deck_slides__slide_id__flex_layout_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/flex-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Flex State
+         * @description 原子写回 blocks + layout_tree，供撤销/重做恢复整页结构。
+         */
+        put: operations["update_flex_state_api_v1_projects__project_id__deck_slides__slide_id__flex_state_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/relayout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Propose Relayout */
+        post: operations["propose_relayout_api_v1_projects__project_id__deck_slides__slide_id__relayout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/relayout/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Relayout */
+        post: operations["apply_relayout_api_v1_projects__project_id__deck_slides__slide_id__relayout_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/unlock-flex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unlock Flex */
+        post: operations["unlock_flex_api_v1_projects__project_id__deck_slides__slide_id__unlock_flex_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{project_id}/deck/slides/order": {
@@ -647,7 +753,7 @@ export interface components {
             /** Revision */
             revision: number;
             /** Operations */
-            operations: (components["schemas"]["TextPatch"] | components["schemas"]["BulletsPatch"] | components["schemas"]["KpiPatch"] | components["schemas"]["TablePatch"])[];
+            operations: (components["schemas"]["TextPatch"] | components["schemas"]["BulletsPatch"] | components["schemas"]["KpiPatch"] | components["schemas"]["TablePatch"] | components["schemas"]["CardsPatch"] | components["schemas"]["CalloutPatch"])[];
         };
         /** AiEditOperationPublic */
         AiEditOperationPublic: {
@@ -659,11 +765,11 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "text" | "bullets" | "kpi" | "table";
+            type: "text" | "bullets" | "kpi" | "table" | "cards" | "callout";
             /** Before */
-            before: components["schemas"]["TextPatch"] | components["schemas"]["BulletsPatch"] | components["schemas"]["KpiPatch"] | components["schemas"]["TablePatch"];
+            before: components["schemas"]["TextPatch"] | components["schemas"]["BulletsPatch"] | components["schemas"]["KpiPatch"] | components["schemas"]["TablePatch"] | components["schemas"]["CardsPatch"] | components["schemas"]["CalloutPatch"];
             /** After */
-            after: components["schemas"]["TextPatch"] | components["schemas"]["BulletsPatch"] | components["schemas"]["KpiPatch"] | components["schemas"]["TablePatch"];
+            after: components["schemas"]["TextPatch"] | components["schemas"]["BulletsPatch"] | components["schemas"]["KpiPatch"] | components["schemas"]["TablePatch"] | components["schemas"]["CardsPatch"] | components["schemas"]["CalloutPatch"];
         };
         /** AiEditProposalPublic */
         AiEditProposalPublic: {
@@ -686,6 +792,28 @@ export interface components {
             action: "rewrite" | "condense" | "expand" | "instruct";
             /** Instruction */
             instruction?: string | null;
+            /** Revision */
+            revision: number;
+        };
+        /** BlockCreateRequest */
+        BlockCreateRequest: {
+            /** Revision */
+            revision: number;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "text" | "bullets" | "image" | "chart" | "table" | "kpi" | "cards" | "callout";
+            /** Parent Id */
+            parent_id: string;
+            /**
+             * Index
+             * @default 0
+             */
+            index: number;
+        };
+        /** BlockDeleteRequest */
+        BlockDeleteRequest: {
             /** Revision */
             revision: number;
         };
@@ -780,6 +908,145 @@ export interface components {
             /** Items */
             items: string[];
         };
+        /** CalloutBlock */
+        CalloutBlock: {
+            /** Id */
+            id: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Locked
+             * @default false
+             */
+            locked: boolean;
+            style?: components["schemas"]["BlockStyle"] | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "callout";
+            /** Text */
+            text: string;
+            /** Icon */
+            icon?: string | null;
+            /**
+             * Variant
+             * @default note
+             * @enum {string}
+             */
+            variant: "note" | "source";
+        };
+        /** CalloutBlockUpdate */
+        CalloutBlockUpdate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "callout";
+            /** Revision */
+            revision: number;
+            /** Text */
+            text: string;
+            /** Icon */
+            icon?: string | null;
+            /**
+             * Variant
+             * @default note
+             * @enum {string}
+             */
+            variant: "note" | "source";
+        };
+        /** CalloutPatch */
+        CalloutPatch: {
+            /** Block Id */
+            block_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "callout";
+            /** Text */
+            text: string;
+            /** Icon */
+            icon?: string | null;
+            /**
+             * Variant
+             * @default note
+             * @enum {string}
+             */
+            variant: "note" | "source";
+        };
+        /** CardItem */
+        CardItem: {
+            /** Title */
+            title: string;
+            /** Desc */
+            desc: string;
+            /** Icon */
+            icon?: string | null;
+        };
+        /** CardItemPatch */
+        CardItemPatch: {
+            /** Title */
+            title: string;
+            /** Desc */
+            desc: string;
+            /** Icon */
+            icon?: string | null;
+        };
+        /** CardItemUpdate */
+        CardItemUpdate: {
+            /** Title */
+            title: string;
+            /** Desc */
+            desc: string;
+            /** Icon */
+            icon?: string | null;
+        };
+        /** CardsBlock */
+        CardsBlock: {
+            /** Id */
+            id: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Locked
+             * @default false
+             */
+            locked: boolean;
+            style?: components["schemas"]["BlockStyle"] | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "cards";
+            /** Items */
+            items: components["schemas"]["CardItem"][];
+        };
+        /** CardsBlockUpdate */
+        CardsBlockUpdate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "cards";
+            /** Revision */
+            revision: number;
+            /** Items */
+            items: components["schemas"]["CardItemUpdate"][];
+        };
+        /** CardsPatch */
+        CardsPatch: {
+            /** Block Id */
+            block_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "cards";
+            /** Items */
+            items: components["schemas"]["CardItemPatch"][];
+        };
         /** ChartBlock */
         ChartBlock: {
             /** Id */
@@ -809,20 +1076,6 @@ export interface components {
             /** Unit */
             unit?: string | null;
         };
-        /** ChartSeries */
-        ChartSeries: {
-            /** Name */
-            name: string;
-            /** Values */
-            values: number[];
-        };
-        /** ChartSeriesUpdate */
-        ChartSeriesUpdate: {
-            /** Name */
-            name: string;
-            /** Values */
-            values: number[];
-        };
         /** ChartBlockUpdate */
         ChartBlockUpdate: {
             /**
@@ -843,6 +1096,64 @@ export interface components {
             series: components["schemas"]["ChartSeriesUpdate"][];
             /** Unit */
             unit?: string | null;
+        };
+        /** ChartSeries */
+        ChartSeries: {
+            /** Name */
+            name: string;
+            /** Values */
+            values: number[];
+        };
+        /** ChartSeriesUpdate */
+        ChartSeriesUpdate: {
+            /** Name */
+            name: string;
+            /** Values */
+            values: number[];
+        };
+        /**
+         * CornerBracket
+         * @description 角部 L 形几何，由两条细矩形拼成。
+         */
+        CornerBracket: {
+            /** Scope */
+            scope?: ("cover" | "section" | "content")[] | null;
+            /**
+             * Color
+             * @default accent
+             */
+            color: string;
+            /**
+             * Strength
+             * @default 0.2
+             */
+            strength: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            motif: "corner_bracket";
+            /**
+             * Corner
+             * @default top_right
+             * @enum {string}
+             */
+            corner: "top_left" | "top_right" | "bottom_left" | "bottom_right";
+            /**
+             * Size Pt
+             * @default 88
+             */
+            size_pt: number;
+            /**
+             * Thickness Pt
+             * @default 1.5
+             */
+            thickness_pt: number;
+            /**
+             * Inset Pt
+             * @default 22
+             */
+            inset_pt: number;
         };
         /**
          * Deck
@@ -931,6 +1242,50 @@ export interface components {
             reason: string;
         };
         /**
+         * EdgeBand
+         * @description 贴着画布某条边的细色带。
+         */
+        EdgeBand: {
+            /** Scope */
+            scope?: ("cover" | "section" | "content")[] | null;
+            /**
+             * Color
+             * @default accent
+             */
+            color: string;
+            /**
+             * Strength
+             * @default 0.2
+             */
+            strength: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            motif: "edge_band";
+            /**
+             * Edge
+             * @default left
+             * @enum {string}
+             */
+            edge: "top" | "bottom" | "left" | "right";
+            /**
+             * Thickness Pt
+             * @default 6
+             */
+            thickness_pt: number;
+            /**
+             * Start
+             * @default 0
+             */
+            start: number;
+            /**
+             * End
+             * @default 1
+             */
+            end: number;
+        };
+        /**
          * ExportCheckReport
          * @description 导出前分级报告。
          */
@@ -946,7 +1301,7 @@ export interface components {
             fonts_precise: boolean;
         };
         /** FlexContainer */
-        FlexContainer: {
+        "FlexContainer-Input": {
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -955,7 +1310,7 @@ export interface components {
             /** Id */
             id: string;
             /** Children */
-            children: (components["schemas"]["FlexContainer"] | components["schemas"]["FlexLeaf"])[];
+            children: (components["schemas"]["FlexContainer-Input"] | components["schemas"]["FlexLeaf"])[];
             /**
              * Gap Pt
              * @default 16
@@ -970,6 +1325,38 @@ export interface components {
              * @default 1
              */
             grow: number;
+        };
+        /** FlexContainer */
+        "FlexContainer-Output": {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "column" | "row";
+            /** Id */
+            id: string;
+            /** Children */
+            children: (components["schemas"]["FlexContainer-Output"] | components["schemas"]["FlexLeaf"])[];
+            /**
+             * Gap Pt
+             * @default 16
+             */
+            gap_pt: number;
+            /** Ratios */
+            ratios?: number[] | null;
+            /** Preset */
+            preset?: ("solid_boxes" | "outline_boxes" | "side_line" | "numbered_steps" | "timeline") | null;
+            /**
+             * Grow
+             * @default 1
+             */
+            grow: number;
+        };
+        /** FlexLayoutUpdateRequest */
+        FlexLayoutUpdateRequest: {
+            /** Revision */
+            revision: number;
+            layout_tree: components["schemas"]["FlexContainer-Input"];
         };
         /** FlexLeaf */
         FlexLeaf: {
@@ -989,6 +1376,32 @@ export interface components {
             grow: number;
             /** Text Style */
             text_style?: string | null;
+            /**
+             * Offset X Pt
+             * @default 0
+             */
+            offset_x_pt: number;
+            /**
+             * Offset Y Pt
+             * @default 0
+             */
+            offset_y_pt: number;
+            /**
+             * Bleed
+             * @default false
+             */
+            bleed: boolean;
+        };
+        /**
+         * FlexStateUpdateRequest
+         * @description 整页恢复灵活布局状态（撤销/重做增删块与换排布用）。
+         */
+        FlexStateUpdateRequest: {
+            /** Revision */
+            revision: number;
+            /** Blocks */
+            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"] | components["schemas"]["CardsBlock"] | components["schemas"]["CalloutBlock"])[];
+            layout_tree: components["schemas"]["FlexContainer-Input"];
         };
         /**
          * FontFamily
@@ -1010,10 +1423,92 @@ export interface components {
             display: components["schemas"]["FontFamily"];
             body: components["schemas"]["FontFamily"];
         };
+        /**
+         * Glow
+         * @description 光晕：同心椭圆逐层加深，越靠中心越浓，用实色台阶逼近径向渐变。
+         */
+        Glow: {
+            /** Scope */
+            scope?: ("cover" | "section" | "content")[] | null;
+            /**
+             * Color
+             * @default accent
+             */
+            color: string;
+            /**
+             * Strength
+             * @default 0.2
+             */
+            strength: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            motif: "glow";
+            /**
+             * Cx
+             * @default 0.85
+             */
+            cx: number;
+            /**
+             * Cy
+             * @default 0.16
+             */
+            cy: number;
+            /**
+             * Radius Pt
+             * @default 320
+             */
+            radius_pt: number;
+            /**
+             * Layers
+             * @default 4
+             */
+            layers: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HairlineGrid
+         * @description 细网格：区域内等分的竖线与横线，只画内部分隔线。
+         */
+        HairlineGrid: {
+            /** Scope */
+            scope?: ("cover" | "section" | "content")[] | null;
+            /**
+             * Color
+             * @default accent
+             */
+            color: string;
+            /**
+             * Strength
+             * @default 0.2
+             */
+            strength: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            motif: "hairline_grid";
+            /**
+             * Columns
+             * @default 0
+             */
+            columns: number;
+            /**
+             * Rows
+             * @default 0
+             */
+            rows: number;
+            /**
+             * Thickness Pt
+             * @default 0.75
+             */
+            thickness_pt: number;
+            area?: components["schemas"]["Rect"] | null;
         };
         /**
          * HealthResponse
@@ -1197,6 +1692,14 @@ export interface components {
             /** Layout Id */
             layout_id: string;
             /**
+             * Page Role
+             * @default content
+             * @enum {string}
+             */
+            page_role: "cover" | "toc" | "section" | "content" | "summary";
+            /** Visual */
+            visual?: string | null;
+            /**
              * Id
              * Format: uuid
              */
@@ -1322,6 +1825,12 @@ export interface components {
              * @enum {string}
              */
             layout_mode: "fixed" | "flex";
+            /**
+             * Content Density
+             * @default medium
+             * @enum {string}
+             */
+            content_density: "concise" | "medium" | "detailed";
         };
         /** ProjectDetail */
         ProjectDetail: {
@@ -1353,6 +1862,12 @@ export interface components {
              * @enum {string}
              */
             layout_mode: "fixed" | "flex";
+            /**
+             * Content Density
+             * @default medium
+             * @enum {string}
+             */
+            content_density: "concise" | "medium" | "detailed";
             /**
              * Status
              * @enum {string}
@@ -1402,6 +1917,12 @@ export interface components {
              */
             layout_mode: "fixed" | "flex";
             /**
+             * Content Density
+             * @default medium
+             * @enum {string}
+             */
+            content_density: "concise" | "medium" | "detailed";
+            /**
              * Status
              * @enum {string}
              */
@@ -1440,6 +1961,8 @@ export interface components {
             theme_id?: string | null;
             /** Layout Mode */
             layout_mode?: ("fixed" | "flex") | null;
+            /** Content Density */
+            content_density?: ("concise" | "medium" | "detailed") | null;
         };
         /**
          * Rect
@@ -1468,6 +1991,30 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** RelayoutApplyRequest */
+        RelayoutApplyRequest: {
+            /** Revision */
+            revision: number;
+            layout_tree: components["schemas"]["FlexContainer-Input"];
+        };
+        /** RelayoutCandidate */
+        RelayoutCandidate: {
+            /** Id */
+            id: string;
+            layout_tree: components["schemas"]["FlexContainer-Output"];
+        };
+        /** RelayoutProposalPublic */
+        RelayoutProposalPublic: {
+            /** Revision */
+            revision: number;
+            /** Candidates */
+            candidates: components["schemas"]["RelayoutCandidate"][];
+        };
+        /** RelayoutRequest */
+        RelayoutRequest: {
+            /** Revision */
+            revision: number;
+        };
         /** Shape */
         Shape: {
             /** Radius Pt */
@@ -1494,7 +2041,7 @@ export interface components {
             /** Layout Id */
             layout_id: string;
             /** Blocks */
-            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"])[];
+            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"] | components["schemas"]["CardsBlock"] | components["schemas"]["CalloutBlock"])[];
             /** Speaker Notes */
             speaker_notes?: string | null;
             /**
@@ -1508,7 +2055,7 @@ export interface components {
              * @enum {string}
              */
             layout_mode: "fixed" | "flex";
-            layout_tree?: components["schemas"]["FlexContainer"] | null;
+            layout_tree?: components["schemas"]["FlexContainer-Output"] | null;
         };
         /** SlideOrderRequest */
         SlideOrderRequest: {
@@ -1533,11 +2080,11 @@ export interface components {
             layout_id: string;
             /**
              * Layout Mode
-             * @default fixed
+             * @default flex
              * @enum {string}
              */
             layout_mode: "fixed" | "flex";
-            layout_tree?: components["schemas"]["FlexContainer"] | null;
+            layout_tree?: components["schemas"]["FlexContainer-Output"] | null;
             /** Title */
             title: string;
             /**
@@ -1546,7 +2093,7 @@ export interface components {
              */
             status: "pending" | "generating" | "ready" | "failed";
             /** Blocks */
-            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"])[];
+            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"] | components["schemas"]["CardsBlock"] | components["schemas"]["CalloutBlock"])[];
             /** Speaker Notes */
             speaker_notes: string | null;
             /** Issues */
@@ -1566,7 +2113,7 @@ export interface components {
             /** Id */
             id: string;
             /** Accepts */
-            accepts: ("text" | "bullets" | "image" | "chart" | "table" | "kpi")[];
+            accepts: ("text" | "bullets" | "image" | "chart" | "table" | "kpi" | "cards" | "callout")[];
             rect: components["schemas"]["Rect"];
             /**
              * Required
@@ -1659,6 +2206,7 @@ export interface components {
          *
          *     error 表示内容与布局的契约被破坏，必须阻断导出；
          *     warning 表示内容偏长可能观感不佳，允许继续。
+         *     code 用于生成 repair 分流：overflow/capacity 不触发砍块重写。
          */
         StructureIssue: {
             /**
@@ -1672,6 +2220,8 @@ export interface components {
             slot_id: string | null;
             /** Message */
             message: string;
+            /** Code */
+            code?: string | null;
         };
         /** TableBlock */
         TableBlock: {
@@ -1820,6 +2370,11 @@ export interface components {
                 [key: string]: components["schemas"]["TextStyle"];
             };
             shape: components["schemas"]["Shape"];
+            /**
+             * Ambient
+             * @default []
+             */
+            ambient: (components["schemas"]["EdgeBand"] | components["schemas"]["CornerBracket"] | components["schemas"]["HairlineGrid"] | components["schemas"]["Glow"] | components["schemas"]["Watermark"])[];
         };
         /**
          * ThemeOverrides
@@ -1844,6 +2399,11 @@ export interface components {
              */
             token_type: string;
             user: components["schemas"]["UserPublic"];
+        };
+        /** UnlockFlexRequest */
+        UnlockFlexRequest: {
+            /** Revision */
+            revision: number;
         };
         /** UserPublic */
         UserPublic: {
@@ -1875,6 +2435,59 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * Watermark
+         * @description 巨字水印。text 留空时用页码（01、02……）。
+         */
+        Watermark: {
+            /** Scope */
+            scope?: ("cover" | "section" | "content")[] | null;
+            /**
+             * Color
+             * @default accent
+             */
+            color: string;
+            /**
+             * Strength
+             * @default 0.2
+             */
+            strength: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            motif: "watermark";
+            rect: components["schemas"]["Rect"];
+            /** Text */
+            text?: string | null;
+            /**
+             * Size Pt
+             * @default 180
+             */
+            size_pt: number;
+            /**
+             * Font
+             * @default display
+             * @enum {string}
+             */
+            font: "display" | "body";
+            /**
+             * Weight
+             * @default 700
+             */
+            weight: number;
+            /**
+             * Letter Spacing Pt
+             * @default 0
+             */
+            letter_spacing_pt: number;
+            /**
+             * Align
+             * @default left
+             * @enum {string}
+             */
+            align: "left" | "center" | "right";
         };
     };
     responses: never;
@@ -2822,6 +3435,43 @@ export interface operations {
             };
         };
     };
+    delete_slide_block_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                block_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_slide_block_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__patch: {
         parameters: {
             query?: never;
@@ -2835,7 +3485,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["TextBlockUpdate"] | components["schemas"]["BulletsBlockUpdate"] | components["schemas"]["KpiBlockUpdate"] | components["schemas"]["TableBlockUpdate"] | components["schemas"]["ChartBlockUpdate"];
+                "application/json": components["schemas"]["TextBlockUpdate"] | components["schemas"]["BulletsBlockUpdate"] | components["schemas"]["KpiBlockUpdate"] | components["schemas"]["TableBlockUpdate"] | components["schemas"]["ChartBlockUpdate"] | components["schemas"]["CardsBlockUpdate"] | components["schemas"]["CalloutBlockUpdate"];
             };
         };
         responses: {
@@ -2873,6 +3523,222 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["BlockStyleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_slide_block_api_v1_projects__project_id__deck_slides__slide_id__blocks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_flex_layout_api_v1_projects__project_id__deck_slides__slide_id__flex_layout_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlexLayoutUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_flex_state_api_v1_projects__project_id__deck_slides__slide_id__flex_state_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlexStateUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_relayout_api_v1_projects__project_id__deck_slides__slide_id__relayout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RelayoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RelayoutProposalPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_relayout_api_v1_projects__project_id__deck_slides__slide_id__relayout_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RelayoutApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlock_flex_api_v1_projects__project_id__deck_slides__slide_id__unlock_flex_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnlockFlexRequest"];
             };
         };
         responses: {

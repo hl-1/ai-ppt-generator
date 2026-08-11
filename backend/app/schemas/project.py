@@ -12,6 +12,7 @@ from app.ingest.models import SourceSection
 Tone = Literal["professional", "plain", "punchy"]
 ProjectStatus = Literal["draft", "outline_ready", "generating", "ready"]
 SourceKind = Literal["topic", "text", "document"]
+ContentDensity = Literal["concise", "medium", "detailed"]
 
 # 页数范围与文档给出的推荐区间一致：太少不成篇，太多单次生成不可控
 MIN_PAGE_COUNT = 5
@@ -28,6 +29,7 @@ class ProjectCreate(BaseModel):
     page_count: int = Field(default=10, ge=MIN_PAGE_COUNT, le=MAX_PAGE_COUNT)
     theme_id: str = Field(default="ivory", max_length=50)
     layout_mode: LayoutMode = "flex"
+    content_density: ContentDensity = "medium"
 
 
 class ProjectUpdate(BaseModel):
@@ -37,6 +39,7 @@ class ProjectUpdate(BaseModel):
     page_count: int | None = Field(default=None, ge=MIN_PAGE_COUNT, le=MAX_PAGE_COUNT)
     theme_id: str | None = Field(default=None, max_length=50)
     layout_mode: LayoutMode | None = None
+    content_density: ContentDensity | None = None
 
 
 class ProjectThemeUpdate(BaseModel):
@@ -71,6 +74,7 @@ class ProjectPublic(BaseModel):
     theme_id: str
     theme_overrides: dict[str, Any] = Field(default_factory=dict)
     layout_mode: LayoutMode = "flex"
+    content_density: ContentDensity = "medium"
     status: ProjectStatus
     created_at: datetime
     updated_at: datetime

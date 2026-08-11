@@ -97,6 +97,7 @@ async def _project_with_slide(
             outline_page_id=page_id,
             position=1,
             layout_id="bullets",
+            layout_mode="fixed",
             title="页",
             status="ready",
             blocks=slide_blocks,

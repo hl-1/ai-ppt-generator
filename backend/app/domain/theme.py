@@ -9,54 +9,44 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.paths import THEMES_DIR
+from app.domain.ambient import AmbientMotif
+from app.domain.color import (
+    COLOR_TOKENS,
+    ColorToken,
+    is_hex_color,
+    normalize_color_value,
+)
 from app.domain.layout import TextStyleName
 
 if TYPE_CHECKING:
     from app.models.project import Project
 
-ColorToken = Literal[
-    "background",
-    "surface",
-    "ink",
-    "ink_soft",
-    "ink_muted",
-    "accent",
-    "accent_soft",
-    "line",
-    "line_strong",
+__all__ = [
+    "COLOR_TOKENS",
+    "ColorToken",
+    "Fonts",
+    "Palette",
+    "Shape",
+    "TextStyle",
+    "Theme",
+    "ThemeOverrides",
+    "dump_overrides",
+    "empty_overrides",
+    "font_presets",
+    "fonts_are_whitelisted",
+    "get_theme",
+    "is_hex_color",
+    "load_themes",
+    "merge_theme",
+    "normalize_color_value",
+    "resolve_project_theme",
+    "resolve_theme",
 ]
-
-COLOR_TOKENS: frozenset[str] = frozenset(
-    {
-        "background",
-        "surface",
-        "ink",
-        "ink_soft",
-        "ink_muted",
-        "accent",
-        "accent_soft",
-        "line",
-        "line_strong",
-    }
-)
 
 _HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
 _SIZE_STYLE_NAMES: tuple[TextStyleName, ...] = ("display", "title", "body", "bullet")
 _MIN_SIZE_PT = 8.0
 _MAX_SIZE_PT = 72.0
-
-
-def is_hex_color(value: str) -> bool:
-    return bool(_HEX.match(value))
-
-
-def normalize_color_value(value: str) -> str:
-    """色令牌原样；#RRGGBB 统一为大写。"""
-    if value in COLOR_TOKENS:
-        return value
-    if is_hex_color(value):
-        return value.upper()
-    raise ValueError("颜色必须是色令牌或 #RRGGBB")
 
 
 class Palette(BaseModel):
@@ -84,9 +74,21 @@ class FontFamily(BaseModel):
     pptx_east_asian: str
 
 
+# emoji 字体默认值。给默认而不是要求每份主题都写，是因为它跟主题气质无关：
+# 只有装了对应字体的机器才画得出彩色 emoji，换个字体名解决不了审美问题。
+DEFAULT_EMOJI_FONT = FontFamily(
+    web='"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
+    pptx_latin="Segoe UI Emoji",
+    pptx_east_asian="Segoe UI Emoji",
+)
+
+
 class Fonts(BaseModel):
     display: FontFamily
     body: FontFamily
+    # emoji 必须单独成 run 并指定专用字体，否则中文正文字体里没有这些码位，
+    # PowerPoint 会退化成方框或黑白轮廓。
+    emoji: FontFamily = DEFAULT_EMOJI_FONT
 
 
 class TextStyle(BaseModel):
@@ -119,6 +121,8 @@ class Theme(BaseModel):
     fonts: Fonts
     text_styles: dict[TextStyleName, TextStyle]
     shape: Shape
+    # 氛围层：每页自动铺的装饰母题，换主题就换一套气质
+    ambient: list[AmbientMotif] = []
 
     def color(self, token: str) -> str:
         # 元素覆盖可能把 color 写成 hex，渲染时透传即可
@@ -231,7 +235,7 @@ def get_theme(theme_id: str) -> Theme:
 
 
 def font_presets() -> dict[str, Fonts]:
-    """精选字体对：直接复用三套主题的 fonts。"""
+    """精选字体对：直接复用各预设主题的 fonts。"""
     return {
         theme_id: theme.fonts.model_copy(deep=True) for theme_id, theme in load_themes().items()
     }
@@ -281,9 +285,7 @@ def merge_theme(base: Theme, overrides: ThemeOverrides | dict[str, Any] | None) 
     return Theme.model_validate(data)
 
 
-def resolve_theme(
-    theme_id: str, overrides: ThemeOverrides | dict[str, Any] | None = None
-) -> Theme:
+def resolve_theme(theme_id: str, overrides: ThemeOverrides | dict[str, Any] | None = None) -> Theme:
     return merge_theme(get_theme(theme_id), overrides)
 
 

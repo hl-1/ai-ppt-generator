@@ -119,8 +119,34 @@ class ChartBlockUpdate(BaseModel):
     unit: str | None = None
 
 
+class CardItemUpdate(BaseModel):
+    title: str
+    desc: str
+    icon: str | None = None
+
+
+class CardsBlockUpdate(BaseModel):
+    type: Literal["cards"]
+    revision: int
+    items: list[CardItemUpdate]
+
+
+class CalloutBlockUpdate(BaseModel):
+    type: Literal["callout"]
+    revision: int
+    text: str
+    icon: str | None = None
+    variant: Literal["note", "source"] = "note"
+
+
 BlockUpdate = Annotated[
-    TextBlockUpdate | BulletsBlockUpdate | KpiBlockUpdate | TableBlockUpdate | ChartBlockUpdate,
+    TextBlockUpdate
+    | BulletsBlockUpdate
+    | KpiBlockUpdate
+    | TableBlockUpdate
+    | ChartBlockUpdate
+    | CardsBlockUpdate
+    | CalloutBlockUpdate,
     Field(discriminator="type"),
 ]
 
@@ -134,7 +160,9 @@ class BlockStyleUpdate(BaseModel):
 
 class BlockCreateRequest(BaseModel):
     revision: int
-    type: Literal["text", "bullets", "image", "chart", "table", "kpi"]
+    type: Literal[
+        "text", "bullets", "image", "chart", "table", "kpi", "cards", "callout"
+    ]
     parent_id: str
     index: int = 0
 
@@ -219,7 +247,7 @@ class AiEditRequest(BaseModel):
 class AiEditOperationPublic(BaseModel):
     block_id: str
     slot_id: str
-    type: Literal["text", "bullets", "kpi", "table"]
+    type: Literal["text", "bullets", "kpi", "table", "cards", "callout"]
     before: BlockPatch
     after: BlockPatch
 

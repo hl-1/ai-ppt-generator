@@ -7,7 +7,9 @@ from typing import Any, Literal
 from app.domain.flex_layout import FlexContainer, FlexLeaf
 from app.domain.layout import Layout, Slot
 
-BlockCreateType = Literal["text", "bullets", "image", "chart", "table", "kpi"]
+BlockCreateType = Literal[
+    "text", "bullets", "image", "chart", "table", "kpi", "cards", "callout"
+]
 
 _Y_TOLERANCE = 0.05
 
@@ -15,6 +17,8 @@ _DEFAULT_TEXT_STYLE: dict[str, str] = {
     "title": "title",
     "bullets": "bullet",
     "text": "body",
+    "cards": "body",
+    "callout": "body",
 }
 
 
@@ -58,6 +62,23 @@ def default_block_dict(block_type: BlockCreateType, block_id: str) -> dict[str, 
             "type": "table",
             "header": ["列1", "列2"],
             "rows": [["", ""]],
+        }
+    if block_type == "cards":
+        return {
+            **base,
+            "type": "cards",
+            "items": [
+                {"title": "要点一", "desc": "补充说明", "icon": None},
+                {"title": "要点二", "desc": "补充说明", "icon": None},
+            ],
+        }
+    if block_type == "callout":
+        return {
+            **base,
+            "type": "callout",
+            "text": "补充说明或数据来源",
+            "icon": None,
+            "variant": "note",
         }
     return {
         **base,

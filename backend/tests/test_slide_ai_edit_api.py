@@ -49,6 +49,44 @@ def _bullets_blocks(*, locked_title: bool = False) -> list[dict]:
     ]
 
 
+def _flex_cover_blocks() -> list[dict]:
+    """flex 页约定 slot_id 与 block id 一致，与固定布局的裸槽位名不同。"""
+    return [
+        {
+            "id": "pg-title",
+            "slot_id": "pg-title",
+            "type": "text",
+            "text": "云南七天深度游",
+            "locked": False,
+        },
+        {
+            "id": "pg-lead",
+            "slot_id": "pg-lead",
+            "type": "text",
+            "text": "七天行程参考",
+            "locked": False,
+        },
+    ]
+
+
+def _flex_cover_tree() -> dict:
+    return {
+        "type": "column",
+        "id": "root",
+        "gap_pt": 16,
+        "children": [
+            {
+                "type": "block",
+                "id": "leaf-title",
+                "block_id": "pg-title",
+                "grow": 0.6,
+                "text_style": "title",
+            },
+            {"type": "block", "id": "leaf-lead", "block_id": "pg-lead", "grow": 1.4},
+        ],
+    }
+
+
 async def _project_with_slide(
     client: AsyncClient,
     headers: dict[str, str],
@@ -56,6 +94,9 @@ async def _project_with_slide(
     blocks: list[dict] | None = None,
     status: str = "ready",
     revision: int = 1,
+    layout_id: str = "bullets",
+    layout_mode: str = "fixed",
+    layout_tree: dict | None = None,
 ) -> tuple[dict, SlideRow]:
     response = await client.post(
         "/api/v1/projects",
@@ -77,7 +118,9 @@ async def _project_with_slide(
             project_id=record.id,
             outline_page_id=page_id,
             position=1,
-            layout_id="bullets",
+            layout_id=layout_id,
+            layout_mode=layout_mode,
+            layout_tree=layout_tree,
             title="要点页",
             status=status,
             blocks=blocks or _bullets_blocks(),
@@ -186,6 +229,46 @@ async def test_propose_instruct_returns_before_after(
     assert title_op["after"]["text"] == "按指令改过的标题"
     assert generator.seen_payloads[0].action == "instruct"
     assert generator.seen_payloads[0].instruction == "标题改得更正式"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("layout_id", ["cover", "flex"])
+async def test_propose_on_flex_slide_skips_fixed_slot_check(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    layout_id: str,
+) -> None:
+    """flex 页的 layout_id 只是版式提示，不能拿它的固定槽位表去校验或拼提示词。"""
+    generator = ScriptedEditGenerator(
+        operations=[TextPatch(block_id="pg-lead", text="七天行程、交通与预算参考")]
+    )
+    monkeypatch.setattr(
+        "app.api.v1.decks.create_slide_edit_generator",
+        lambda: generator,
+    )
+    headers = await _sign_up(client)
+    project, slide = await _project_with_slide(
+        client,
+        headers,
+        blocks=_flex_cover_blocks(),
+        layout_id=layout_id,
+        layout_mode="flex",
+        layout_tree=_flex_cover_tree(),
+    )
+
+    response = await client.post(
+        f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
+        headers=headers,
+        json={
+            "action": "instruct",
+            "instruction": "空白区域太多了",
+            "revision": slide.revision,
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [op["block_id"] for op in body["operations"]] == ["pg-lead"]
+    assert generator.seen_payloads[0].layout_mode == "flex"
 
 
 @pytest.mark.asyncio

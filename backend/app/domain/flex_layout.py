@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
@@ -26,6 +27,14 @@ PRESET_INSET_PT: dict[GroupPreset, float] = {
 }
 
 
+# 像素级微调的偏移上限：够覆盖整块画布，又不至于让脏数据算出荒诞矩形
+OFFSET_LIMIT_PT = 960.0
+
+# 占位容器被内容接管时的最小 grow：种子 spacer 的 grow 可能接近 0，
+# 原样保留会让新块虽然插进去了却没有可见高度
+ADOPTED_SPACER_MIN_GROW = 1.0
+
+
 class FlexLeaf(BaseModel):
     type: Literal["block"] = "block"
     id: str
@@ -33,6 +42,11 @@ class FlexLeaf(BaseModel):
     grow: float = 1.0
     # TextStyleName；用 str 避免导入 layout 产生环
     text_style: str | None = None
+    # 相对 solver 结果的像素级平移，只挪位置不改尺寸；solver 会钳制在画布内
+    offset_x_pt: float = Field(default=0.0, ge=-OFFSET_LIMIT_PT, le=OFFSET_LIMIT_PT)
+    offset_y_pt: float = Field(default=0.0, ge=-OFFSET_LIMIT_PT, le=OFFSET_LIMIT_PT)
+    # 出血：贴着安全区边界的方向扩展到画布边缘，只给图片/图表用
+    bleed: bool = False
 
 
 class FlexContainer(BaseModel):
@@ -93,6 +107,29 @@ def remove_leaf_by_block_id(root: FlexContainer, block_id: str) -> bool:
     return removed
 
 
+def restrict_bleed(root: FlexContainer, allowed_block_ids: set[str]) -> FlexContainer:
+    """清掉不该出血的叶子。
+
+    出血是版式特权，只给整幅视觉块；文字块顶到画布边缘会直接毁掉页边距。
+    solver 不认识块类型，所以只能在拿得到块列表的入口处收口。
+    """
+    children: list[FlexNode] = []
+    changed = False
+    for child in root.children:
+        if isinstance(child, FlexLeaf):
+            if child.bleed and child.block_id not in allowed_block_ids:
+                child = child.model_copy(update={"bleed": False})
+                changed = True
+            children.append(child)
+            continue
+        cleaned = restrict_bleed(child, allowed_block_ids)
+        changed = changed or cleaned is not child
+        children.append(cleaned)
+    if not changed:
+        return root
+    return root.model_copy(update={"children": children})
+
+
 def is_spacer(node: FlexContainer) -> bool:
     """拉伸时插入的占位容器，允许无 children 仍占位。"""
     return node.id.startswith("spacer-")
@@ -128,10 +165,22 @@ def insert_leaf(
     parent = find_node_by_id(root, parent_id)
     if parent is None or isinstance(parent, FlexLeaf):
         return False
+    if is_spacer(parent):
+        _adopt_spacer_as_content(parent)
     clamped = max(0, min(index, len(parent.children)))
     _transfer_weight_before_insert(parent, clamped, leaf)
     parent.children.insert(clamped, leaf)
     return True
+
+
+def _adopt_spacer_as_content(container: FlexContainer) -> None:
+    """占位容器接纳内容后去掉 spacer 身份。
+
+    归一化按 id 前缀识别 spacer，允许其 grow 低到 0 且不参与重平衡；
+    保留前缀会让插进空白里的块被压成 0 高度，看起来像没插入。
+    """
+    container.id = f"cell-{uuid4().hex[:10]}"
+    container.grow = max(float(container.grow or 0.0), ADOPTED_SPACER_MIN_GROW)
 
 
 def _transfer_weight_before_insert(
@@ -183,8 +232,6 @@ def find_leaf_parent(
 
 
 def _make_spacer(grow: float = 1.0) -> FlexContainer:
-    from uuid import uuid4
-
     return FlexContainer(
         type="column",
         id=f"spacer-{uuid4().hex[:10]}",
@@ -320,7 +367,9 @@ def _place_leaf_at_target(
         if spacer_grow <= leaf_grow + 1e-6:
             if target.type == "row":
                 ratios = _row_ratios(target)
-                ratios[spacer_index] = leaf_ratio if leaf_ratio is not None else ratios[spacer_index]
+                ratios[spacer_index] = (
+                    leaf_ratio if leaf_ratio is not None else ratios[spacer_index]
+                )
                 target.ratios = _renormalize_ratios(ratios)
             target.children[spacer_index] = leaf
             return

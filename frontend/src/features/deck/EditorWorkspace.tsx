@@ -543,6 +543,16 @@ function SlidePage({
   const renderSlide: Slide = flexPreview
     ? ({ ...toRenderSlide(slide), layout_tree: flexPreview } as Slide)
     : toRenderSlide(slide)
+  const overflowSlotIds = new Set(
+    slide.issues
+      .filter(
+        (issue) =>
+          issue.code === 'overflow' ||
+          issue.message.includes('溢出') ||
+          issue.message.includes('超出画布'),
+      )
+      .flatMap((issue) => (issue.slot_id ? [issue.slot_id] : ['*'])),
+  )
 
   useEffect(() => {
     setFlexPreview(null)
@@ -670,14 +680,17 @@ function SlidePage({
             active ? 'outline-2 outline-accent/35 outline-offset-4' : 'outline-none',
           )}
         >
-          <div className="relative overflow-hidden">
+          <div className={cn('relative', editable ? 'overflow-visible' : 'overflow-hidden')}>
             <SlideView
               slide={renderSlide}
               theme={theme}
+              slideIndex={index}
               editable={editable}
               selectedBlockId={selectedBlockId}
               onSelectBlock={onSelectBlock}
               onCommit={commit}
+              overflowMode={editable ? 'reveal' : 'clip'}
+              overflowSlotIds={overflowSlotIds}
             />
             {isFlex && editable && (
               <FlexEditLayer
@@ -685,7 +698,7 @@ function SlidePage({
                 slide={slide}
                 tree={slide.layout_tree as FlexContainer}
                 selectedBlockId={selectedBlockId}
-                disabled={status === 'saving'}
+                busy={status === 'saving'}
                 onPreviewTree={setFlexPreview}
                 onCommitTree={commitFlex}
                 onSelectBlock={(blockId) => onSelectBlock(blockId)}
@@ -707,7 +720,10 @@ function SlidePage({
         </div>
       )}
 
-      {editable && selectedBlock && !flexDragging && (
+      {editable &&
+        selectedBlock &&
+        selectedBlock.type !== 'chart' &&
+        !flexDragging && (
         <ElementToolbar
           articleEl={articleRef.current}
           blockEl={blockEl}

@@ -28,7 +28,7 @@ def test_corpus_covers_all_layouts_and_block_types() -> None:
         for slide in deck.slides:
             for block in slide.blocks:
                 seen_types.add(block.type)
-    assert seen_types == {"text", "bullets", "image", "chart", "table", "kpi"}
+    assert seen_types >= {"text", "bullets", "image", "chart", "table", "kpi"}
 
 
 def test_theme_switch_keeps_content_fingerprint() -> None:

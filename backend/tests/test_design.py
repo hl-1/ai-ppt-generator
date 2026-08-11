@@ -50,7 +50,16 @@ def test_sample_deck_covers_every_layout() -> None:
 def test_sample_deck_covers_every_block_type() -> None:
     deck = load_sample_deck()
     used = {block.type for slide in deck.slides for block in slide.blocks}
-    assert used == {"text", "bullets", "image", "chart", "table", "kpi"}
+    assert used == {
+        "text",
+        "bullets",
+        "image",
+        "chart",
+        "table",
+        "kpi",
+        "cards",
+        "callout",
+    }
 
 
 def test_sample_deck_has_no_structure_error() -> None:

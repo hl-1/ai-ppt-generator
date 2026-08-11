@@ -2,6 +2,7 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
+from arq import Retry
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -11,10 +12,15 @@ from app.api.sse import _encode
 from app.core.db import async_session_factory
 from app.domain.outline import OutlineDraft, OutlinePageDraft
 from app.llm.base import OutlineGenerationInput
+from app.llm.errors import InvalidOutlineOutputError, LLMNotConfiguredError
 from app.main import app
 from app.models.project import Project, ProjectOutline
 from app.schemas.outline import OutlineEvent
-from app.services.outline_inputs import project_input_signature
+from app.services.outline_inputs import (
+    _legacy_signature_with_page_count,
+    project_input_signature,
+)
+from app.worker.retry import MAX_TRIES
 from app.worker.tasks import generate_outline
 
 
@@ -89,6 +95,14 @@ def _pages(count: int = 5) -> list[dict]:
         }
         for index in range(1, count + 1)
     ]
+
+
+class BrokenGenerator:
+    def __init__(self, error: Exception | None = None) -> None:
+        self._error = error or InvalidOutlineOutputError("第 4 页使用了非法 layout_id")
+
+    async def generate(self, payload: OutlineGenerationInput) -> OutlineDraft:
+        raise self._error
 
 
 class FakeGenerator:
@@ -276,6 +290,101 @@ async def test_confirm_rejects_stale_input_and_revision(
 
 
 @pytest.mark.asyncio
+async def test_confirm_allows_page_count_sync_without_regenerate(
+    client: AsyncClient,
+    queue: FakeQueue,
+) -> None:
+    """大纲页增删会同步 page_count，不应再被输入指纹误判为过期。"""
+    headers = await _sign_up(client)
+    project = await _project(client, headers)
+    await client.post(f"/api/v1/projects/{project['id']}/outline/generate", headers=headers)
+    outline = await _complete_outline(project["id"])
+
+    pages = _pages(6)
+    patched = await client.patch(
+        f"/api/v1/projects/{project['id']}",
+        json={"page_count": 6},
+        headers=headers,
+    )
+    assert patched.status_code == 200
+
+    updated = await client.patch(
+        f"/api/v1/projects/{project['id']}/outline",
+        json={"revision": outline.revision, "pages": pages},
+        headers=headers,
+    )
+    assert updated.status_code == 200
+    revision = updated.json()["revision"]
+
+    confirmed = await client.post(
+        f"/api/v1/projects/{project['id']}/outline/confirm",
+        json={"revision": revision},
+        headers=headers,
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["status"] == "confirmed"
+
+
+@pytest.mark.asyncio
+async def test_confirm_accepts_legacy_signature_with_page_count(
+    client: AsyncClient,
+    queue: FakeQueue,
+) -> None:
+    """库里仍是含 page_count 的旧指纹时，未改材料也应能确认，并写回新指纹。"""
+    headers = await _sign_up(client)
+    project = await _project(client, headers)
+    await client.post(f"/api/v1/projects/{project['id']}/outline/generate", headers=headers)
+
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(Project)
+            .options(selectinload(Project.sources), selectinload(Project.outline))
+            .where(Project.id == uuid.UUID(project["id"]))
+        )
+        row = result.scalar_one()
+        assert row.outline is not None
+        row.outline.status = "draft"
+        row.outline.pages = _pages()
+        # 模拟改指纹前写入的旧签名（生成时 page_count=5）
+        row.outline.input_signature = _legacy_signature_with_page_count(row, 5)
+        row.outline.revision += 1
+        await session.commit()
+        revision = row.outline.revision
+
+    # 只改页数后仍应能确认
+    await client.patch(
+        f"/api/v1/projects/{project['id']}",
+        json={"page_count": 6},
+        headers=headers,
+    )
+    updated = await client.patch(
+        f"/api/v1/projects/{project['id']}/outline",
+        json={"revision": revision, "pages": _pages(6)},
+        headers=headers,
+    )
+    assert updated.status_code == 200
+    revision = updated.json()["revision"]
+
+    confirmed = await client.post(
+        f"/api/v1/projects/{project['id']}/outline/confirm",
+        json={"revision": revision},
+        headers=headers,
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["status"] == "confirmed"
+
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(Project)
+            .options(selectinload(Project.sources), selectinload(Project.outline))
+            .where(Project.id == uuid.UUID(project["id"]))
+        )
+        row = result.scalar_one()
+        assert row.outline is not None
+        assert row.outline.input_signature == project_input_signature(row)
+
+
+@pytest.mark.asyncio
 async def test_outline_is_isolated_between_users(
     client: AsyncClient,
     queue: FakeQueue,
@@ -289,6 +398,76 @@ async def test_outline_is_isolated_between_users(
         headers=other,
     )
     assert response.status_code == 404
+
+
+async def _start_generating(client: AsyncClient, headers: dict[str, str]) -> tuple[dict, str]:
+    project = await _project(client, headers)
+    accepted = await client.post(
+        f"/api/v1/projects/{project['id']}/outline/generate",
+        headers=headers,
+    )
+    return project, accepted.json()["job_id"]
+
+
+@pytest.mark.asyncio
+async def test_worker_retries_through_arq_on_first_failure(
+    client: AsyncClient,
+    queue: FakeQueue,
+) -> None:
+    """普通异常在 ARQ 里算永久失败，必须抛 Retry 才会真的重排队。"""
+    headers = await _sign_up(client)
+    project, job_id = await _start_generating(client, headers)
+
+    with pytest.raises(Retry):
+        await generate_outline(
+            {"outline_generator": BrokenGenerator(), "job_try": 1},
+            project["id"],
+            job_id,
+        )
+
+    outline = await client.get(f"/api/v1/projects/{project['id']}/outline", headers=headers)
+    assert outline.json()["status"] == "generating"
+
+
+@pytest.mark.asyncio
+async def test_worker_settles_outline_after_last_try(
+    client: AsyncClient,
+    queue: FakeQueue,
+) -> None:
+    headers = await _sign_up(client)
+    project, job_id = await _start_generating(client, headers)
+
+    await generate_outline(
+        {"outline_generator": BrokenGenerator(), "job_try": MAX_TRIES},
+        project["id"],
+        job_id,
+    )
+
+    outline = await client.get(f"/api/v1/projects/{project['id']}/outline", headers=headers)
+    body = outline.json()
+    assert body["status"] == "failed"
+    assert body["error"] == "模型生成大纲失败，请稍后重试"
+
+
+@pytest.mark.asyncio
+async def test_worker_does_not_retry_missing_credentials(
+    client: AsyncClient,
+    queue: FakeQueue,
+) -> None:
+    headers = await _sign_up(client)
+    project, job_id = await _start_generating(client, headers)
+
+    generator = BrokenGenerator(LLMNotConfiguredError("未配置 LLM API Key"))
+    await generate_outline(
+        {"outline_generator": generator, "job_try": 1},
+        project["id"],
+        job_id,
+    )
+
+    outline = await client.get(f"/api/v1/projects/{project['id']}/outline", headers=headers)
+    body = outline.json()
+    assert body["status"] == "failed"
+    assert body["error"] == "未配置 LLM API Key"
 
 
 def test_sse_encoding_has_event_and_json_data() -> None:

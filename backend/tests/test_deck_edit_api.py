@@ -67,6 +67,8 @@ async def _project_with_slides(
                 outline_page_id=page_id,
                 position=index,
                 layout_id=spec["layout_id"],
+                layout_mode=spec.get("layout_mode", "fixed"),
+                layout_tree=spec.get("layout_tree"),
                 title=spec["title"],
                 status=spec.get("status", "ready"),
                 blocks=spec["blocks"],

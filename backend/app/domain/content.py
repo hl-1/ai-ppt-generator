@@ -5,9 +5,12 @@ from pydantic import BaseModel, Field
 from app.domain.block_style import BlockStyle
 from app.domain.flex_layout import FlexContainer
 
-BlockType = Literal["text", "bullets", "image", "chart", "table", "kpi"]
+BlockType = Literal[
+    "text", "bullets", "image", "chart", "table", "kpi", "cards", "callout"
+]
 ImageSource = Literal["generated", "stock", "upload", "placeholder"]
 ChartKind = Literal["bar", "column", "line", "pie"]
+CalloutVariant = Literal["note", "source"]
 
 
 class BlockBase(BaseModel):
@@ -67,8 +70,33 @@ class KpiBlock(BlockBase):
     note: str | None = None
 
 
+class CardItem(BaseModel):
+    title: str
+    desc: str
+    icon: str | None = None
+
+
+class CardsBlock(BlockBase):
+    type: Literal["cards"] = "cards"
+    items: list[CardItem] = Field(min_length=1)
+
+
+class CalloutBlock(BlockBase):
+    type: Literal["callout"] = "callout"
+    text: str
+    icon: str | None = None
+    variant: CalloutVariant = "note"
+
+
 Block = Annotated[
-    TextBlock | BulletsBlock | ImageBlock | ChartBlock | TableBlock | KpiBlock,
+    TextBlock
+    | BulletsBlock
+    | ImageBlock
+    | ChartBlock
+    | TableBlock
+    | KpiBlock
+    | CardsBlock
+    | CalloutBlock,
     Field(discriminator="type"),
 ]
 

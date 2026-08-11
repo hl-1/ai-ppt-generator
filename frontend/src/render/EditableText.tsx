@@ -19,6 +19,14 @@ interface EditableTextProps {
   className?: string
   onCommit: (next: string) => void
   onFocus?: () => void
+  /** 有回调时 Enter 先提交再回调，不再失焦（列表增项） */
+  onEnter?: () => void
+  /** 内容为空时按 Backspace 回调（列表删项） */
+  onBackspaceWhenEmpty?: () => void
+  /** 变化时强制聚焦；用于插入/删除后跳到目标项 */
+  focusToken?: number | null
+  /** 配合 focusToken：落在开头或末尾 */
+  focusCaret?: 'start' | 'end'
 }
 
 /** 两串公共前缀长度：撤销删除 / 重做插入时把光标落在变化处 */
@@ -70,6 +78,10 @@ export function EditableText({
   className,
   onCommit,
   onFocus,
+  onEnter,
+  onBackspaceWhenEmpty,
+  focusToken = null,
+  focusCaret = 'start',
 }: EditableTextProps) {
   const ref = useRef<HTMLSpanElement>(null)
   const focusedRef = useRef(false)
@@ -80,6 +92,11 @@ export function EditableText({
   const timerRef = useRef<number | null>(null)
   const onCommitRef = useRef(onCommit)
   onCommitRef.current = onCommit
+  const onEnterRef = useRef(onEnter)
+  onEnterRef.current = onEnter
+  const onBackspaceWhenEmptyRef = useRef(onBackspaceWhenEmpty)
+  onBackspaceWhenEmptyRef.current = onBackspaceWhenEmpty
+  const lastFocusTokenRef = useRef<number | null>(null)
 
   const clearTimer = () => {
     if (timerRef.current != null) {
@@ -140,6 +157,21 @@ export function EditableText({
       syncDom(value, previous)
     }
   }, [value])
+
+  useLayoutEffect(() => {
+    if (focusToken == null || focusToken === lastFocusTokenRef.current) return
+    lastFocusTokenRef.current = focusToken
+    const el = ref.current
+    if (!el) return
+    focusedRef.current = true
+    el.focus()
+    const offset = focusCaret === 'end' ? (el.textContent?.length ?? 0) : 0
+    placeCaret(el, offset)
+    requestAnimationFrame(() => {
+      if (ref.current !== el) return
+      placeCaret(el, offset)
+    })
+  }, [focusToken, focusCaret])
 
   useEffect(() => () => clearTimer(), [])
 
@@ -215,7 +247,23 @@ export function EditableText({
       event.preventDefault()
       clearTimer()
       commitIfChanged()
+      if (onEnterRef.current) {
+        onEnterRef.current()
+        return
+      }
       ref.current?.blur()
+      return
+    }
+
+    if (
+      !multiline &&
+      event.key === 'Backspace' &&
+      onBackspaceWhenEmptyRef.current &&
+      draftRef.current.length === 0
+    ) {
+      event.preventDefault()
+      clearTimer()
+      onBackspaceWhenEmptyRef.current()
     }
   }
 

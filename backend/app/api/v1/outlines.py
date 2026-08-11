@@ -20,7 +20,7 @@ from app.schemas.outline import (
     OutlineRevisionRequest,
     OutlineUpdate,
 )
-from app.services.outline_inputs import project_input_signature
+from app.services.outline_inputs import migrate_outline_signature, outline_input_matches
 from app.services.outline_progress import outline_events, publish_outline_event
 
 router = APIRouter(prefix="/projects/{project_id}/outline", tags=["outline"])
@@ -157,11 +157,15 @@ async def confirm_outline(
     outline = _outline_or_404(project)
     _ensure_draft(outline)
     _ensure_revision(outline, body.revision)
-    if outline.input_signature != project_input_signature(project):
+    if not outline_input_matches(project, outline.input_signature):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="生成大纲后输入材料或设置已变化，请重新生成",
         )
+    # 旧指纹（含 page_count）确认通过后写回新公式，避免反复兼容比对
+    migrated = migrate_outline_signature(project, outline.input_signature)
+    if migrated is not None:
+        outline.input_signature = migrated
     _validate_pages(project, [*map(_page_from_dict, outline.pages)])
 
     outline.status = "confirmed"

@@ -8,8 +8,11 @@
    幻灯片主题的令牌另有一套（shared/themes），两者不可混用，
    否则切换 PPT 主题时会连带改变编辑器界面。 */
 @theme {
-  --font-sans: 'Manrope Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-display: 'Manrope Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  /* 末尾的 emoji 字体是兜底：正文字体里没有 emoji 码位，不兜就是方框 */
+  --font-emoji: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
+  --font-sans: 'Manrope Variable', 'PingFang SC', 'Microsoft YaHei', var(--font-emoji), sans-serif;
+  --font-display: 'Manrope Variable', 'PingFang SC', 'Microsoft YaHei', var(--font-emoji),
+    sans-serif;
 
   --color-canvas: #f3f6fb;
   --color-surface: #ffffff;
@@ -85,4 +88,20 @@
 
 .present-slide-in {
   animation: present-slide-in 160ms ease-out;
+}
+
+/* 参数胶囊菜单入场：轻量缩放 + 淡入 */
+@keyframes pill-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@utility animate-in {
+  animation: pill-menu-in 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }

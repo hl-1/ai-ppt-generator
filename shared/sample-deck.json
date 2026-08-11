@@ -119,22 +119,95 @@
     {
       "id": "s06",
       "layout_id": "bullets",
+      "layout_mode": "flex",
       "revision": 1,
       "blocks": [
-        { "id": "b0601", "slot_id": "title", "type": "text", "text": "产品策略的三次调整" },
+        {
+          "id": "b0600",
+          "slot_id": "b0600",
+          "type": "text",
+          "text": "策略"
+        },
+        {
+          "id": "b0601",
+          "slot_id": "b0601",
+          "type": "text",
+          "text": "产品策略的三次调整"
+        },
         {
           "id": "b0602",
-          "slot_id": "body",
-          "type": "bullets",
+          "slot_id": "b0602",
+          "type": "cards",
           "items": [
-            "上半年停止横向扩展新模块，集中资源打磨文档协作",
-            "把模板市场从自建改为开放第三方接入，节省两个团队的投入",
-            "将 AI 能力从独立入口下沉到各模块内部，使用率提升明显",
-            "放弃面向个人用户的免费套餐，聚焦企业采购决策链",
-            "把实施交付标准化为四个阶段，缩短平均上线周期"
+            {
+              "title": "收敛模块",
+              "desc": "上半年停止横向扩展，集中资源打磨文档协作",
+              "icon": "🎯"
+            },
+            {
+              "title": "开放生态",
+              "desc": "模板市场改为第三方接入，节省两个团队投入",
+              "icon": "🧩"
+            },
+            {
+              "title": "AI 下沉",
+              "desc": "能力从独立入口沉到模块内部，使用率明显提升",
+              "icon": "✨"
+            }
           ]
+        },
+        {
+          "id": "b0603",
+          "slot_id": "b0603",
+          "type": "callout",
+          "text": "数据来源：产品部 2026 年中复盘纪要",
+          "icon": "📎",
+          "variant": "source"
         }
-      ]
+      ],
+      "layout_tree": {
+        "type": "column",
+        "id": "root",
+        "gap_pt": 14,
+        "grow": 1.0,
+        "children": [
+          {
+            "type": "block",
+            "id": "leaf-kicker",
+            "block_id": "b0600",
+            "grow": 0.25,
+            "text_style": "caption"
+          },
+          {
+            "type": "block",
+            "id": "leaf-title",
+            "block_id": "b0601",
+            "grow": 0.45,
+            "text_style": "title"
+          },
+          {
+            "type": "column",
+            "id": "cards-wrap",
+            "gap_pt": 0,
+            "grow": 1.6,
+            "preset": "solid_boxes",
+            "children": [
+              {
+                "type": "block",
+                "id": "leaf-cards",
+                "block_id": "b0602",
+                "grow": 1.0
+              }
+            ]
+          },
+          {
+            "type": "block",
+            "id": "leaf-source",
+            "block_id": "b0603",
+            "grow": 0.35
+          }
+        ]
+      }
     },
     {
       "id": "s07",

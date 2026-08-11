@@ -65,5 +65,7 @@ def test_cross_parent_leaves_spacer_and_keeps_sibling_grow() -> None:
     assert leaf.grow == 2.0
     right = out.children[1]
     assert isinstance(right, FlexContainer)
-    c = next(child for child in right.children if isinstance(child, FlexLeaf) and child.block_id == "c")
+    c = next(
+        child for child in right.children if isinstance(child, FlexLeaf) and child.block_id == "c"
+    )
     assert c.grow == 1.0

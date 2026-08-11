@@ -135,5 +135,46 @@
     "radius_pt": 6,
     "border_width_pt": 1,
     "bullet_marker": "dot"
-  }
+  },
+  "ambient": [
+    {
+      "motif": "glow",
+      "color": "accent",
+      "strength": 0.1,
+      "cx": 0.92,
+      "cy": 0.88,
+      "radius_pt": 260,
+      "layers": 4
+    },
+    {
+      "motif": "hairline_grid",
+      "color": "line",
+      "strength": 0.6,
+      "columns": 4,
+      "thickness_pt": 0.5,
+      "avoid_content": true
+    },
+    {
+      "motif": "edge_band",
+      "color": "accent",
+      "strength": 1,
+      "edge": "top",
+      "thickness_pt": 3,
+      "start": 0,
+      "end": 0.16
+    },
+    {
+      "motif": "corner_bracket",
+      "color": "accent",
+      "strength": 0.4,
+      "corner": "bottom_right",
+      "size_pt": 76,
+      "thickness_pt": 1.5,
+      "inset_pt": 18,
+      "scope": [
+        "cover",
+        "section"
+      ]
+    }
+  ]
 }

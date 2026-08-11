@@ -102,7 +102,7 @@ function FilmstripItem({
       >
         <div style={{ aspectRatio: `${CANVAS_WIDTH_PT} / ${CANVAS_HEIGHT_PT}` }}>
           {slide.status === 'ready' ? (
-            <SlideView slide={toRenderSlide(slide)} theme={theme} />
+            <SlideView slide={toRenderSlide(slide)} theme={theme} slideIndex={index} />
           ) : (
             <Placeholder status={slide.status} />
           )}

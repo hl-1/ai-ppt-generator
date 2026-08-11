@@ -17,6 +17,22 @@ export function contentBodyFromBlock(block: Block): BlockUpdateBody | null {
         label: block.label,
         note: block.note ?? null,
       }
+    case 'cards':
+      return {
+        type: 'cards',
+        items: block.items.map((item) => ({
+          title: item.title,
+          desc: item.desc,
+          icon: item.icon ?? null,
+        })),
+      }
+    case 'callout':
+      return {
+        type: 'callout',
+        text: block.text,
+        icon: block.icon ?? null,
+        variant: block.variant,
+      }
     case 'table':
       return {
         type: 'table',
@@ -57,6 +73,17 @@ export function applyContentBody(block: Block, body: BlockUpdateBody): Block {
       value: body.value,
       label: body.label,
       note: body.note ?? null,
+    }
+  }
+  if (body.type === 'cards' && block.type === 'cards') {
+    return { ...block, items: body.items }
+  }
+  if (body.type === 'callout' && block.type === 'callout') {
+    return {
+      ...block,
+      text: body.text,
+      icon: body.icon ?? null,
+      variant: body.variant,
     }
   }
   if (body.type === 'table' && block.type === 'table') {

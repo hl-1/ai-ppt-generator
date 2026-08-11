@@ -25,12 +25,14 @@ class StructureIssue(BaseModel):
 
     error 表示内容与布局的契约被破坏，必须阻断导出；
     warning 表示内容偏长可能观感不佳，允许继续。
+    code 用于生成 repair 分流：overflow/capacity 不触发砍块重写。
     """
 
     severity: IssueSeverity
     slide_id: str
     slot_id: str | None
     message: str
+    code: str | None = None
 
 
 def _capacity_issues(slide_id: str, slot: Slot, block: Block) -> list[StructureIssue]:
@@ -39,7 +41,13 @@ def _capacity_issues(slide_id: str, slot: Slot, block: Block) -> list[StructureI
 
     def warn(message: str) -> None:
         issues.append(
-            StructureIssue(severity="warning", slide_id=slide_id, slot_id=slot.id, message=message)
+            StructureIssue(
+                severity="warning",
+                slide_id=slide_id,
+                slot_id=slot.id,
+                message=message,
+                code="capacity",
+            )
         )
 
     if block.type == "text" and capacity.max_chars is not None:
@@ -56,6 +64,22 @@ def _capacity_issues(slide_id: str, slot: Slot, block: Block) -> list[StructureI
                         f"第 {index + 1} 条要点 {len(item)} 字，"
                         f"超出单条上限 {capacity.max_chars_per_item} 字"
                     )
+
+    if block.type == "cards":
+        if capacity.max_items is not None and len(block.items) > capacity.max_items:
+            warn(f"卡片 {len(block.items)} 张，超出建议上限 {capacity.max_items} 张")
+        if capacity.max_chars_per_item is not None:
+            for index, item in enumerate(block.items):
+                total = len(item.title) + len(item.desc)
+                if total > capacity.max_chars_per_item:
+                    warn(
+                        f"第 {index + 1} 张卡片 {total} 字，"
+                        f"超出单卡上限 {capacity.max_chars_per_item} 字"
+                    )
+
+    if block.type == "callout" and capacity.max_chars is not None:
+        if len(block.text) > capacity.max_chars:
+            warn(f"提示条 {len(block.text)} 字，超出建议上限 {capacity.max_chars} 字")
 
     if block.type == "table":
         if capacity.max_columns is not None and len(block.header) > capacity.max_columns:
@@ -117,6 +141,7 @@ def _overflow_issues(
                 f"约需 {result.line_count} 行"
                 f"（占用 {result.height_pt:.0f} pt / 槽位 {height_pt:.0f} pt）"
             ),
+            code="overflow",
         )
     ]
 

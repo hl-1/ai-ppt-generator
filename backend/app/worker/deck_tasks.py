@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.core.db import async_session_factory
 from app.domain.content import Slide as SlideContent
 from app.domain.outline import OutlinePage
+from app.domain.page_rhythm import allows_callout, skeleton_hint
 from app.domain.validation import StructureIssue
 from app.images.pipeline import ImagePipeline, create_image_pipeline
 from app.llm.base import OutlineSourceSection, SlideGenerationInput, SlideGenerator
@@ -47,7 +48,7 @@ async def generate_deck(ctx: dict[str, Any], project_id: str, slide_ids: list[st
     owned_client: httpx.AsyncClient | None = None
     pipeline: ImagePipeline | None = ctx.get("image_pipeline")
     if pipeline is None:
-        owned_client = httpx.AsyncClient()
+        owned_client = httpx.AsyncClient(trust_env=False, proxy=None)
         pipeline = create_image_pipeline(owned_client)
     semaphore = asyncio.Semaphore(get_settings().slide_concurrency)
     cancelled = False
@@ -85,6 +86,10 @@ async def _generate_one(
         return
     await _publish(project_id, "slide_started", f"正在生成第 {page.position} 页", slide_id, page)
 
+    from app.domain.content_density import normalize_page_role
+
+    page_role = normalize_page_role(getattr(page.page, "page_role", None))
+    visual_hint = getattr(page.page, "visual", None)
     payload = SlideGenerationInput(
         deck_title=context.title,
         audience=context.audience,
@@ -96,10 +101,18 @@ async def _generate_one(
         key_points=page.page.key_points,
         layout_id=page.page.layout_id,
         layout_mode=context.layout_mode,
+        content_density=context.content_density,
+        page_role=page_role,
         sections=[
             context.sections[ref] for ref in page.page.source_refs if ref in context.sections
         ],
         neighbor_titles=context.neighbor_titles(page.position),
+        visual_hint=visual_hint,
+        # 跨页多样性必须提前分配：各页并发生成，看不到彼此的版式
+        skeleton_hint=skeleton_hint(
+            page.position, page_role=page_role, has_visual=bool(visual_hint)
+        ),
+        allow_callout=allows_callout(page.position),
     )
 
     try:
@@ -140,10 +153,13 @@ class DeckContext:
         theme_id: str,
         theme_overrides: dict,
         layout_mode: str,
+        content_density: str,
         sections: dict[str, OutlineSourceSection],
         pages: dict[uuid.UUID, "SlideTarget"],
         ordered_titles: list[str],
     ) -> None:
+        from app.domain.content_density import normalize_density
+
         self.user_id = user_id
         self.title = title
         self.audience = audience
@@ -151,6 +167,7 @@ class DeckContext:
         self.theme_id = theme_id
         self.theme_overrides = theme_overrides
         self.layout_mode = layout_mode if layout_mode in ("fixed", "flex") else "flex"
+        self.content_density = normalize_density(content_density)
         self.sections = sections
         self.pages = pages
         self.total = len(ordered_titles)
@@ -208,6 +225,7 @@ async def _load_context(project_id: uuid.UUID) -> DeckContext | None:
             theme_id=project.theme_id,
             theme_overrides=dict(project.theme_overrides or {}),
             layout_mode=getattr(project, "layout_mode", None) or "flex",
+            content_density=getattr(project, "content_density", None) or "medium",
             sections=sections,
             pages=targets,
             ordered_titles=[page.title for page in pages],

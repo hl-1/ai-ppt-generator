@@ -118,6 +118,7 @@ async def _seed_ready_project(
                 outline_page_id=page_id,
                 position=1,
                 layout_id="bullets",
+                layout_mode="fixed",
                 title="增长复盘",
                 status=status,
                 blocks=slide_blocks if status == "ready" else [],

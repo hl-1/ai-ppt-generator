@@ -17,9 +17,12 @@ from pptx.slide import Slide as PptxSlide
 from pptx.util import Emu, Pt
 from pydantic import BaseModel, Field
 
+from app.domain.ambient import AMBIENT_SHAPE_PREFIX
 from app.domain.content import (
     Block,
     BulletsBlock,
+    CalloutBlock,
+    CardsBlock,
     ChartBlock,
     Deck,
     ImageBlock,
@@ -203,6 +206,9 @@ def _check_shape_bounds(
     issues: list[VerifyIssue] = []
 
     for shape in shapes:
+        # 氛围层是有意出血的装饰：光晕要靠画布边缘裁才不会被压变形
+        if (shape.name or "").startswith(AMBIENT_SHAPE_PREFIX):
+            continue
         left = int(shape.left)
         top = int(shape.top)
         right = left + int(shape.width)
@@ -358,6 +364,16 @@ def key_texts_from_block(block: Block) -> list[str]:
             return [item for item in texts if item.strip()]
         case ImageBlock():
             return []
+        case CardsBlock(items=items):
+            texts: list[str] = []
+            for item in items:
+                if item.title.strip():
+                    texts.append(item.title)
+                if item.desc.strip():
+                    texts.append(item.desc)
+            return texts
+        case CalloutBlock(text=text):
+            return [text] if text.strip() else []
         case _:
             return []
 

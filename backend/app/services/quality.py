@@ -76,6 +76,19 @@ def slide_sources_map(project: Project, slides: list[Slide]) -> dict[str, str]:
     return result
 
 
+def slide_roles_map(project: Project, slides: list[Slide]) -> dict[str, str]:
+    pages = _page_by_outline_id(project)
+    result: dict[str, str] = {}
+    for slide in slides:
+        if slide.status != "ready":
+            continue
+        page = pages.get(slide.outline_page_id)
+        if page is None:
+            continue
+        result[str(slide.id)] = getattr(page, "page_role", None) or "content"
+    return result
+
+
 def build_quality_report(project: Project, slides: list[Slide]) -> ExportCheckReport:
     """可复用的质量报告入口；第 13 节点导出接口应直接调用。"""
     deck = project_to_content_deck(project, slides)
@@ -84,6 +97,8 @@ def build_quality_report(project: Project, slides: list[Slide]) -> ExportCheckRe
         theme=resolve_project_theme(project),
         slide_titles=slide_titles_map(slides),
         slide_sources=slide_sources_map(project, slides),
+        content_density=getattr(project, "content_density", None) or "medium",
+        slide_roles=slide_roles_map(project, slides),
         load_image=load_image,
         media_key_from_url=media_key_from_url,
     )

@@ -5,6 +5,10 @@ from pydantic import BaseModel, Field
 
 from app.domain.content import (
     BulletsBlock,
+    CalloutBlock,
+    CalloutVariant,
+    CardItem,
+    CardsBlock,
     ChartBlock,
     ChartKind,
     ChartSeries,
@@ -14,12 +18,21 @@ from app.domain.content import (
     TableBlock,
     TextBlock,
 )
-from app.domain.flex_layout import FlexContainer, FlexLeaf, FlexNode, iter_leaf_block_ids
+from app.domain.flex_layout import (
+    FlexContainer,
+    FlexLeaf,
+    FlexNode,
+    iter_leaf_block_ids,
+    restrict_bleed,
+)
 from app.domain.flex_normalize import normalize
 from app.domain.flex_presets import BlockRef, seed_layout_for_blocks
 
 # 模型只负责"往哪个槽位放什么内容"。块 id、锁定标记、图片来源这些
 # 由服务端掌握的字段不进入模型契约：让模型编造它们只会带来无谓的校验负担。
+
+# 只有整幅视觉块允许出血到画布边缘
+BLEEDABLE_TYPES = frozenset({"image", "chart"})
 
 
 class SlotContentBase(BaseModel):
@@ -68,8 +81,33 @@ class KpiContent(SlotContentBase):
     note: str | None = None
 
 
+class CardItemContent(BaseModel):
+    title: str
+    desc: str
+    icon: str | None = None
+
+
+class CardsContent(SlotContentBase):
+    type: Literal["cards"] = "cards"
+    items: list[CardItemContent] = Field(min_length=1)
+
+
+class CalloutContent(SlotContentBase):
+    type: Literal["callout"] = "callout"
+    text: str
+    icon: str | None = None
+    variant: CalloutVariant = "note"
+
+
 SlotContent = Annotated[
-    TextContent | BulletsContent | ImageContent | ChartContent | TableContent | KpiContent,
+    TextContent
+    | BulletsContent
+    | ImageContent
+    | ChartContent
+    | TableContent
+    | KpiContent
+    | CardsContent
+    | CalloutContent,
     Field(discriminator="type"),
 ]
 
@@ -122,13 +160,27 @@ class FlexKpiContent(FlexBlockBase):
     note: str | None = None
 
 
+class FlexCardsContent(FlexBlockBase):
+    type: Literal["cards"] = "cards"
+    items: list[CardItemContent] = Field(min_length=1)
+
+
+class FlexCalloutContent(FlexBlockBase):
+    type: Literal["callout"] = "callout"
+    text: str
+    icon: str | None = None
+    variant: CalloutVariant = "note"
+
+
 FlexBlockContent = Annotated[
     FlexTextContent
     | FlexBulletsContent
     | FlexImageContent
     | FlexChartContent
     | FlexTableContent
-    | FlexKpiContent,
+    | FlexKpiContent
+    | FlexCardsContent
+    | FlexCalloutContent,
     Field(discriminator="type"),
 ]
 
@@ -177,6 +229,8 @@ def flex_draft_to_slide(
     else:
         tree = normalize(tree)
 
+    tree = restrict_bleed(tree, {b.id for b in blocks if b.type in BLEEDABLE_TYPES})
+
     return Slide(
         id=str(slide_id),
         layout_id=fallback_layout_id or "flex",
@@ -219,6 +273,21 @@ def _to_block(block_id: str, content: SlotContent):  # noqa: ANN202
             return TableBlock(**common, header=content.header, rows=content.rows)
         case KpiContent():
             return KpiBlock(**common, value=content.value, label=content.label, note=content.note)
+        case CardsContent():
+            return CardsBlock(
+                **common,
+                items=[
+                    CardItem(title=item.title, desc=item.desc, icon=item.icon)
+                    for item in content.items
+                ],
+            )
+        case CalloutContent():
+            return CalloutBlock(
+                **common,
+                text=content.text,
+                icon=content.icon,
+                variant=content.variant,
+            )
 
 
 def _to_flex_block(block_id: str, content: FlexBlockContent):  # noqa: ANN202
@@ -243,3 +312,18 @@ def _to_flex_block(block_id: str, content: FlexBlockContent):  # noqa: ANN202
             return TableBlock(**common, header=content.header, rows=content.rows)
         case FlexKpiContent():
             return KpiBlock(**common, value=content.value, label=content.label, note=content.note)
+        case FlexCardsContent():
+            return CardsBlock(
+                **common,
+                items=[
+                    CardItem(title=item.title, desc=item.desc, icon=item.icon)
+                    for item in content.items
+                ],
+            )
+        case FlexCalloutContent():
+            return CalloutBlock(
+                **common,
+                text=content.text,
+                icon=content.icon,
+                variant=content.variant,
+            )

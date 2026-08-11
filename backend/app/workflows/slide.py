@@ -6,14 +6,16 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from app.domain.content import Slide
+from app.domain.flex_fit import fit_tree_to_content
+from app.domain.flex_width import fit_row_widths
+from app.domain.quality import check_slide_richness, is_repair_worthy
 from app.domain.slide_draft import FlexSlideDraft, SlideDraft, draft_to_slide, flex_draft_to_slide
 from app.domain.theme import resolve_theme
 from app.domain.validation import StructureIssue, validate_slide
 from app.llm.base import SlideGenerationInput, SlideGenerator
 from app.llm.errors import InvalidSlideOutputError
 
-# 只修一轮：结构问题多为容量超限，一次定向反馈通常够用；
-# 反复重试只会线性放大延迟与成本，不如把这一页标记失败交给用户重试。
+# 只修一轮：结构 error 或过瘦/空话；溢出/容量 warning 不触发砍块重写。
 MAX_REPAIR_ROUNDS = 1
 
 MAX_SECTION_CHARS = 1_500
@@ -86,25 +88,47 @@ def build_slide_workflow(generator: SlideGenerator):
             if not isinstance(draft, SlideDraft):
                 raise InvalidSlideOutputError("固定布局生成未返回 SlideDraft")
             slide = draft_to_slide(slide_id, state["input"].layout_id, draft)
-        theme = resolve_theme(
-            state.get("theme_id") or "ivory", state.get("theme_overrides")
+        theme = resolve_theme(state.get("theme_id") or "ivory", state.get("theme_overrides"))
+        payload = state["input"]
+        # 生成期先定列宽再定行高：宽度决定折行，折行决定自然高度。
+        # 两步都放在校验之前，让溢出/容量告警反映的是最终版面。
+        if slide.layout_mode == "flex" and slide.layout_tree is not None:
+            widened = fit_row_widths(slide.layout_tree, slide.blocks, theme=theme)
+            slide = slide.model_copy(
+                update={
+                    "layout_tree": fit_tree_to_content(
+                        widened,
+                        slide.blocks,
+                        theme=theme,
+                        page_role=payload.page_role,
+                    )
+                }
+            )
+        issues = validate_slide(slide, theme=theme)
+        issues.extend(
+            check_slide_richness(
+                slide,
+                content_density=payload.content_density,
+                page_role=payload.page_role,
+            )
         )
         return {
             "slide": slide,
-            "issues": validate_slide(slide, theme=theme),
+            "issues": issues,
         }
 
     async def repair(state: SlideWorkflowState) -> dict:
-        messages = [_describe(issue) for issue in state["issues"]]
+        repairable = [issue for issue in state["issues"] if is_repair_worthy(issue)]
+        messages = [_describe(issue) for issue in repairable]
         repaired = state["input"].model_copy(update={"issues": messages})
         return {"input": repaired, "repairs": state.get("repairs", 0) + 1}
 
     def route(state: SlideWorkflowState) -> str:
-        if not state["issues"]:
-            return END
         if state.get("repairs", 0) >= MAX_REPAIR_ROUNDS:
             return END
-        return "repair"
+        if any(is_repair_worthy(issue) for issue in state["issues"]):
+            return "repair"
+        return END
 
     graph = StateGraph(SlideWorkflowState)
     graph.add_node("prepare", prepare)

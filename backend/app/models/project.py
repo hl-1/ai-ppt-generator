@@ -32,6 +32,8 @@ class Project(Base):
     theme_overrides: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     # fixed=槽位布局；flex=布局树（新项目默认）
     layout_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="flex")
+    # 整份文字量：concise / medium / detailed
+    content_density: Mapped[str] = mapped_column(String(16), nullable=False, default="medium")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
 
     created_at: Mapped[datetime] = mapped_column(

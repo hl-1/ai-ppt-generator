@@ -73,7 +73,8 @@ async def startup(ctx: dict[str, Any]) -> None:
     ctx["outline_generator"] = create_outline_generator(client)
     ctx["slide_generator"] = create_slide_generator(client)
 
-    http_client = httpx.AsyncClient()
+    # 生图走国内云厂商直连；显式禁用环境代理，避免 ALL_PROXY/socks 导致 ReadTimeout
+    http_client = httpx.AsyncClient(trust_env=False, proxy=None)
     ctx["http_client"] = http_client
     ctx["image_pipeline"] = create_image_pipeline(http_client)
 

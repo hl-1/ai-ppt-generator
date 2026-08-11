@@ -49,6 +49,9 @@ export default function CreatePage() {
   const [tone, setTone] = useState<NonNullable<Tone>>('professional')
   const [pageCount, setPageCount] = useState(10)
   const [layoutMode, setLayoutMode] = useState<'fixed' | 'flex'>('flex')
+  const [contentDensity, setContentDensity] = useState<'concise' | 'medium' | 'detailed'>(
+    'medium',
+  )
   const [step, setStep] = useState<string | null>(null)
   const create = useCreateDraft()
 
@@ -68,6 +71,7 @@ export default function CreatePage() {
         pageCount,
         themeId: DEFAULT_THEME_ID,
         layoutMode,
+        contentDensity,
         onStep: setStep,
       },
       {
@@ -134,30 +138,43 @@ export default function CreatePage() {
             />
           )}
 
-          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line/80 pt-3">
             <PillSelect
               label="页数"
               disabled={busy}
               value={pageCount}
               options={PAGE_COUNT_OPTIONS}
-              onChange={(event) => setPageCount(Number(event.target.value))}
+              onChange={(next) => setPageCount(Number(next))}
             />
             <PillSelect
               label="排版"
               disabled={busy}
               value={layoutMode}
               options={[
-                { value: 'flex', label: '灵活排版' },
-                { value: 'fixed', label: '固定版式' },
+                { value: 'flex', label: '灵活排版', description: '块数量与排布随内容变化' },
+                { value: 'fixed', label: '固定版式', description: '槽位稳定，适合可控版面' },
               ]}
-              onChange={(event) => setLayoutMode(event.target.value as 'fixed' | 'flex')}
+              onChange={(next) => setLayoutMode(next as 'fixed' | 'flex')}
+            />
+            <PillSelect
+              label="文字量"
+              disabled={busy}
+              value={contentDensity}
+              options={[
+                { value: 'concise', label: '简洁', description: '少而精，一页抓一个重点' },
+                { value: 'medium', label: '中等', description: '结论 + 适量支撑细节' },
+                { value: 'detailed', label: '详细', description: '信息更满，可含表图' },
+              ]}
+              onChange={(next) =>
+                setContentDensity(next as 'concise' | 'medium' | 'detailed')
+              }
             />
             <PillSelect
               label="语气"
               disabled={busy}
               value={tone}
               options={TONE_OPTIONS}
-              onChange={(event) => setTone(event.target.value as NonNullable<Tone>)}
+              onChange={(next) => setTone(next as NonNullable<Tone>)}
             />
             <input
               value={audience}
@@ -166,9 +183,9 @@ export default function CreatePage() {
               placeholder="受众（可选）"
               aria-label="受众"
               onChange={(event) => setAudience(event.target.value)}
-              className="h-9 w-40 rounded-full border border-line bg-surface px-3.5 text-[13px] text-ink-soft transition-colors placeholder:text-ink-muted hover:border-line-strong focus:border-accent focus:outline-none disabled:opacity-50"
+              className="h-9 w-40 rounded-full bg-surface-soft/90 px-3.5 text-[13px] text-ink-soft ring-1 ring-transparent transition-all placeholder:text-ink-muted hover:bg-white hover:ring-line hover:shadow-sm focus:bg-white focus:ring-line focus:outline-none disabled:opacity-45"
             />
-            <span className="rounded-full bg-surface-soft px-3 py-1.5 text-[13px] font-medium text-ink-muted">
+            <span className="inline-flex h-9 items-center rounded-full bg-surface-soft/90 px-3 text-[13px] font-medium text-ink-muted">
               16:9
             </span>
 

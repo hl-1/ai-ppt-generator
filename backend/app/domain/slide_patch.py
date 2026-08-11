@@ -13,13 +13,19 @@ from pydantic import BaseModel, Field, TypeAdapter
 from app.domain.content import (
     Block,
     BulletsBlock,
+    CalloutBlock,
+    CalloutVariant,
+    CardItem,
+    CardsBlock,
     KpiBlock,
     TableBlock,
     TextBlock,
 )
 
-EditableBlockType = Literal["text", "bullets", "kpi", "table"]
-EDITABLE_BLOCK_TYPES: frozenset[str] = frozenset({"text", "bullets", "kpi", "table"})
+EditableBlockType = Literal["text", "bullets", "kpi", "table", "cards", "callout"]
+EDITABLE_BLOCK_TYPES: frozenset[str] = frozenset(
+    {"text", "bullets", "kpi", "table", "cards", "callout"}
+)
 
 
 class TextPatch(BaseModel):
@@ -49,8 +55,28 @@ class TablePatch(BaseModel):
     rows: list[list[str]]
 
 
+class CardItemPatch(BaseModel):
+    title: str
+    desc: str
+    icon: str | None = None
+
+
+class CardsPatch(BaseModel):
+    block_id: str
+    type: Literal["cards"] = "cards"
+    items: list[CardItemPatch]
+
+
+class CalloutPatch(BaseModel):
+    block_id: str
+    type: Literal["callout"] = "callout"
+    text: str
+    icon: str | None = None
+    variant: CalloutVariant = "note"
+
+
 BlockPatch = Annotated[
-    TextPatch | BulletsPatch | KpiPatch | TablePatch,
+    TextPatch | BulletsPatch | KpiPatch | TablePatch | CardsPatch | CalloutPatch,
     Field(discriminator="type"),
 ]
 
@@ -145,7 +171,9 @@ def apply_patches(blocks: list[Block], patches: list[BlockPatch]) -> list[Block]
     return result
 
 
-def content_snapshot(block: Block) -> TextPatch | BulletsPatch | KpiPatch | TablePatch:
+def content_snapshot(
+    block: Block,
+) -> TextPatch | BulletsPatch | KpiPatch | TablePatch | CardsPatch | CalloutPatch:
     """抽出块的可写内容，供提案 before/after 对比。"""
     match block:
         case TextBlock():
@@ -164,6 +192,21 @@ def content_snapshot(block: Block) -> TextPatch | BulletsPatch | KpiPatch | Tabl
                 block_id=block.id,
                 header=list(block.header),
                 rows=[list(row) for row in block.rows],
+            )
+        case CardsBlock():
+            return CardsPatch(
+                block_id=block.id,
+                items=[
+                    CardItemPatch(title=item.title, desc=item.desc, icon=item.icon)
+                    for item in block.items
+                ],
+            )
+        case CalloutBlock():
+            return CalloutPatch(
+                block_id=block.id,
+                text=block.text,
+                icon=block.icon,
+                variant=block.variant,
             )
         case _:
             raise TypeError(f"块类型 {block.type} 不支持内容快照")
@@ -184,6 +227,23 @@ def _apply_one(block: Block, patch: BlockPatch) -> Block:
                 update={
                     "header": list(patch.header),
                     "rows": [list(row) for row in patch.rows],
+                }
+            )
+        case CardsBlock(), CardsPatch():
+            return block.model_copy(
+                update={
+                    "items": [
+                        CardItem(title=item.title, desc=item.desc, icon=item.icon)
+                        for item in patch.items
+                    ]
+                }
+            )
+        case CalloutBlock(), CalloutPatch():
+            return block.model_copy(
+                update={
+                    "text": patch.text,
+                    "icon": patch.icon,
+                    "variant": patch.variant,
                 }
             )
         case _:

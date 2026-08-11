@@ -384,6 +384,7 @@ async def test_quality_endpoint_returns_report(client: AsyncClient) -> None:
                 outline_page_id=page_id,
                 position=1,
                 layout_id="bullets",
+                layout_mode="fixed",
                 title="增长",
                 status="ready",
                 blocks=[
