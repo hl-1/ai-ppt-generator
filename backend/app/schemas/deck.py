@@ -211,6 +211,23 @@ class SlideOrderRequest(BaseModel):
     slide_ids: list[uuid.UUID]
 
 
+class SlideInsertRequest(BaseModel):
+    """在指定页之后插入空白页；null 表示追加到末尾。"""
+
+    after_slide_id: uuid.UUID | None = None
+
+
+class DeckPageResult(BaseModel):
+    """整页增删复制的结果。
+
+    增删都会改动多页 position，返回整份 deck 让前端一次换掉缓存；slide_id 是
+    操作后应当选中的页（新页，或删除后的邻页）。
+    """
+
+    deck: DeckPublic
+    slide_id: uuid.UUID | None = None
+
+
 class LayoutSwitchRequest(BaseModel):
     layout_id: str
     revision: int

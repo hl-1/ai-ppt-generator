@@ -9,11 +9,13 @@ import type {
   BlockUpdateBody,
   Deck,
   DeckGenerateAccepted,
+  DeckPageResult,
   DeckSlide,
   ExportCheckReport,
   LayoutCandidate,
   RelayoutProposal,
 } from '@/features/deck/types'
+import { outlineKey } from '@/features/outline/api'
 import { filenameFromDisposition, saveBlob } from '@/lib/download'
 import type { BlockStyle } from '@/render/blockStyle'
 import type { FlexContainer } from '@/render/flexLayout'
@@ -172,6 +174,61 @@ export function useReorderSlides(projectId: string) {
       void queryClient.invalidateQueries({ queryKey: deckQualityKey(projectId) })
     },
   })
+}
+
+/**
+ * 整页增删复制：响应里带整份 deck，直接换掉缓存。
+ *
+ * 后端同一事务里还改了 page_count 与大纲页列表，所以项目详情与大纲也要失效。
+ * 项目的 key 是 deck key 的前缀，必须 exact，否则会顺带把刚写进去的 deck 冲掉。
+ */
+function useDeckPageMutation<TVariables>(
+  projectId: string,
+  toRequest: (variables: TVariables) => {
+    path: string
+    method: 'POST' | 'DELETE'
+    body?: unknown
+  },
+) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: TVariables) => {
+      const { path, method, body } = toRequest(variables)
+      return request<DeckPageResult>(path, {
+        method,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(deckKey(projectId), result.deck)
+      void queryClient.invalidateQueries({ queryKey: projectKey(projectId), exact: true })
+      void queryClient.invalidateQueries({ queryKey: outlineKey(projectId) })
+      void queryClient.invalidateQueries({ queryKey: deckQualityKey(projectId) })
+    },
+  })
+}
+
+/** afterSlideId 为 null 表示追加到末尾 */
+export function useInsertSlide(projectId: string) {
+  return useDeckPageMutation<string | null>(projectId, (afterSlideId) => ({
+    path: `/projects/${projectId}/deck/slides`,
+    method: 'POST',
+    body: { after_slide_id: afterSlideId },
+  }))
+}
+
+export function useDuplicateSlide(projectId: string) {
+  return useDeckPageMutation<string>(projectId, (slideId) => ({
+    path: `/projects/${projectId}/deck/slides/${slideId}/duplicate`,
+    method: 'POST',
+  }))
+}
+
+export function useDeleteSlide(projectId: string) {
+  return useDeckPageMutation<string>(projectId, (slideId) => ({
+    path: `/projects/${projectId}/deck/slides/${slideId}`,
+    method: 'DELETE',
+  }))
 }
 
 export function useSlideLayouts(projectId: string, slideId: string, enabled: boolean) {

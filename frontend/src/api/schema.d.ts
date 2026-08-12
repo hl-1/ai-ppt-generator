@@ -642,6 +642,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/deck/slides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Insert Slide
+         * @description 插入一张空白页，内容在本地生成，无需再跑一遍 AI。
+         */
+        post: operations["insert_slide_api_v1_projects__project_id__deck_slides_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Duplicate Slide */
+        post: operations["duplicate_slide_api_v1_projects__project_id__deck_slides__slide_id__duplicate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Slide */
+        delete: operations["delete_slide_api_v1_projects__project_id__deck_slides__slide_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/deck/slides/{slide_id}/layouts": {
         parameters: {
             query?: never;
@@ -1129,6 +1183,11 @@ export interface components {
              */
             strength: number;
             /**
+             * Avoid Content
+             * @default false
+             */
+            avoid_content: boolean;
+            /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
@@ -1195,6 +1254,18 @@ export interface components {
              */
             regenerate_all: boolean;
         };
+        /**
+         * DeckPageResult
+         * @description 整页增删复制的结果。
+         *
+         *     增删都会改动多页 position，返回整份 deck 让前端一次换掉缓存；slide_id 是
+         *     操作后应当选中的页（新页，或删除后的邻页）。
+         */
+        DeckPageResult: {
+            deck: components["schemas"]["DeckPublic"];
+            /** Slide Id */
+            slide_id?: string | null;
+        };
         /** DeckPublic */
         DeckPublic: {
             /**
@@ -1258,6 +1329,11 @@ export interface components {
              * @default 0.2
              */
             strength: number;
+            /**
+             * Avoid Content
+             * @default false
+             */
+            avoid_content: boolean;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -1422,6 +1498,14 @@ export interface components {
         Fonts: {
             display: components["schemas"]["FontFamily"];
             body: components["schemas"]["FontFamily"];
+            /**
+             * @default {
+             *       "web": "\"Apple Color Emoji\", \"Segoe UI Emoji\", \"Noto Color Emoji\", sans-serif",
+             *       "pptx_latin": "Segoe UI Emoji",
+             *       "pptx_east_asian": "Segoe UI Emoji"
+             *     }
+             */
+            emoji: components["schemas"]["FontFamily"];
         };
         /**
          * Glow
@@ -1440,6 +1524,11 @@ export interface components {
              * @default 0.2
              */
             strength: number;
+            /**
+             * Avoid Content
+             * @default false
+             */
+            avoid_content: boolean;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -1488,6 +1577,11 @@ export interface components {
              * @default 0.2
              */
             strength: number;
+            /**
+             * Avoid Content
+             * @default false
+             */
+            avoid_content: boolean;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -2057,6 +2151,14 @@ export interface components {
             layout_mode: "fixed" | "flex";
             layout_tree?: components["schemas"]["FlexContainer-Output"] | null;
         };
+        /**
+         * SlideInsertRequest
+         * @description 在指定页之后插入空白页；null 表示追加到末尾。
+         */
+        SlideInsertRequest: {
+            /** After Slide Id */
+            after_slide_id?: string | null;
+        };
         /** SlideOrderRequest */
         SlideOrderRequest: {
             /** Slide Ids */
@@ -2453,6 +2555,11 @@ export interface components {
              * @default 0.2
              */
             strength: number;
+            /**
+             * Avoid Content
+             * @default false
+             */
+            avoid_content: boolean;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -3784,6 +3891,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SlidePublic"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    insert_slide_api_v1_projects__project_id__deck_slides_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlideInsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeckPageResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    duplicate_slide_api_v1_projects__project_id__deck_slides__slide_id__duplicate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeckPageResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_slide_api_v1_projects__project_id__deck_slides__slide_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeckPageResult"];
                 };
             };
             /** @description Validation Error */

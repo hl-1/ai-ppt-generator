@@ -17,10 +17,15 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import { WorkbenchHeader } from '@/components/WorkbenchHeader'
 import { Button } from '@/components/ui/Button'
+import { Dialog } from '@/components/ui/Dialog'
+import { MenuItem, MenuPopover } from '@/components/ui/MenuPopover'
 import {
   useCancelDeck,
   useDeck,
+  useDeleteSlide,
+  useDuplicateSlide,
   useGenerateDeck,
+  useInsertSlide,
   useReorderSlides,
   useRetrySlide,
 } from '@/features/deck/api'
@@ -36,7 +41,7 @@ import { LayoutPanel } from '@/features/deck/LayoutPanel'
 import { PresentMode } from '@/features/deck/PresentMode'
 import { RelayoutDock } from '@/features/deck/RelayoutPanel'
 import { ThemePanel } from '@/features/deck/ThemePanel'
-import { type DeckSlide, toRenderSlide } from '@/features/deck/types'
+import { type DeckSlide, slideDisplayTitle, toRenderSlide } from '@/features/deck/types'
 import { useDeckProgress } from '@/features/deck/useDeckProgress'
 import { registerSlideSaveHandlers } from '@/features/deck/slideSaveBridge'
 import { type SaveStatus, useSlideSaveQueue } from '@/features/deck/useSlideSaveQueue'
@@ -89,6 +94,9 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
   const generate = useGenerateDeck(project.id)
   const cancel = useCancelDeck(project.id)
   const reorder = useReorderSlides(project.id)
+  const insertSlide = useInsertSlide(project.id)
+  const duplicateSlide = useDuplicateSlide(project.id)
+  const deleteSlide = useDeleteSlide(project.id)
 
   const [activeId, setActiveId] = useState<string | null>(null)
   const [scrollRequest, setScrollRequest] = useState<{ id: string; nonce: number } | null>(null)
@@ -98,6 +106,7 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
   const [zoomIndex, setZoomIndex] = useState(1)
   const [presenting, setPresenting] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [removingId, setRemovingId] = useState<string | null>(null)
 
   // 用 id 串做依赖：deck 每次轮询都会换掉数组身份，但选中页不该因此跳走
   const slideIdsKey = slides.map((slide) => slide.id).join('|')
@@ -130,11 +139,24 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
     setScrollRequest({ id, nonce: Date.now() })
   }
 
+  // 整页操作会重排页序，成功后跳到后端指定的那一页（新页，或删除后的邻页）
+  const focusResult = (result: { slide_id?: string | null }) => {
+    if (result.slide_id) focusSlide(result.slide_id)
+  }
+
   const active = slides.find((slide) => slide.id === activeId) ?? null
+  const removing = slides.find((slide) => slide.id === removingId) ?? null
+  const pageBusy = insertSlide.isPending || duplicateSlide.isPending || deleteSlide.isPending
   const ready = progress.event?.ready ?? deck?.ready ?? 0
   const failed = progress.event?.failed ?? deck?.failed ?? 0
   const total = progress.event?.total ?? deck?.total ?? 0
-  const actionError = generate.error ?? cancel.error ?? reorder.error
+  const actionError =
+    generate.error ??
+    cancel.error ??
+    reorder.error ??
+    insertSlide.error ??
+    duplicateSlide.error ??
+    deleteSlide.error
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -212,8 +234,16 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
             theme={theme}
             activeId={activeId}
             locked={generating}
+            busy={pageBusy}
             onSelect={focusSlide}
             onReorder={reorder.mutate}
+            onInsert={(afterSlideId) =>
+              insertSlide.mutate(afterSlideId, { onSuccess: focusResult })
+            }
+            onDuplicate={(slideId) =>
+              duplicateSlide.mutate(slideId, { onSuccess: focusResult })
+            }
+            onDelete={setRemovingId}
           />
         )}
 
@@ -300,6 +330,41 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
           onClose={() => setExporting(false)}
           onLocate={focusSlide}
         />
+      )}
+
+      {removing && (
+        <Dialog
+          title="删除这一页？"
+          description={`「${slideDisplayTitle(removing)}」及其内容会一并删除，且无法撤销。`}
+          className="max-w-sm"
+          onClose={() => setRemovingId(null)}
+          footer={
+            <>
+              <Button variant="ghost" size="sm" onClick={() => setRemovingId(null)}>
+                取消
+              </Button>
+              <Button
+                size="sm"
+                className="bg-negative hover:bg-negative/90 disabled:hover:bg-negative"
+                disabled={deleteSlide.isPending}
+                onClick={() =>
+                  deleteSlide.mutate(removing.id, {
+                    onSuccess: (result) => {
+                      setRemovingId(null)
+                      focusResult(result)
+                    },
+                  })
+                }
+              >
+                {deleteSlide.isPending ? '删除中…' : '删除'}
+              </Button>
+            </>
+          }
+        >
+          <p className="text-[13px] text-ink-soft">
+            当前共 {slides.length} 页，删除后剩 {slides.length - 1} 页。
+          </p>
+        </Dialog>
       )}
     </div>
   )
@@ -902,51 +967,35 @@ function OverflowMenu({
   disabled?: boolean
   onRegenerateAll: () => void
 }) {
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onPointer = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onPointer)
-    return () => document.removeEventListener('mousedown', onPointer)
-  }, [open])
-
   return (
-    <div ref={rootRef} className="relative">
-      <button
-        type="button"
-        aria-label="更多操作"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="grid size-8 place-items-center rounded-lg text-ink-muted transition-colors hover:bg-surface-soft hover:text-ink"
-      >
-        <MoreHorizontal className="size-4" />
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute top-full right-0 z-40 mt-2 w-52 overflow-hidden rounded-2xl border border-line bg-surface shadow-pop"
+    <MenuPopover
+      label="更多操作"
+      className="w-52"
+      trigger={({ open, toggle }) => (
+        <button
+          type="button"
+          aria-label="更多操作"
+          aria-expanded={open}
+          onClick={toggle}
+          className="grid size-8 place-items-center rounded-lg text-ink-muted transition-colors hover:bg-surface-soft hover:text-ink"
         >
-          <button
-            type="button"
-            role="menuitem"
-            disabled={disabled}
-            onClick={() => {
-              setOpen(false)
-              onRegenerateAll()
-            }}
-            className="w-full px-4 py-3 text-left text-[13px] text-ink-soft transition-colors hover:bg-surface-soft hover:text-ink disabled:opacity-50"
-          >
-            全部重新生成
-            <span className="mt-0.5 block text-xs text-ink-muted">会覆盖所有页面的现有内容</span>
-          </button>
-        </div>
+          <MoreHorizontal className="size-4" />
+        </button>
       )}
-    </div>
+    >
+      {({ close }) => (
+        <MenuItem
+          disabled={disabled}
+          hint="会覆盖所有页面的现有内容"
+          onSelect={() => {
+            close()
+            onRegenerateAll()
+          }}
+        >
+          全部重新生成
+        </MenuItem>
+      )}
+    </MenuPopover>
   )
 }
 

@@ -18,6 +18,11 @@ ContentDensity = Literal["concise", "medium", "detailed"]
 MIN_PAGE_COUNT = 5
 MAX_PAGE_COUNT = 20
 
+# 编辑器内可逐页增删，边界比创建/大纲阶段宽：那里的下限是为了让 LLM 一次生成
+# 出成篇的内容，而手工改页时用户清楚自己要什么，卡在 5 页只会挡路。
+MIN_DECK_PAGE_COUNT = 1
+MAX_DECK_PAGE_COUNT = 40
+
 
 LayoutMode = Literal["fixed", "flex"]
 

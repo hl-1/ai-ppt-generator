@@ -20,6 +20,16 @@ export function useDragSort(onMove: (from: number, to: number) => void, enabled 
     return {
       draggable: true,
       onDragStart: (event: DragEvent<HTMLElement>) => {
+        // 菜单等控件落在可拖拽父节点里时，按下会被当成拖拽起点，click 发不出去。
+        // 不笼统排除 button：胶片缩略图本身就是 button，还要能拖。
+        const target = event.target
+        if (
+          target instanceof Element &&
+          target.closest('a, input, textarea, select, [data-no-drag]')
+        ) {
+          event.preventDefault()
+          return
+        }
         fromRef.current = index
         setDraggingIndex(index)
         event.dataTransfer.effectAllowed = 'move'

@@ -6,6 +6,7 @@ from app.domain.content_density import DEFAULT_CONTENT_DENSITY, DEFAULT_PAGE_ROL
 from app.domain.outline import OutlineDraft
 from app.domain.slide_draft import FlexSlideDraft, SlideDraft
 from app.domain.slide_patch import BlockPatch
+from app.schemas.project import MAX_DECK_PAGE_COUNT
 
 ContentDensity = Literal["concise", "medium", "detailed"]
 PageRole = Literal["cover", "toc", "section", "content", "summary"]
@@ -29,8 +30,8 @@ class OutlineGenerationInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     audience: str | None = Field(default=None, max_length=100)
     tone: str = Field(min_length=1, max_length=32)
-    # 与产品页数区间对齐；工作流层不再二次放宽，避免模型按任意页数胡编
-    page_count: int = Field(ge=1, le=20)
+    # 上限跟着编辑器边界走：页面可以逐页手工增删，重新生成大纲时不该被旧上限卡住
+    page_count: int = Field(ge=1, le=MAX_DECK_PAGE_COUNT)
     content_density: ContentDensity = DEFAULT_CONTENT_DENSITY
     sections: list[OutlineSourceSection] = Field(default_factory=list)
 

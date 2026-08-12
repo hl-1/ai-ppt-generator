@@ -21,6 +21,10 @@ export type Deck = Omit<Schemas['DeckPublic'], 'slides'> & {
 }
 export type DeckStatus = Deck['status']
 export type SlideStatus = DeckSlide['status']
+/** 整页增删复制的响应：整份 deck + 操作后应选中的页 */
+export type DeckPageResult = Omit<Schemas['DeckPageResult'], 'deck'> & {
+  deck: Deck
+}
 export type DeckGenerateAccepted = Schemas['DeckGenerateAccepted']
 export type LayoutCandidate = Schemas['LayoutCandidatePublic']
 export type AiEditAction = Schemas['AiEditRequest']['action']

@@ -2,7 +2,7 @@ import hashlib
 import json
 
 from app.models.project import Project
-from app.schemas.project import MAX_PAGE_COUNT, MIN_PAGE_COUNT
+from app.schemas.project import MAX_DECK_PAGE_COUNT, MIN_DECK_PAGE_COUNT
 
 
 def _hash_payload(payload: dict) -> str:
@@ -49,10 +49,11 @@ def outline_input_matches(project: Project, stored: str | None) -> bool:
         return False
     if stored == project_input_signature(project):
         return True
-    # 旧签名含 page_count：只要 core 未变（任意合法页数能对上），就放行
+    # 旧签名含 page_count：只要 core 未变（任意合法页数能对上），就放行。
+    # 范围按编辑器边界取，页面手工增删后页数可能已经超出创建时的区间。
     return any(
         stored == _legacy_signature_with_page_count(project, count)
-        for count in range(MIN_PAGE_COUNT, MAX_PAGE_COUNT + 1)
+        for count in range(MIN_DECK_PAGE_COUNT, MAX_DECK_PAGE_COUNT + 1)
     )
 
 

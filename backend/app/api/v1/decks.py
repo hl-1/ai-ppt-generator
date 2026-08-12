@@ -79,6 +79,7 @@ from app.schemas.deck import (
     DeckEvent,
     DeckGenerateAccepted,
     DeckGenerateRequest,
+    DeckPageResult,
     DeckPublic,
     DiscardedOperationPublic,
     FlexLayoutUpdateRequest,
@@ -89,6 +90,7 @@ from app.schemas.deck import (
     RelayoutCandidate,
     RelayoutProposalPublic,
     RelayoutRequest,
+    SlideInsertRequest,
     SlideOrderRequest,
     SlidePublic,
     UnlockFlexRequest,
@@ -102,6 +104,13 @@ from app.services.deck import (
     request_cancel,
     sync_slides,
     to_deck_public,
+)
+from app.services.deck_pages import (
+    PageOperationError,
+    delete_page,
+    duplicate_page,
+    insert_blank_page,
+    neighbour_slide_id,
 )
 from app.services.media import media_url, store_image
 from app.services.quality import build_quality_report, project_to_content_deck
@@ -153,6 +162,29 @@ def _ensure_editable(slide: Slide, revision: int) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail="页面已被其他操作更新，请刷新后重试",
         )
+
+
+_PAGE_ERROR_STATUS: dict[str, int] = {
+    "page_limit": status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "outline_missing": status.HTTP_409_CONFLICT,
+    "last_page": status.HTTP_400_BAD_REQUEST,
+}
+
+
+def _page_error(error: PageOperationError) -> HTTPException:
+    return HTTPException(
+        status_code=_PAGE_ERROR_STATUS[error.code],
+        detail=error.message,
+    )
+
+
+async def _page_result(
+    session: AsyncSession,
+    project: Project,
+    slide_id: uuid.UUID | None,
+) -> DeckPageResult:
+    slides = await load_slides(session, project.id)
+    return DeckPageResult(deck=to_deck_public(project, slides), slide_id=slide_id)
 
 
 def _require_flex_tree(slide: Slide) -> FlexContainer:
@@ -809,6 +841,64 @@ async def reorder_slides(
     await session.commit()
     ordered = await load_slides(session, project.id)
     return [SlidePublic.model_validate(slide) for slide in ordered]
+
+
+@router.post(
+    "/slides",
+    response_model=DeckPageResult,
+    status_code=status.HTTP_201_CREATED,
+)
+async def insert_slide(
+    body: SlideInsertRequest,
+    project: OwnedProject,
+    session: SessionDep,
+) -> DeckPageResult:
+    """插入一张空白页，内容在本地生成，无需再跑一遍 AI。"""
+    slides = await load_slides(session, project.id)
+    _ensure_idle(slides)
+    after = _find_slide(slides, body.after_slide_id) if body.after_slide_id else None
+    try:
+        created = await insert_blank_page(session, project, slides, after=after)
+    except PageOperationError as error:
+        raise _page_error(error) from error
+    return await _page_result(session, project, created.id)
+
+
+@router.post(
+    "/slides/{slide_id}/duplicate",
+    response_model=DeckPageResult,
+    status_code=status.HTTP_201_CREATED,
+)
+async def duplicate_slide(
+    slide_id: uuid.UUID,
+    project: OwnedProject,
+    session: SessionDep,
+) -> DeckPageResult:
+    slides = await load_slides(session, project.id)
+    _ensure_idle(slides)
+    source = _find_slide(slides, slide_id)
+    try:
+        created = await duplicate_page(session, project, slides, source)
+    except PageOperationError as error:
+        raise _page_error(error) from error
+    return await _page_result(session, project, created.id)
+
+
+@router.delete("/slides/{slide_id}", response_model=DeckPageResult)
+async def delete_slide(
+    slide_id: uuid.UUID,
+    project: OwnedProject,
+    session: SessionDep,
+) -> DeckPageResult:
+    slides = await load_slides(session, project.id)
+    _ensure_idle(slides)
+    target = _find_slide(slides, slide_id)
+    focus = neighbour_slide_id(slides, target)
+    try:
+        await delete_page(session, project, slides, target)
+    except PageOperationError as error:
+        raise _page_error(error) from error
+    return await _page_result(session, project, focus)
 
 
 @router.get(
