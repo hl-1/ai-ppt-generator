@@ -51,7 +51,7 @@ class BulletsContent(SlotContentBase):
 
 class ImageContent(SlotContentBase):
     type: Literal["image"] = "image"
-    # 首版没有真实图源，模型只描述"这里该是什么图"，由图片节点后续填充
+    # 草稿阶段仅有 alt 占位描述，真实 url/source 由配图流程后续写入
     alt: str
 
 
@@ -115,9 +115,6 @@ SlotContent = Annotated[
 class SlideDraft(BaseModel):
     blocks: list[SlotContent] = Field(min_length=1)
     speaker_notes: str | None = None
-
-
-# --- flex 模式：本地 id + 布局树，无坐标 ---
 
 
 class FlexBlockBase(BaseModel):

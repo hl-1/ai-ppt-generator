@@ -12,7 +12,7 @@ from app.domain.layout import get_layout
 class PlacedBlock(BaseModel):
     block_id: str
     rect: Rect
-    # TextStyleName；用 str 避免与 layout 强耦合
+    # 文本样式名（对应 TextStyleName）；用 str 避免与 layout 模块强耦合
     text_style: str | None = None
 
 

@@ -43,7 +43,10 @@ export function getSlideSaveHandlers(slideId: string): SlideSaveHandlers | null 
   return registry.get(slideId) ?? null
 }
 
-/** FlexEditLayer 注册，侧栏通过 requestInsertDrag 发起插入拖放 */
+/**
+ * 注册某页的插入拖放启动器。
+ * starter 收到 payload（块类型或预设）与指针 client 坐标后开始画布内拖放。
+ */
 export function registerInsertDragStarter(
   slideId: string,
   starter: InsertDragStarter,

@@ -195,7 +195,7 @@ def _validate_fixed_slide(
             )
             continue
 
-        # 字数上限是提示词约束依据，保留；度量溢出是更准的一层 warning
+        # 字数上限约束提示词；度量溢出作为更准确的一层 warning
         issues.extend(_capacity_issues(slide.id, slot, block))
         placement = placed.get(block.id)
         if placement is not None:

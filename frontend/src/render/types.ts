@@ -7,7 +7,7 @@ type Schemas = components['schemas']
 /**
  * 布局树以 flexLayout 里的 FlexContainer 为准：schema 生成的版本把 gap_pt / grow
  * 标成必填，而编辑器构造出的树可以省略它们，两套同名类型混用会让赋值不兼容。
- * blocks 含本地 Cards/Callout（schema 尚未 regenerate）。
+ * blocks 用本地 Block 联合（含 Cards/Callout），与本文件 EditableBlockCommit 一并维护。
  */
 export type Slide = Omit<Schemas['Slide'], 'layout_tree' | 'blocks'> & {
   layout_tree?: FlexContainer | null
@@ -23,7 +23,7 @@ export type ChartBlock = Schemas['ChartBlock']
 export type TableBlock = Schemas['TableBlock']
 export type KpiBlock = Schemas['KpiBlock']
 
-/** schema 尚未 regenerate 时的本地块类型，与 backend content.py 对齐 */
+/** 本地块类型，字段与 backend content.py / OpenAPI 对齐 */
 export type CardItem = {
   title: string
   desc: string
@@ -61,7 +61,7 @@ export type Block =
   | CalloutBlock
 
 export type Layout = Schemas['Layout']
-/** schema Slot.accepts 尚未含 cards/callout */
+/** accepts 与本地 Block['type'] 对齐，避免与 schema 字面量联合漂移 */
 export type Slot = Omit<Schemas['Slot'], 'accepts'> & {
   accepts: Array<Block['type']>
 }
@@ -93,9 +93,6 @@ export const SAFE_AREA: Rect = {
   w: (CANVAS_WIDTH_PT - 2 * PAGE_MARGIN_X_PT) / CANVAS_WIDTH_PT,
   h: (CANVAS_HEIGHT_PT - PAGE_MARGIN_TOP_PT - PAGE_MARGIN_BOTTOM_PT) / CANVAS_HEIGHT_PT,
 }
-
-export const SAFE_AREA_WIDTH_PT = SAFE_AREA.w * CANVAS_WIDTH_PT
-export const SAFE_AREA_HEIGHT_PT = SAFE_AREA.h * CANVAS_HEIGHT_PT
 
 /** 就地编辑的字段级变更；多字段块由保存队列合并，避免并发丢字 */
 export type EditableBlockCommit =

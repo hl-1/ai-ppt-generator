@@ -9,17 +9,10 @@ from typing import Literal
 ContentDensity = Literal["concise", "medium", "detailed"]
 PageRole = Literal["cover", "toc", "section", "content", "summary"]
 
-CONTENT_DENSITIES: tuple[ContentDensity, ...] = ("concise", "medium", "detailed")
 PAGE_ROLES: tuple[PageRole, ...] = ("cover", "toc", "section", "content", "summary")
 
 DEFAULT_CONTENT_DENSITY: ContentDensity = "medium"
 DEFAULT_PAGE_ROLE: PageRole = "content"
-
-DENSITY_LABELS: dict[ContentDensity, str] = {
-    "concise": "简洁",
-    "medium": "中等",
-    "detailed": "详细",
-}
 
 # 空话 / 占位（prompt 禁写 + QA 检出）
 EMPTY_PHRASE_PATTERNS: tuple[re.Pattern[str], ...] = (

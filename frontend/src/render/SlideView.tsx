@@ -407,7 +407,6 @@ function SkinDecorationView({
     )
   }
 
-  // number_badge
   return (
     <div
       aria-hidden

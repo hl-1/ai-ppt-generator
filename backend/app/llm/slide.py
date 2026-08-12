@@ -78,18 +78,12 @@ class DeepSeekSlideGenerator:
     def _finalize_flex_draft(
         self, draft: FlexSlideDraft, payload: SlideGenerationInput
     ) -> FlexSlideDraft:
-        """校验叶子与块 id；非法树时用预设种子替换。"""
+        """规范化布局树并校验叶子与块 id；不一致或规范化异常时回退为预设种子树。"""
         block_ids = {block.id for block in draft.blocks}
         if len(block_ids) != len(draft.blocks):
             raise InvalidSlideOutputError("内容块 id 重复")
 
-        try:
-            tree = normalize(draft.layout_tree)
-            leaf_ids = set(iter_leaf_block_ids(tree))
-            if leaf_ids != block_ids:
-                raise InvalidSlideOutputError("布局树叶子与内容块 id 不一致")
-            return draft.model_copy(update={"layout_tree": tree})
-        except Exception:
+        def with_seeded_tree() -> FlexSlideDraft:
             refs = [BlockRef(id=block.id, type=block.type) for block in draft.blocks]
             seeded = seed_layout_for_blocks(
                 refs,
@@ -97,6 +91,17 @@ class DeepSeekSlideGenerator:
                 key_points=list(payload.key_points),
             )
             return draft.model_copy(update={"layout_tree": seeded})
+
+        try:
+            # normalize 是纯变换，无稳定领域异常类型；宽捕获以保留「树异常 → 种子」降级
+            tree = normalize(draft.layout_tree)
+        except Exception:
+            return with_seeded_tree()
+
+        leaf_ids = set(iter_leaf_block_ids(tree))
+        if leaf_ids != block_ids:
+            return with_seeded_tree()
+        return draft.model_copy(update={"layout_tree": tree})
 
     def _system_prompt(self, layout: Layout) -> str:
         return (

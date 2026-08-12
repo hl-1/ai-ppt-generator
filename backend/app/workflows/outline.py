@@ -25,7 +25,7 @@ def prepare_outline_input(
     max_total_chars: int = MAX_TOTAL_SOURCE_CHARS,
     max_section_chars: int = MAX_SECTION_CHARS,
 ) -> OutlineGenerationInput:
-    """清理并裁剪来源小节，供工作流 prepare 节点与单测共用。"""
+    """清理并裁剪来源小节，供大纲准备流程与单测共用。"""
     prepared_sections: list[OutlineSourceSection] = []
     used_chars = 0
 

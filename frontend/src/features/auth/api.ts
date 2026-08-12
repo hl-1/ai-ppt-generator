@@ -1,21 +1,12 @@
 import { request } from '@/api/client'
+import type { components } from '@/api/schema'
 
-export interface UserPublic {
-  id: string
-  email: string
-  created_at: string
-}
+type Schemas = components['schemas']
 
-export interface TokenResponse {
-  access_token: string
-  token_type: string
-  user: UserPublic
-}
-
-export interface Credentials {
-  email: string
-  password: string
-}
+export type UserPublic = Schemas['UserPublic']
+export type TokenResponse = Schemas['TokenResponse']
+/** login / register 请求体字段一致，统一用 LoginRequest */
+export type Credentials = Schemas['LoginRequest']
 
 export function register(payload: Credentials) {
   return request<TokenResponse>('/auth/register', {

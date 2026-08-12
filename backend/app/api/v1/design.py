@@ -8,9 +8,7 @@ from app.domain.layout import Layout, load_layouts
 from app.domain.sample import load_sample_deck
 from app.domain.theme import Theme, load_themes
 from app.domain.validation import StructureIssue, validate_deck
-from app.render.pptx import render_deck_to_pptx
-
-PPTX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+from app.render.pptx import PPTX_MEDIA_TYPE, render_deck_to_pptx
 
 router = APIRouter(prefix="/design", tags=["design"])
 
@@ -41,8 +39,7 @@ def get_sample_deck(theme_id: str | None = Query(default=None)) -> Deck:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"未知主题：{theme_id}",
         )
-    # 换主题只替换 theme_id，内容与页序原样保留，
-    # 这正是"主题切换不改变内容"这条验收项的实现方式。
+    # 换主题只替换 theme_id，内容与页序原样保留
     return deck.model_copy(update={"theme_id": theme_id})
 
 

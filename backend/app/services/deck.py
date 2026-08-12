@@ -118,24 +118,25 @@ async def sync_slides(
             slide.title = page.title
             if regenerate_all or slide.layout_id != page.layout_id:
                 slide.layout_id = page.layout_id
-                _reset(slide, layout_mode=project_mode)
-            # 项目已是 flex，但旧页仍停在 fixed/无树：下次生成时自愈重跑
+                reset_slide_for_regeneration(slide, layout_mode=project_mode)
+            # flex 项目下，非 flex 或缺布局树的 ready 页重置为待生成
             elif (
                 project_mode == "flex"
                 and slide.status == "ready"
                 and (slide.layout_mode != "flex" or slide.layout_tree is None)
             ):
-                _reset(slide, layout_mode="flex")
+                reset_slide_for_regeneration(slide, layout_mode="flex")
 
         if slide.status != "ready":
-            _reset(slide, layout_mode=project_mode)
+            reset_slide_for_regeneration(slide, layout_mode=project_mode)
             pending.append(slide)
 
     await session.flush()
     return pending
 
 
-def _reset(slide: Slide, *, layout_mode: str = "flex") -> None:
+def reset_slide_for_regeneration(slide: Slide, *, layout_mode: str = "flex") -> None:
+    """把一页退回待生成：清空内容与布局树，并归正 layout_mode。"""
     slide.status = "pending"
     slide.blocks = []
     slide.issues = []

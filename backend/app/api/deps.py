@@ -12,8 +12,8 @@ from app.core.queue import get_arq_pool
 from app.core.security import decode_access_token
 from app.models.user import User
 
-# auto_error=False：默认行为在缺少凭证时抛 403，语义不对且 detail 是英文。
-# 关掉后由本模块统一抛 401，前端只需识别一种未登录状态。
+# 关闭 HTTPBearer 默认的缺凭证自动报错（默认 403 且英文 detail），
+# 改由本模块统一抛 401，前端只需识别一种未登录状态。
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 

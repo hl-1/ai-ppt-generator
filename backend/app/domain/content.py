@@ -108,7 +108,7 @@ class Slide(BaseModel):
     speaker_notes: str | None = None
     # 乐观锁版本号：AI 修改提交时带上它，不一致即判定冲突而非后写覆盖
     revision: int = 1
-    # 缺省 fixed：样本页与旧夹具未写该字段；flex 页须显式带 layout_tree
+    # 缺省 fixed，兼容未写该字段的样本；flex 页须显式带 layout_tree
     layout_mode: Literal["fixed", "flex"] = "fixed"
     layout_tree: FlexContainer | None = None
 
@@ -116,8 +116,8 @@ class Slide(BaseModel):
 class Deck(BaseModel):
     """PPT 的统一内容模型。
 
-    内容、布局、主题三者分离：这里只描述"有什么内容、放在哪个槽位"，
-    槽位几何来自布局，视觉表现来自主题。
+    内容、布局、主题三者分离：这里描述页面块内容；
+    fixed 页几何来自布局槽位，flex 页几何来自 layout_tree，视觉表现来自主题。
     """
 
     id: str

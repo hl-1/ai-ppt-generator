@@ -52,7 +52,7 @@ export function useDeck(projectId: string, enabled = true) {
   })
 }
 
-/** 三个写操作只有路径与请求体不同，成功后都要刷新页面列表与项目状态 */
+/** 写操作共用：路径与请求体由调用方提供，成功后刷新页面列表与项目状态 */
 function useDeckMutation<TVariables>(
   projectId: string,
   toRequest: (variables: TVariables) => { path: string; body?: unknown },
@@ -320,37 +320,6 @@ export function unlockSlideFlex(
   )
 }
 
-export function useCreateSlideBlock(projectId: string, slideId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (body: {
-      revision: number
-      type: FlexBlockType
-      parent_id: string
-      index?: number
-    }) => createSlideBlock(projectId, slideId, body),
-    onSuccess: (slide) => commitSlideToCache(queryClient, projectId, slide),
-  })
-}
-
-export function useDeleteSlideBlock(projectId: string, slideId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (vars: { blockId: string; revision: number }) =>
-      deleteSlideBlock(projectId, slideId, vars.blockId, { revision: vars.revision }),
-    onSuccess: (slide) => commitSlideToCache(queryClient, projectId, slide),
-  })
-}
-
-export function useUpdateFlexLayout(projectId: string, slideId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (body: { revision: number; layout_tree: FlexContainer }) =>
-      updateFlexLayout(projectId, slideId, body),
-    onSuccess: (slide) => commitSlideToCache(queryClient, projectId, slide),
-  })
-}
-
 export function useUnlockSlideFlex(projectId: string, slideId: string) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -369,18 +338,6 @@ export function useProposeRelayout(projectId: string, slideId: string) {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-  })
-}
-
-export function useApplyRelayout(projectId: string, slideId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (body: { revision: number; layout_tree: FlexContainer }) =>
-      request<DeckSlide>(`/projects/${projectId}/deck/slides/${slideId}/relayout/apply`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
-    onSuccess: (slide) => commitSlideToCache(queryClient, projectId, slide),
   })
 }
 

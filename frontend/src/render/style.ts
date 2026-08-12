@@ -1,6 +1,5 @@
 import type { CSSProperties } from 'react'
 import {
-  CANVAS_HEIGHT_PT,
   CANVAS_WIDTH_PT,
   type ColorToken,
   type Rect,
@@ -33,10 +32,6 @@ export function rectToStyle(rect: Rect): CSSProperties {
  */
 export function pt(value: number): string {
   return `${(value / CANVAS_WIDTH_PT) * 100}cqw`
-}
-
-export function ptVertical(value: number): string {
-  return `${(value / CANVAS_HEIGHT_PT) * 100}cqh`
 }
 
 /**

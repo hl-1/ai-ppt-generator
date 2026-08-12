@@ -1,6 +1,6 @@
-import { Presentation } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
+import { BrandMark } from '@/components/BrandMark'
 import { Button } from '@/components/ui/Button'
 import { TextField } from '@/components/ui/TextField'
 import { login, register } from '@/features/auth/api'
@@ -73,9 +73,7 @@ export default function AuthPage() {
     <div className="bg-aurora flex min-h-screen items-center justify-center px-6 py-16">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <span className="mx-auto mb-5 grid size-11 place-items-center rounded-2xl bg-accent text-white shadow-card">
-            <Presentation className="size-5" />
-          </span>
+          <BrandMark className="mx-auto mb-5 size-11 shadow-card" />
           <h1 className="text-2xl font-semibold tracking-tight">{copy.title}</h1>
           <p className="mt-2 text-sm text-ink-muted">
             把一段想法变成可以直接编辑的 16:9 PPT

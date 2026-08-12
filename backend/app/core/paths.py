@@ -1,6 +1,5 @@
 from pathlib import Path
 
-# app/core/paths.py → app/core → app → backend → 仓库根
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # 布局与主题的单一真源。Web 端与 PPTX 端加载的是同一批文件，

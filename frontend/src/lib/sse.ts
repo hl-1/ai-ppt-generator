@@ -1,3 +1,4 @@
+import { API_PREFIX } from '@/api/client'
 import { tokenStore } from '@/features/auth/token'
 
 /**
@@ -12,7 +13,7 @@ export async function consumeEventStream<T>(
   onEvent: (event: T) => void,
 ) {
   const token = tokenStore.get()
-  const response = await fetch(`/api/v1${path}`, {
+  const response = await fetch(`${API_PREFIX}${path}`, {
     headers: {
       Accept: 'text/event-stream',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),

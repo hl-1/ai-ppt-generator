@@ -90,7 +90,7 @@ def slide_roles_map(project: Project, slides: list[Slide]) -> dict[str, str]:
 
 
 def build_quality_report(project: Project, slides: list[Slide]) -> ExportCheckReport:
-    """可复用的质量报告入口；第 13 节点导出接口应直接调用。"""
+    """可复用的质量报告入口，供导出等接口直接调用。"""
     deck = project_to_content_deck(project, slides)
     return run_export_check(
         deck,

@@ -134,7 +134,6 @@ export function PresentMode({
       onMouseMove={bumpChrome}
       onPointerDown={bumpChrome}
     >
-      {/* 全幅 16:9：按视口 contain 居中，无留白卡片感 */}
       <div className="absolute inset-0 grid place-items-center overflow-hidden">
         <div
           key={slide.id}
@@ -148,7 +147,7 @@ export function PresentMode({
         </div>
       </div>
 
-      {/* 点击左右翻页（避开底部进度与顶部控件） */}
+      {/* 左右热区翻页；z-index 低于顶栏/底栏，避免抢走控件点击 */}
       <button
         type="button"
         aria-label="上一页"
@@ -170,7 +169,6 @@ export function PresentMode({
         }}
       />
 
-      {/* 进入提示 */}
       <div
         className={cn(
           'pointer-events-none absolute top-5 right-5 z-[3] rounded-md bg-black/70 px-3 py-1.5 text-[12px] text-white/90 shadow-pop backdrop-blur-sm transition-opacity duration-500',
@@ -180,7 +178,6 @@ export function PresentMode({
         退出演示 Esc
       </div>
 
-      {/* 顶部控件：闲置淡出 */}
       <div
         className={cn(
           'absolute inset-x-0 top-0 z-[3] flex items-start justify-end gap-1 bg-gradient-to-b from-black/55 to-transparent px-4 pt-3 pb-10 transition-opacity duration-300',
@@ -198,7 +195,6 @@ export function PresentMode({
         </ChromeIconButton>
       </div>
 
-      {/* 底栏：页码 + 分段进度 */}
       <div
         className={cn(
           'absolute inset-x-0 bottom-0 z-[3] bg-gradient-to-t from-black/60 to-transparent px-5 pt-10 pb-4 transition-opacity duration-300',

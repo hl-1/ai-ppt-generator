@@ -10,7 +10,7 @@ export const ACCEPTED_IMAGE = 'image/png,image/jpeg,image/webp'
  * 布局树统一用渲染器侧的 FlexContainer。
  * schema 生成的版本把 gap_pt / grow 标成必填，而编辑器构造出的树可以省略它们，
  * 两套同名类型混用会让赋值不兼容（tsc -b 报 "Two different types with this name"）。
- * blocks 含本地 Cards/Callout（schema 尚未 regenerate）。
+ * blocks 用渲染侧本地 Block 联合（含 Cards/Callout），与编辑提交类型同文件维护。
  */
 export type DeckSlide = Omit<Schemas['SlidePublic'], 'layout_tree' | 'blocks'> & {
   layout_tree?: FlexContainer | null
@@ -20,7 +20,6 @@ export type Deck = Omit<Schemas['DeckPublic'], 'slides'> & {
   slides: DeckSlide[]
 }
 export type DeckStatus = Deck['status']
-export type SlideStatus = DeckSlide['status']
 /** 整页增删复制的响应：整份 deck + 操作后应选中的页 */
 export type DeckPageResult = Omit<Schemas['DeckPageResult'], 'deck'> & {
   deck: Deck
@@ -37,11 +36,13 @@ export type AiEditPatch =
   | Schemas['TablePatch']
   | Schemas['CardsPatch']
   | Schemas['CalloutPatch']
-export type DiscardedOperation = Schemas['DiscardedOperationPublic']
 export type StructureIssue = Schemas['StructureIssue']
 export type ExportCheckReport = Schemas['ExportCheckReport']
 
-/** relayout 接口尚未写入 OpenAPI schema 时的本地契约 */
+/**
+ * relayout 候选的本地契约：layout_tree 用渲染侧 FlexContainer（可省略 gap_pt/grow），
+ * 与 schema RelayoutCandidate 的强制必填版区分。
+ */
 export interface RelayoutCandidate {
   id: string
   layout_tree: FlexContainer
@@ -50,7 +51,7 @@ export interface RelayoutProposal {
   revision: number
   candidates: RelayoutCandidate[]
 }
-/** 回读验证问题不在 OpenAPI schema 里，与后端 VerifyIssue 字段对齐 */
+/** 导出回读验证问题：OpenAPI 未覆盖，字段与后端 VerifyIssue 对齐 */
 export interface ExportVerifyIssue {
   check: string
   slide_index: number | null
@@ -80,14 +81,6 @@ export type CalloutBlockUpdate = {
   variant: 'note' | 'source'
 }
 
-export type BlockUpdate =
-  | Schemas['TextBlockUpdate']
-  | Schemas['BulletsBlockUpdate']
-  | Schemas['KpiBlockUpdate']
-  | Schemas['TableBlockUpdate']
-  | ChartBlockUpdate
-  | CardsBlockUpdate
-  | CalloutBlockUpdate
 /** Omit 不会自动分发联合类型，需逐个剥掉 revision */
 export type BlockUpdateBody =
   | Omit<Schemas['TextBlockUpdate'], 'revision'>

@@ -162,7 +162,7 @@ async def confirm_outline(
             status_code=status.HTTP_409_CONFLICT,
             detail="生成大纲后输入材料或设置已变化，请重新生成",
         )
-    # 旧指纹（含 page_count）确认通过后写回新公式，避免反复兼容比对
+    # 匹配到 legacy 签名时升级为当前指纹
     migrated = migrate_outline_signature(project, outline.input_signature)
     if migrated is not None:
         outline.input_signature = migrated

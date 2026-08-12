@@ -134,7 +134,6 @@ class DeepSeekSlideEditGenerator:
             "action": payload.action,
             "blocks": [_dump_edit_block(block) for block in payload.blocks],
         }
-        # flex 页的版面由布局树决定，没有槽位容量可给
         if layout is not None:
             body["slots"] = [
                 _slot_spec(slot)

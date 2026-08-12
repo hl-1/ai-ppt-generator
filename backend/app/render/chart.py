@@ -210,7 +210,7 @@ def _clear_chart_chrome(chart: Chart) -> None:
     _set_transparent_sppr(chart_space, before=qn("c:txPr"))
     plot_area = chart_el.find(qn("c:plotArea"))
     if plot_area is not None:
-        # CT_PlotArea: layout?, (chart group)+, (axis)*, dTable?, spPr?
+        # OOXML 要求 plotArea 子元素顺序固定，spPr 须落在轴与数据表之后
         _set_transparent_sppr(plot_area)
 
 

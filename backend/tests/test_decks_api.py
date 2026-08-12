@@ -3,6 +3,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -30,6 +31,7 @@ from app.llm.base import SlideGenerationInput
 from app.llm.errors import InvalidSlideOutputError
 from app.main import app
 from app.models.project import Project
+from app.models.slide import Slide
 from app.services.deck import clear_cancel, request_cancel
 from app.worker.deck_tasks import generate_deck
 
@@ -237,6 +239,89 @@ async def test_generate_materializes_pending_slides(client: AsyncClient, queue: 
     assert deck.json()["status"] == "generating"
     assert [slide["position"] for slide in deck.json()["slides"]] == [1, 2, 3, 4, 5]
     assert all(slide["status"] == "pending" for slide in deck.json()["slides"])
+
+
+async def _project_status(project_id: str) -> str:
+    async with async_session_factory() as session:
+        record = await session.get(Project, uuid.UUID(project_id))
+        assert record is not None
+        return record.status
+
+
+@pytest.mark.asyncio
+async def test_generate_restores_status_when_enqueue_fails(
+    client: AsyncClient, queue: FakeQueue
+) -> None:
+    headers = await _sign_up(client)
+    project = await _confirmed_project(client, headers)
+    assert await _project_status(project["id"]) == "outline_ready"
+
+    async def boom(*_args, **_kwargs):
+        raise RedisError("redis down")
+
+    queue.enqueue_job = boom  # type: ignore[method-assign]
+    result = await client.post(
+        f"/api/v1/projects/{project['id']}/deck/generate",
+        json={},
+        headers=headers,
+    )
+    assert result.status_code == 503
+    assert result.json()["detail"] == "任务队列暂时不可用"
+    assert await _project_status(project["id"]) == "outline_ready"
+
+
+@pytest.mark.asyncio
+async def test_retry_restores_status_when_enqueue_fails(
+    client: AsyncClient, queue: FakeQueue
+) -> None:
+    headers = await _sign_up(client)
+    project = await _confirmed_project(client, headers)
+    await client.post(f"/api/v1/projects/{project['id']}/deck/generate", json={}, headers=headers)
+    slide_ids = queue.calls[0][0][2]
+    await generate_deck({"slide_generator": FakeSlideGenerator()}, project["id"], slide_ids)
+    assert await _project_status(project["id"]) == "ready"
+
+    deck = (await client.get(f"/api/v1/projects/{project['id']}/deck", headers=headers)).json()
+    target_id = deck["slides"][0]["id"]
+
+    async def boom(*_args, **_kwargs):
+        raise RedisError("redis down")
+
+    queue.enqueue_job = boom  # type: ignore[method-assign]
+    result = await client.post(
+        f"/api/v1/projects/{project['id']}/deck/slides/{target_id}/retry",
+        headers=headers,
+    )
+    assert result.status_code == 503
+    assert result.json()["detail"] == "任务队列暂时不可用"
+    assert await _project_status(project["id"]) == "ready"
+
+
+@pytest.mark.asyncio
+async def test_retry_clears_layout_tree(client: AsyncClient, queue: FakeQueue) -> None:
+    headers = await _sign_up(client)
+    project = await _confirmed_project(client, headers, layout_mode="flex")
+    await client.post(f"/api/v1/projects/{project['id']}/deck/generate", json={}, headers=headers)
+    slide_ids = queue.calls[0][0][2]
+    await generate_deck({"slide_generator": FakeSlideGenerator()}, project["id"], slide_ids)
+
+    deck = (await client.get(f"/api/v1/projects/{project['id']}/deck", headers=headers)).json()
+    target = deck["slides"][0]
+    assert target["layout_tree"] is not None
+    assert target["blocks"]
+
+    retry = await client.post(
+        f"/api/v1/projects/{project['id']}/deck/slides/{target['id']}/retry",
+        headers=headers,
+    )
+    assert retry.status_code == 202
+
+    async with async_session_factory() as session:
+        slide = await session.get(Slide, uuid.UUID(target["id"]))
+        assert slide is not None
+        assert slide.layout_tree is None
+        assert slide.blocks == []
+        assert slide.status == "pending"
 
 
 @pytest.mark.asyncio

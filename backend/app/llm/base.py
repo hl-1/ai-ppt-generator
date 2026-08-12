@@ -122,7 +122,6 @@ class SlideEditInput(BaseModel):
     action: SlideEditAction
     instruction: str | None = None
     blocks: list[SlideEditBlockInput] = Field(default_factory=list)
-    # 修复轮次带上上一轮的结构问题，让模型定向改而不是从头重来
     issues: list[str] = Field(default_factory=list)
 
 

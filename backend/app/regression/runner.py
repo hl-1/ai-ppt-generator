@@ -16,7 +16,7 @@ from app.regression.corpus import DENSITIES, load_corpus_decks
 from app.render.pptx import render_deck_to_pptx
 from app.render.verify import verify_pptx
 
-# 验收标准：溢出槽位比例低于 5%
+# 溢出槽位比例阈值：低于 5%
 OVERFLOW_RATE_LIMIT = 0.05
 
 

@@ -48,7 +48,7 @@ export function useUpdateOutline(projectId: string) {
   })
 }
 
-function useRevisionMutation(projectId: string, action: 'confirm' | 'unconfirm') {
+function useRevisionMutation(projectId: string, action: 'confirm') {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (revision: number) =>
@@ -66,8 +66,4 @@ function useRevisionMutation(projectId: string, action: 'confirm' | 'unconfirm')
 
 export function useConfirmOutline(projectId: string) {
   return useRevisionMutation(projectId, 'confirm')
-}
-
-export function useUnconfirmOutline(projectId: string) {
-  return useRevisionMutation(projectId, 'unconfirm')
 }

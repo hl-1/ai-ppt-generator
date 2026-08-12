@@ -7,7 +7,7 @@ import type { Outline, OutlinePage } from '@/features/outline/types'
 import { useConfirmAndGenerate } from '@/features/outline/useConfirmAndGenerate'
 import { useOutlineProgress } from '@/features/outline/useOutlineProgress'
 import { useUpdateProject } from '@/features/projects/api'
-import type { ProjectDetail } from '@/features/projects/types'
+import { PAGE_COUNT_RANGE, type ProjectDetail } from '@/features/projects/types'
 import { moveItem, useDragSort } from '@/hooks/useDragSort'
 import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
@@ -16,9 +16,6 @@ import { ThemeCover } from '@/render/ThemeCover'
 
 const MAX_KEY_POINTS = 5
 const MIN_KEY_POINTS = 2
-/** 与后端 MIN_PAGE_COUNT / MAX_PAGE_COUNT 对齐 */
-const MIN_PAGE_COUNT = 5
-const MAX_PAGE_COUNT = 20
 
 export function OutlineWorkspace({ project }: { project: ProjectDetail }) {
   const outlineQuery = useOutline(project.id)
@@ -124,7 +121,7 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
         updateProject.reset()
         launch.reset()
       } catch {
-        // 错误由 actionError 展示
+        // 失败信息由 actionError 统一展示
       }
     },
   })
@@ -215,14 +212,14 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
                 dragProps={drag.itemProps(index)}
                 dragOver={drag.overIndex === index}
                 dragging={drag.draggingIndex === index}
-                canRemove={pages.length > MIN_PAGE_COUNT}
+                canRemove={pages.length > PAGE_COUNT_RANGE.min}
                 onChange={(next) => changePage(index, next)}
                 onRemove={() => setPages((current) => current.filter((_, i) => i !== index))}
               />
             ))}
           </ol>
 
-          {pages.length < MAX_PAGE_COUNT && (
+          {pages.length < PAGE_COUNT_RANGE.max && (
             <button
               type="button"
               onClick={() => setPages((current) => [...current, blankPage(current.length + 1)])}
@@ -238,8 +235,8 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
               页数已改为 {pages.length}，保存时会同步目标页数。
             </p>
           )}
-          {pages.length === MIN_PAGE_COUNT && (
-            <p className="mt-3 text-center text-xs text-ink-muted">最少 {MIN_PAGE_COUNT} 页。</p>
+          {pages.length === PAGE_COUNT_RANGE.min && (
+            <p className="mt-3 text-center text-xs text-ink-muted">最少 {PAGE_COUNT_RANGE.min} 页。</p>
           )}
           {incomplete && (
             <p className="mt-3 text-center text-xs text-warning">

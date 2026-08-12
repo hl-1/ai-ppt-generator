@@ -486,7 +486,7 @@ async def test_relayout_propose_returns_preset_candidates(
             return []
 
     monkeypatch.setattr(
-        "app.api.v1.decks.create_relayout_generator",
+        "app.api.v1.deck.layout.create_relayout_generator",
         lambda: _FakeRelayout(),
     )
 

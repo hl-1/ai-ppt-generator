@@ -10,7 +10,6 @@ from pydantic import BaseModel
 from app.domain.flex_layout import FlexContainer, GroupPreset
 from app.domain.flex_solve import SkinFrame, solve_with_frames
 from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, Rect
-from app.domain.slide_geometry import PlacedBlock
 
 SkinKind = Literal[
     "fill_box",
@@ -38,15 +37,11 @@ class SkinDecoration(BaseModel):
     radius_pt: float = 0
 
 
-def iter_skin_decorations(
-    tree: FlexContainer, placed: list[PlacedBlock] | None = None
-) -> list[SkinDecoration]:
+def iter_skin_decorations(tree: FlexContainer) -> list[SkinDecoration]:
     """遍历布局树，为带 preset 的容器子区域生成皮肤装饰。
 
     装饰使用 inset 前的外框；内容几何已由 solver 内缩。
-    placed 参数保留以便调用方复用，当前实现以 solve_with_frames 为准。
     """
-    _ = placed
     _, frames = solve_with_frames(tree)
     return decorations_from_frames(frames)
 

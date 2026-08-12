@@ -252,7 +252,7 @@ class AiEditRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_instruction_for_instruct(self) -> Self:
-        # 对话指令模式必须带有效 instruction；旧三动作仍可无指令调用
+        # action=instruct 时 instruction 必填非空；其余 action 可不带指令
         if self.action == "instruct":
             text = (self.instruction or "").strip()
             if not text:

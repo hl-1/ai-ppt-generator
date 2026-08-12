@@ -62,20 +62,17 @@ class BlockRef(BaseModel):
 
 
 @lru_cache(maxsize=4)
-def load_presets(*, include_golden: bool = False) -> tuple[FlexPreset, ...]:
+def load_presets() -> tuple[FlexPreset, ...]:
     if not PRESETS_DIR.is_dir():
         return ()
     presets: list[FlexPreset] = []
     for path in sorted(PRESETS_DIR.glob("*.json")):
-        if not include_golden and path.name.startswith("golden"):
+        # 跳过 golden* 回归样本，不进入生产预设池
+        if path.name.startswith("golden"):
             continue
         raw = json.loads(path.read_text(encoding="utf-8"))
         presets.append(FlexPreset.model_validate(raw))
     return tuple(presets)
-
-
-def clear_preset_cache() -> None:
-    load_presets.cache_clear()
 
 
 def pick_preset_for_blocks(
@@ -250,7 +247,7 @@ def _remap_node(node: FlexNode, remaining: list[BlockRef]) -> FlexNode:
     if isinstance(node, FlexLeaf):
         match = _claim_block(node.block_id, remaining)
         if match is None:
-            # 占位：稍后会被父级过滤掉（用空 id 标记）
+            # 空 id 叶子由父级过滤
             return node.model_copy(update={"block_id": ""})
         return FlexLeaf(
             id=f"leaf-{match.id}",

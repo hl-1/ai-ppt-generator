@@ -8,7 +8,7 @@ import {
   edgeCornerInset,
   gripOffsetStyle,
   resolveCornerAxisLock,
-} from '../src/features/deck/FlexEditLayer.tsx'
+} from '../src/features/deck/flexEditGeometry.ts'
 import { normalizeGrows } from '../src/features/deck/flexNormalize.ts'
 import {
   GROW_MIN,

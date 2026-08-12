@@ -54,6 +54,8 @@ from app.services.media import load_image, media_key_from_url
 
 logger = logging.getLogger(__name__)
 
+PPTX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
 # 空白版式。用空白版式而非内置的标题版式，是因为槽位几何完全由我们的
 # 布局数据决定，套用 PowerPoint 自带占位符反而会引入我们控制不了的位置。
 BLANK_LAYOUT_INDEX = 6
@@ -307,7 +309,6 @@ class PptxRenderer:
         if box.has_fill:
             color = fill
         else:
-            # 透明填充 + 边框
             left, top, width, height = (Emu(value) for value in rect.to_emu())
             shape = pptx_slide.shapes.add_shape(shape_type, left, top, width, height)
             shape.fill.background()

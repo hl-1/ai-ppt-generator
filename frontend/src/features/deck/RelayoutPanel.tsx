@@ -11,7 +11,7 @@ import { SlideThumbnail } from '@/render/SlideView'
 import type { Theme } from '@/render/types'
 
 /**
- * Gamma 式「换排布」右侧 dock：点缩略图即应用，Undo 恢复上一棵树。
+ * 「换排布」右侧面板：点缩略图即应用候选布局树，Undo 恢复上一棵。
  */
 export function RelayoutDock({
   projectId,

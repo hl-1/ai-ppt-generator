@@ -27,15 +27,6 @@ export function useProject(id: string) {
   })
 }
 
-export function useCreateProject() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (body: ProjectCreate) =>
-      request<ProjectDetail>('/projects', { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: listKey }),
-  })
-}
-
 export function useUpdateProject(id: string) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -144,41 +135,5 @@ export function useCreateDraft() {
       return project
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: listKey }),
-  })
-}
-
-export function useAddTextSource(projectId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (body: { kind: 'topic' | 'text'; content: string }) =>
-      request<ProjectSource>(`/projects/${projectId}/sources`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: detailKey(projectId) }),
-  })
-}
-
-export function useUploadSource(projectId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (file: File) => {
-      const form = new FormData()
-      form.append('file', file)
-      return request<ProjectSource>(`/projects/${projectId}/sources/upload`, {
-        method: 'POST',
-        body: form,
-      })
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: detailKey(projectId) }),
-  })
-}
-
-export function useDeleteSource(projectId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (sourceId: string) =>
-      request<void>(`/projects/${projectId}/sources/${sourceId}`, { method: 'DELETE' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: detailKey(projectId) }),
   })
 }

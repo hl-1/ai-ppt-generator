@@ -57,12 +57,7 @@ export function AiEditPanel({
   const generating = slide.status === 'generating'
   const busy = propose.isPending || applyingBlockId != null
   const editableUnlocked = slide.blocks.some(
-    (block) =>
-      !block.locked &&
-      (block.type === 'text' ||
-        block.type === 'bullets' ||
-        block.type === 'kpi' ||
-        block.type === 'table'),
+    (block) => !block.locked && block.type in TYPE_LABEL,
   )
   const canPropose = !generating && !busy && editableUnlocked
   const trimmedDraft = draft.trim()

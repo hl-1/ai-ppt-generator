@@ -103,7 +103,7 @@ class UnsplashImageProvider:
         try:
             await self._client.get(location, headers=headers, timeout=self._timeout)
         except httpx.HTTPError as error:
-            # 回调失败不影响本次配图，仅记录
+            # 下载回调失败不影响已取到的配图结果，仅记录
             logger.warning("Unsplash 下载回调失败：%s", error)
 
 

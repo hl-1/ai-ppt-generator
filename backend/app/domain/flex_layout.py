@@ -40,7 +40,7 @@ class FlexLeaf(BaseModel):
     id: str
     block_id: str
     grow: float = 1.0
-    # TextStyleName；用 str 避免导入 layout 产生环
+    # 文本样式名（对应 TextStyleName）；用 str 避免导入 layout 产生环依赖
     text_style: str | None = None
     # 相对 solver 结果的像素级平移，只挪位置不改尺寸；solver 会钳制在画布内
     offset_x_pt: float = Field(default=0.0, ge=-OFFSET_LIMIT_PT, le=OFFSET_LIMIT_PT)

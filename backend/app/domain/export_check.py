@@ -11,7 +11,7 @@ from collections.abc import Callable, Mapping
 
 from pydantic import BaseModel, Field
 
-from app.domain.content import Deck, ImageBlock, Slide
+from app.domain.content import Deck, ImageBlock
 from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, Rect
 from app.domain.layout import get_layout
 from app.domain.quality import check_deck_content_quality
@@ -343,8 +343,3 @@ def run_export_check(
         export_allowed=allow_export(deduped),
         fonts_precise=fonts_available(),
     )
-
-
-def slide_to_deck_fragment(slide: Slide, *, deck_id: str, title: str, theme_id: str) -> Deck:
-    """测试辅助：把单页包成 Deck。"""
-    return Deck(id=deck_id, title=title, theme_id=theme_id, slides=[slide])

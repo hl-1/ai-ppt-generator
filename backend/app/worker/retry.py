@@ -18,7 +18,7 @@ _RETRY_DELAY_SECONDS = 3.0
 
 
 def retry_after_failure(ctx: dict[str, Any], error: Exception) -> Retry | None:
-    """还能再试就返回 Retry 让调用方抛出，否则返回 None 表示这次即终局。
+    """还能再试就返回 Retry 让调用方抛出，否则返回 None 表示已达终局。
 
     必须抛 arq.Retry 而不是原异常：ARQ 只对 Retry / RetryJob 重新入队，
     普通异常一律算永久失败，任务状态会永远停在「生成中」。

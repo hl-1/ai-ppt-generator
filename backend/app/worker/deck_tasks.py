@@ -268,7 +268,7 @@ async def _save_ready(
         else:
             slide.layout_mode = "fixed"
             slide.layout_tree = None
-        # 修复一轮后仍留下的问题不阻断生成，交给质量检查节点统一收口
+        # 修复一轮后仍留下的问题不阻断生成，交给后续质量检查统一收口
         slide.issues = [issue.model_dump(mode="json") for issue in issues]
         slide.status = "ready"
         slide.error = None

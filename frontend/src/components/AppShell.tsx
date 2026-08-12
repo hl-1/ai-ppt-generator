@@ -1,6 +1,7 @@
-import { LogOut, Plus, Presentation } from 'lucide-react'
+import { LogOut, Plus } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
+import { BrandMark } from '@/components/BrandMark'
 import { Button } from '@/components/ui/Button'
 import { useAuthStore } from '@/features/auth/store'
 
@@ -15,9 +16,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-30 border-b border-line bg-surface/80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-6">
           <Link to="/projects" className="flex items-center gap-2.5">
-            <span className="grid size-7 place-items-center rounded-lg bg-accent text-white">
-              <Presentation className="size-4" />
-            </span>
+            <BrandMark className="size-7" />
             <span className="text-[15px] font-semibold tracking-tight">AI PPT</span>
           </Link>
 

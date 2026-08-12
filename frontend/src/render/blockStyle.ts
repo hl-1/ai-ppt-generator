@@ -3,20 +3,7 @@ import type { components } from '@/api/schema'
 import { pt, resolveColor, textStyleToCss } from '@/render/style'
 import type { ColorToken, TextStyleName, Theme } from '@/render/types'
 
-export type TextAlign = 'left' | 'center' | 'right'
 export type BlockStyle = components['schemas']['BlockStyle']
-
-export const COLOR_TOKEN_KEYS: ColorToken[] = [
-  'background',
-  'surface',
-  'ink',
-  'ink_soft',
-  'ink_muted',
-  'accent',
-  'accent_soft',
-  'line',
-  'line_strong',
-]
 
 /** 工具条色板：令牌 + 短标签，方便点选 */
 export const COLOR_SWATCHES: Array<{ key: ColorToken; label: string }> = [

@@ -15,9 +15,9 @@ export class ApiError extends Error {
   }
 }
 
-const API_PREFIX = '/api/v1'
+export const API_PREFIX = '/api/v1'
 
-/** 后端校验错误（422）的结构，取第一条转成人话展示 */
+/** FastAPI 校验错误体形状：detail 为带 msg/loc 的数组；此处只透传，展示文案在 lib/errors.ts */
 interface ValidationErrorBody {
   detail: Array<{ msg: string; loc: (string | number)[] }>
 }
