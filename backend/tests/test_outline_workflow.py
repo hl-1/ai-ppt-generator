@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from app.core.config import Settings
 from app.domain.outline import OutlineDraft, OutlinePageDraft
 from app.llm.base import OutlineGenerationInput, OutlineSourceSection
+from app.llm.client import create_chat_model
 from app.llm.deepseek import (
     DeepSeekOutlineGenerator,
     InvalidOutlineOutputError,
@@ -82,21 +83,21 @@ class FakeOutlineGenerator:
         return OutlineDraft(pages=pages)
 
 
-class FakeChatCompletions:
-    def __init__(self, content: str) -> None:
-        self.content = content
-        self.last_kwargs: dict[str, Any] | None = None
+class FakeChat:
+    def __init__(self, payload: str, api_key: str = "test-key") -> None:
+        self.payload = payload
+        self._api_key = api_key
+        self.last_system: str | None = None
+        self.last_user: str | None = None
+        self.called = False
 
-    async def create(self, **kwargs: Any) -> Any:
-        self.last_kwargs = kwargs
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=self.content))]
-        )
-
-
-class FakeAsyncOpenAI:
-    def __init__(self, content: str) -> None:
-        self.chat = SimpleNamespace(completions=FakeChatCompletions(content))
+    async def complete(self, schema: Any, *, system: str, user: str, purpose: str) -> Any:
+        if not self._api_key.strip():
+            raise LLMNotConfiguredError(f"未配置 LLM API Key，无法{purpose}")
+        self.called = True
+        self.last_system = system
+        self.last_user = user
+        return schema.model_validate_json(self.payload)
 
 
 def test_prepare_trims_long_section_without_breaking_ref() -> None:
@@ -192,53 +193,32 @@ def _valid_outline_json(
 
 
 @pytest.mark.asyncio
-async def test_deepseek_request_params_without_thinking() -> None:
-    client = FakeAsyncOpenAI(_valid_outline_json())
+async def test_deepseek_parses_valid_outline() -> None:
+    chat = FakeChat(_valid_outline_json())
     generator = DeepSeekOutlineGenerator(
-        client=client,  # type: ignore[arg-type]
-        model="deepseek-v4-flash",
-        api_key="test-key",
-        thinking_enabled=False,
-        timeout_seconds=45,
+        chat=chat,
         layout_ids=frozenset({"bullets", "cover"}),
     )
 
     draft = await generator.generate(_input(page_count=2))
-
-    kwargs = client.chat.completions.last_kwargs
-    assert kwargs is not None
-    assert kwargs["model"] == "deepseek-v4-flash"
-    assert kwargs["response_format"] == {"type": "json_object"}
-    assert kwargs["timeout"] == 45
-    assert "extra_body" not in kwargs
     assert len(draft.pages) == 2
+    assert chat.called
 
 
-@pytest.mark.asyncio
-async def test_deepseek_request_params_with_thinking_enabled() -> None:
-    client = FakeAsyncOpenAI(_valid_outline_json())
-    generator = DeepSeekOutlineGenerator(
-        client=client,  # type: ignore[arg-type]
-        model="deepseek-v4-flash",
-        api_key="test-key",
-        thinking_enabled=True,
-        layout_ids=frozenset({"bullets", "cover"}),
-    )
+def test_create_chat_model_omits_thinking_by_default() -> None:
+    model = create_chat_model(Settings(llm_api_key="k", llm_thinking_enabled=False))
+    assert not getattr(model, "extra_body", None)
 
-    await generator.generate(_input(page_count=2))
 
-    kwargs = client.chat.completions.last_kwargs
-    assert kwargs is not None
-    assert kwargs["extra_body"] == {"thinking": {"type": "enabled"}}
+def test_create_chat_model_enables_thinking() -> None:
+    model = create_chat_model(Settings(llm_api_key="k", llm_thinking_enabled=True))
+    assert model.extra_body == {"thinking": {"type": "enabled"}}
 
 
 @pytest.mark.asyncio
 async def test_deepseek_rejects_wrong_page_count() -> None:
-    client = FakeAsyncOpenAI(_valid_outline_json(page_count=1))
     generator = DeepSeekOutlineGenerator(
-        client=client,  # type: ignore[arg-type]
-        model="deepseek-v4-flash",
-        api_key="test-key",
+        chat=FakeChat(_valid_outline_json(page_count=1)),
         layout_ids=frozenset({"bullets"}),
     )
 
@@ -248,11 +228,8 @@ async def test_deepseek_rejects_wrong_page_count() -> None:
 
 @pytest.mark.asyncio
 async def test_deepseek_rejects_illegal_layout() -> None:
-    client = FakeAsyncOpenAI(_valid_outline_json(layout_id="not-a-layout"))
     generator = DeepSeekOutlineGenerator(
-        client=client,  # type: ignore[arg-type]
-        model="deepseek-v4-flash",
-        api_key="test-key",
+        chat=FakeChat(_valid_outline_json(layout_id="not-a-layout")),
         layout_ids=frozenset({"bullets", "cover"}),
     )
 
@@ -262,11 +239,8 @@ async def test_deepseek_rejects_illegal_layout() -> None:
 
 @pytest.mark.asyncio
 async def test_deepseek_rejects_illegal_ref() -> None:
-    client = FakeAsyncOpenAI(_valid_outline_json(ref="S9:9"))
     generator = DeepSeekOutlineGenerator(
-        client=client,  # type: ignore[arg-type]
-        model="deepseek-v4-flash",
-        api_key="test-key",
+        chat=FakeChat(_valid_outline_json(ref="S9:9")),
         layout_ids=frozenset({"bullets"}),
     )
 
@@ -276,27 +250,20 @@ async def test_deepseek_rejects_illegal_ref() -> None:
 
 @pytest.mark.asyncio
 async def test_deepseek_missing_api_key() -> None:
-    client = FakeAsyncOpenAI(_valid_outline_json())
-    generator = DeepSeekOutlineGenerator(
-        client=client,  # type: ignore[arg-type]
-        model="deepseek-v4-flash",
-        api_key="   ",
-        layout_ids=frozenset({"bullets"}),
-    )
+    chat = FakeChat(_valid_outline_json(), api_key="   ")
+    generator = DeepSeekOutlineGenerator(chat=chat, layout_ids=frozenset({"bullets"}))
 
     with pytest.raises(LLMNotConfiguredError, match="未配置 LLM API Key"):
         await generator.generate(_input(page_count=2))
 
-    assert client.chat.completions.last_kwargs is None
+    assert chat.called is False
 
 
 def test_system_prompt_only_names_existing_layouts() -> None:
     """提示词里出现过的 layout_id 都必须能通过校验，否则等于诱导模型踩坑。"""
     layout_ids = frozenset({"bullets", "cover", "two-column"})
     generator = DeepSeekOutlineGenerator(
-        client=FakeAsyncOpenAI(_valid_outline_json()),  # type: ignore[arg-type]
-        model="deepseek-v4-flash",
-        api_key="test-key",
+        chat=FakeChat(_valid_outline_json()),
         layout_ids=layout_ids,
     )
 
@@ -309,9 +276,7 @@ def test_system_prompt_only_names_existing_layouts() -> None:
 
 def test_system_prompt_without_multi_slot_layouts() -> None:
     generator = DeepSeekOutlineGenerator(
-        client=FakeAsyncOpenAI(_valid_outline_json()),  # type: ignore[arg-type]
-        model="deepseek-v4-flash",
-        api_key="test-key",
+        chat=FakeChat(_valid_outline_json()),
         layout_ids=frozenset({"bullets", "cover"}),
     )
 
@@ -320,10 +285,6 @@ def test_system_prompt_without_multi_slot_layouts() -> None:
 
 def test_real_layouts_cover_the_preferred_multi_slot_hints() -> None:
     """提示里的推荐布局全部落空时只剩一句空话，等于悄悄退化。"""
-    generator = DeepSeekOutlineGenerator(
-        client=FakeAsyncOpenAI(_valid_outline_json()),  # type: ignore[arg-type]
-        model="deepseek-v4-flash",
-        api_key="test-key",
-    )
+    generator = DeepSeekOutlineGenerator(chat=FakeChat(_valid_outline_json()))
 
     assert "多槽布局" in generator._system_prompt()

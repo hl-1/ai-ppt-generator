@@ -72,7 +72,10 @@ def prepare_outline_input(
 
 
 def build_outline_workflow(generator: OutlineGenerator):
-    """编译「准备输入 → 调用生成器」的大纲工作流。"""
+    """编译「准备输入 → 调用生成器」的大纲工作流。
+
+    一次结构化生成走 LCEL json_mode；本 Graph 只负责裁剪来源后再调用。
+    """
 
     async def prepare(state: OutlineWorkflowState) -> dict[str, OutlineGenerationInput]:
         return {"prepared": prepare_outline_input(state["input"])}

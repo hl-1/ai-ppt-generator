@@ -8,12 +8,7 @@ from app.llm.slide_edit import DeepSeekSlideEditGenerator
 
 
 def _generator() -> DeepSeekSlideEditGenerator:
-    # 不调用 LLM；只测 prompt 拼装
-    return DeepSeekSlideEditGenerator(
-        client=None,  # type: ignore[arg-type]
-        model="x",
-        api_key="x",
-    )
+    return DeepSeekSlideEditGenerator.__new__(DeepSeekSlideEditGenerator)
 
 
 def _payload(**overrides) -> SlideEditInput:
@@ -22,7 +17,6 @@ def _payload(**overrides) -> SlideEditInput:
         "tone": "professional",
         "page_title": "云南七天深度游",
         "layout_id": "bullets",
-        "action": "instruct",
         "instruction": "空白区域太多了",
         "blocks": [
             {
@@ -41,7 +35,7 @@ def test_fixed_prompt_still_carries_slot_capacity() -> None:
     layout = get_layout("bullets")
     prompt = gen._user_prompt(_payload(), layout)
     assert "slots" in prompt
-    assert "槽位" in gen._system_prompt(layout, "instruct")
+    assert "槽位" in gen._system_prompt(layout)
 
 
 def test_flex_prompt_drops_slot_table() -> None:
@@ -50,8 +44,9 @@ def test_flex_prompt_drops_slot_table() -> None:
     assert "slots" not in prompt
     assert "空白区域太多了" in prompt
 
-    system = gen._system_prompt(None, "instruct")
+    system = gen._system_prompt(None, flex=True)
     assert "灵活布局" in system
+    assert "add_block" in system
     assert "槽位的字数" not in system
 
 

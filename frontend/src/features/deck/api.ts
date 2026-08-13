@@ -3,8 +3,6 @@ import { request, requestBinary } from '@/api/client'
 import { replaceSlideInDeck, replaceSlidesInDeck } from '@/features/deck/cache'
 import type { FlexBlockType } from '@/features/deck/flexTree'
 import type {
-  AiEditAction,
-  AiEditPatch,
   AiEditProposal,
   BlockUpdateBody,
   Deck,
@@ -344,31 +342,29 @@ export function useProposeRelayout(projectId: string, slideId: string) {
 export function useProposeAiEdit(projectId: string, slideId: string) {
   return useMutation({
     mutationFn: (body: {
-      action?: AiEditAction
       revision: number
-      instruction?: string
-    }) => {
-      const payload: {
-        action: AiEditAction
-        revision: number
-        instruction?: string
-      } = {
-        action: body.action ?? 'instruct',
-        revision: body.revision,
-      }
-      if (body.instruction) payload.instruction = body.instruction
-      return request<AiEditProposal>(
-        `/projects/${projectId}/deck/slides/${slideId}/ai-edit`,
-        { method: 'POST', body: JSON.stringify(payload) },
-      )
-    },
+      instruction: string
+      history?: Array<{ instruction: string; note?: string | null }>
+    }) =>
+      request<AiEditProposal>(`/projects/${projectId}/deck/slides/${slideId}/ai-edit`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
   })
 }
 
 export function useApplyAiEdit(projectId: string, slideId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (body: { revision: number; operations: AiEditPatch[] }) =>
+    mutationFn: (body: {
+      revision: number
+      op: 'replace' | 'add' | 'delete' | 'change_type'
+      block_id: string
+      after_block_id?: string | null
+      side: 'before' | 'after'
+      replace?: Record<string, unknown> | null
+      block?: Record<string, unknown> | null
+    }) =>
       request<DeckSlide>(`/projects/${projectId}/deck/slides/${slideId}/ai-edit/apply`, {
         method: 'POST',
         body: JSON.stringify(body),

@@ -2,16 +2,25 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.v1.deck._shared import SessionDep, _commit_slide_edit, _ensure_editable, _find_slide
-from app.api.v1.projects import OwnedProject
-from app.domain.flex_layout import FlexContainer
-from app.domain.slide_patch import (
-    apply_patches,
-    content_snapshot,
-    filter_patches,
-    unlocked_editable_blocks,
+from app.api.v1.deck._shared import (
+    SessionDep,
+    _commit_slide_edit,
+    _dump_layout_tree,
+    _ensure_editable,
+    _find_slide,
 )
-from app.llm.base import SlideEditInput
+from app.api.v1.projects import OwnedProject
+from app.domain.edit_ops import (
+    EditStructureError,
+    add_block,
+    change_block_type,
+    delete_block,
+    parse_block,
+    restore_block,
+)
+from app.domain.flex_layout import FlexContainer
+from app.domain.slide_patch import apply_patches, filter_patches, unlocked_editable_blocks
+from app.llm.base import AiEditHistoryTurn, SlideEditInput
 from app.llm.errors import InvalidSlideEditOutputError, LLMNotConfiguredError
 from app.llm.slide_edit import block_to_edit_input
 from app.schemas.deck import (
@@ -49,7 +58,8 @@ async def propose_slide_ai_edit(
 
     blocks = parse_slide_blocks(slide.blocks)
     editable = unlocked_editable_blocks(blocks)
-    if not editable:
+    flex = slide.layout_mode == "flex" and slide.layout_tree is not None
+    if not editable and not flex:
         return AiEditProposalPublic(
             revision=slide.revision,
             operations=[],
@@ -57,12 +67,7 @@ async def propose_slide_ai_edit(
             warnings=[],
         )
 
-    instruction = body.instruction.strip() if body.instruction else None
-    layout_tree = (
-        FlexContainer.model_validate(slide.layout_tree)
-        if slide.layout_mode == "flex" and slide.layout_tree is not None
-        else None
-    )
+    layout_tree = FlexContainer.model_validate(slide.layout_tree) if flex else None
     payload = SlideEditInput(
         deck_title=project.title,
         audience=project.audience,
@@ -70,9 +75,13 @@ async def propose_slide_ai_edit(
         page_title=slide.title,
         layout_id=slide.layout_id,
         layout_mode=slide.layout_mode,
-        action=body.action,
-        instruction=instruction or None,
+        instruction=body.instruction,
+        history=[
+            AiEditHistoryTurn(instruction=item.instruction, note=item.note) for item in body.history
+        ],
         blocks=[block_to_edit_input(block) for block in editable],
+        original_blocks=blocks,
+        layout_tree=layout_tree,
     )
 
     workflow = build_slide_edit_workflow(create_slide_edit_generator())
@@ -99,23 +108,20 @@ async def propose_slide_ai_edit(
             detail=str(error),
         ) from error
 
-    by_id = {block.id: block for block in blocks}
-    preview: list[AiEditOperationPublic] = []
-    for op in operations:
-        block = by_id[op.block_id]
-        preview.append(
-            AiEditOperationPublic(
-                block_id=op.block_id,
-                slot_id=block.slot_id,
-                type=op.type,
-                before=content_snapshot(block),
-                after=op,
-            )
-        )
-
     return AiEditProposalPublic(
         revision=slide.revision,
-        operations=preview,
+        operations=[
+            AiEditOperationPublic(
+                op=item.op,
+                block_id=item.block_id,
+                slot_id=item.slot_id,
+                type=item.type,
+                after_block_id=item.after_block_id,
+                before=item.before,
+                after=item.after,
+            )
+            for item in operations
+        ],
         discarded=[
             DiscardedOperationPublic(block_id=item.block_id, reason=item.reason)
             for item in discarded
@@ -139,9 +145,97 @@ async def apply_slide_ai_edit(
     _ensure_editable(slide, body.revision)
 
     blocks = parse_slide_blocks(slide.blocks)
-    filtered = filter_patches(blocks, list(body.operations))
-    patched = apply_patches(blocks, filtered.accepted)
-    # AI 改过的块不置 locked：locked 表示「人工修改过」；若 AI 也置位，
-    # 一页被 AI 改过后就再也改不动了。
-    slide.blocks = [block.model_dump(mode="json") for block in patched]
+    tree = (
+        FlexContainer.model_validate(slide.layout_tree)
+        if slide.layout_mode == "flex" and slide.layout_tree is not None
+        else None
+    )
+    try:
+        blocks, tree = _apply_one(body, blocks, tree)
+    except EditStructureError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error
+
+    slide.blocks = [block.model_dump(mode="json") for block in blocks]
+    if tree is not None:
+        slide.layout_tree = _dump_layout_tree(tree)
     return await _commit_slide_edit(session, project, slide)
+
+
+def _has_block(blocks, block_id: str) -> bool:
+    return any(block.id == block_id for block in blocks)
+
+
+def _apply_one(body: AiEditApplyRequest, blocks, tree):
+    if body.op == "replace":
+        if body.replace is None:
+            raise EditStructureError("缺少替换内容")
+        filtered = filter_patches(blocks, [body.replace])
+        return apply_patches(blocks, filtered.accepted), tree
+
+    if tree is None:
+        raise EditStructureError("当前页面不是灵活布局，无法增删或改类型")
+
+    if body.op == "add":
+        if body.side == "after":
+            if _has_block(blocks, body.block_id):
+                return blocks, tree
+            if not body.block or not body.after_block_id:
+                raise EditStructureError("新增块缺少内容或锚点")
+            raw = dict(body.block)
+            created_id = str(raw.get("id") or body.block_id)
+            block_type = str(raw.get("type") or "text")
+            patched, tree, _ = add_block(
+                blocks,
+                tree,
+                block_type=block_type,
+                after_block_id=body.after_block_id,
+                content=raw,
+                block_id=created_id,
+            )
+            return patched, tree
+        if not _has_block(blocks, body.block_id):
+            return blocks, tree
+        patched, tree, _ = delete_block(blocks, tree, body.block_id)
+        return patched, tree
+
+    if body.op == "delete":
+        if body.side == "after":
+            if not _has_block(blocks, body.block_id):
+                return blocks, tree
+            patched, tree, _ = delete_block(blocks, tree, body.block_id)
+            return patched, tree
+        if _has_block(blocks, body.block_id):
+            return blocks, tree
+        if not body.block:
+            raise EditStructureError("恢复删除缺少原块内容")
+        restored = parse_block(body.block)
+        return restore_block(
+            blocks, tree, block=restored, after_block_id=body.after_block_id
+        )
+
+    if body.side == "after":
+        if not body.block:
+            raise EditStructureError("改类型缺少新块内容")
+        raw = dict(body.block)
+        patched, tree, _old, _new = change_block_type(
+            blocks,
+            tree,
+            block_id=body.block_id,
+            new_type=str(raw.get("type") or body.block.get("type")),
+            content=raw,
+        )
+        return patched, tree
+    if not body.block:
+        raise EditStructureError("恢复类型缺少原块内容")
+    raw = dict(body.block)
+    patched, tree, _old, _new = change_block_type(
+        blocks,
+        tree,
+        block_id=body.block_id,
+        new_type=str(raw.get("type")),
+        content=raw,
+    )
+    return patched, tree

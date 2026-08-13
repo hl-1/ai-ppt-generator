@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import json
 
-from openai import AsyncOpenAI
+from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import ValidationError
 
 from app.domain.content_density import PAGE_ROLES, outline_density_hint
 from app.domain.layout import load_layouts
 from app.domain.outline import OutlineDraft
 from app.llm.base import OutlineGenerationInput
-from app.llm.client import JsonChatClient
+from app.llm.client import StructuredChatClient
 from app.llm.errors import (
+    InvalidModelOutputError,
     InvalidOutlineOutputError,
     LLMNotConfiguredError,
 )
@@ -21,11 +22,8 @@ __all__ = [
     "LLMNotConfiguredError",
 ]
 
-# 建议模型优先选的多槽布局。取值必须与实际布局求交后再写进提示词，
-# 否则提示词会诱导模型产出校验必然打回的 layout_id。
 _PREFERRED_MULTI_SLOT = ("two-column", "kpi", "image-left", "image-right", "chart", "table")
 
-# 配图节奏定在大纲这一层：正文页并发生成，各页看不到彼此有没有配图。
 _VISUAL_RULE = (
     "8. visual 是一句配图意图（如「团队围着白板讨论路线图」），只描述画面，"
     "不要写「插入图片」这类指令。内容页里三分之一到一半给出 visual，"
@@ -37,32 +35,28 @@ class DeepSeekOutlineGenerator:
     def __init__(
         self,
         *,
-        client: AsyncOpenAI,
-        model: str,
-        api_key: str,
-        thinking_enabled: bool = False,
-        timeout_seconds: float = 60,
+        model: BaseChatModel | None = None,
+        api_key: str = "",
+        chat: StructuredChatClient | None = None,
         layout_ids: frozenset[str] | None = None,
     ) -> None:
-        self._chat = JsonChatClient(
-            client=client,
-            model=model,
-            api_key=api_key,
-            thinking_enabled=thinking_enabled,
-            timeout_seconds=timeout_seconds,
-        )
+        if chat is not None:
+            self._chat = chat
+        elif model is not None:
+            self._chat = StructuredChatClient(model=model, api_key=api_key)
+        else:
+            raise TypeError("需要 model 或 chat")
         self._layout_ids = layout_ids if layout_ids is not None else frozenset(load_layouts())
 
     async def generate(self, payload: OutlineGenerationInput) -> OutlineDraft:
-        content = await self._chat.complete_json(
-            system=self._system_prompt(),
-            user=self._user_prompt(payload),
-            purpose="生成大纲",
-        )
-
         try:
-            draft = OutlineDraft.model_validate_json(content)
-        except ValidationError as error:
+            draft = await self._chat.complete(
+                OutlineDraft,
+                system=self._system_prompt(),
+                user=self._user_prompt(payload),
+                purpose="生成大纲",
+            )
+        except (InvalidModelOutputError, ValidationError) as error:
             raise InvalidOutlineOutputError("模型返回的大纲 JSON 不符合约定结构") from error
 
         allowed_refs = {section.ref for section in payload.sections}

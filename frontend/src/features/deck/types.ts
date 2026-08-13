@@ -26,16 +26,8 @@ export type DeckPageResult = Omit<Schemas['DeckPageResult'], 'deck'> & {
 }
 export type DeckGenerateAccepted = Schemas['DeckGenerateAccepted']
 export type LayoutCandidate = Schemas['LayoutCandidatePublic']
-export type AiEditAction = Schemas['AiEditRequest']['action']
 export type AiEditProposal = Schemas['AiEditProposalPublic']
 export type AiEditOperation = Schemas['AiEditOperationPublic']
-export type AiEditPatch =
-  | Schemas['TextPatch']
-  | Schemas['BulletsPatch']
-  | Schemas['KpiPatch']
-  | Schemas['TablePatch']
-  | Schemas['CardsPatch']
-  | Schemas['CalloutPatch']
 export type StructureIssue = Schemas['StructureIssue']
 export type ExportCheckReport = Schemas['ExportCheckReport']
 

@@ -6,14 +6,14 @@ import json
 import uuid
 from typing import Any
 
-from openai import AsyncOpenAI
+from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel, Field, ValidationError
 
 from app.domain.flex_layout import FlexContainer, iter_leaf_block_ids
 from app.domain.flex_normalize import normalize
 from app.domain.flex_presets import BlockRef, alternate_preset_trees
-from app.llm.client import JsonChatClient
-from app.llm.errors import InvalidSlideOutputError
+from app.llm.client import StructuredChatClient
+from app.llm.errors import InvalidModelOutputError, InvalidSlideOutputError
 
 
 class RelayoutTreesDraft(BaseModel):
@@ -24,19 +24,16 @@ class DeepSeekRelayoutGenerator:
     def __init__(
         self,
         *,
-        client: AsyncOpenAI,
-        model: str,
-        api_key: str,
-        thinking_enabled: bool = False,
-        timeout_seconds: float = 60,
+        model: BaseChatModel | None = None,
+        api_key: str = "",
+        chat: StructuredChatClient | None = None,
     ) -> None:
-        self._chat = JsonChatClient(
-            client=client,
-            model=model,
-            api_key=api_key,
-            thinking_enabled=thinking_enabled,
-            timeout_seconds=timeout_seconds,
-        )
+        if chat is not None:
+            self._chat = chat
+        elif model is not None:
+            self._chat = StructuredChatClient(model=model, api_key=api_key)
+        else:
+            raise TypeError("需要 model 或 chat")
 
     async def propose(
         self,
@@ -49,19 +46,19 @@ class DeepSeekRelayoutGenerator:
         """向模型要若干备选树；校验失败的丢弃。"""
         refs = [BlockRef(id=str(b["id"]), type=str(b["type"])) for b in blocks]
         block_ids = {ref.id for ref in refs}
-        content = await self._chat.complete_json(
-            system=_system_prompt(),
-            user=_user_prompt(
-                blocks=blocks,
-                current_tree=current_tree,
-                page_title=page_title,
-                count=count,
-            ),
-            purpose="生成备选排布",
-        )
         try:
-            draft = RelayoutTreesDraft.model_validate_json(content)
-        except ValidationError as error:
+            draft = await self._chat.complete(
+                RelayoutTreesDraft,
+                system=_system_prompt(),
+                user=_user_prompt(
+                    blocks=blocks,
+                    current_tree=current_tree,
+                    page_title=page_title,
+                    count=count,
+                ),
+                purpose="生成备选排布",
+            )
+        except (InvalidModelOutputError, ValidationError) as error:
             raise InvalidSlideOutputError("模型返回的排布 JSON 不符合约定结构") from error
 
         accepted: list[FlexContainer] = []

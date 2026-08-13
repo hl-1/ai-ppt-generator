@@ -7,11 +7,7 @@ from app.llm.slide import DeepSeekSlideGenerator
 
 def _generator() -> DeepSeekSlideGenerator:
     # 不调用 LLM；只测 prompt 拼装
-    return DeepSeekSlideGenerator(
-        client=None,  # type: ignore[arg-type]
-        model="x",
-        api_key="x",
-    )
+    return DeepSeekSlideGenerator.__new__(DeepSeekSlideGenerator)
 
 
 def test_fixed_user_prompt_includes_density_and_role() -> None:

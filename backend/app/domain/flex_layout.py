@@ -173,6 +173,15 @@ def insert_leaf(
     return True
 
 
+def insert_leaf_after(root: FlexContainer, after_block_id: str, leaf: FlexLeaf) -> bool:
+    """把叶子插到指定块后面；找不到锚点时追加到根容器末尾。"""
+    found = find_leaf_parent(root, after_block_id)
+    if found is None:
+        return insert_leaf(root, root.id, len(root.children), leaf)
+    parent, index, _ = found
+    return insert_leaf(root, parent.id, index + 1, leaf)
+
+
 def _adopt_spacer_as_content(container: FlexContainer) -> None:
     """占位容器接纳内容后去掉 spacer 身份。
 

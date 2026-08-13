@@ -25,7 +25,7 @@ def _payload(**overrides) -> SlideEditInput:
         "tone": "professional",
         "page_title": "现状与问题",
         "layout_id": "bullets",
-        "action": "condense",
+        "instruction": "正文再短一点",
         "blocks": [
             {
                 "block_id": "t1",
@@ -77,7 +77,8 @@ async def test_workflow_repairs_capacity_overflow_once() -> None:
     assert generator.prompts[1]
     assert discarded == []
     assert issues == []
-    assert operations[0].items == ["精简要点一", "精简要点二"]
+    assert operations[0].after is not None
+    assert operations[0].after["items"] == ["精简要点一", "精简要点二"]
     assert patched[1].items == ["精简要点一", "精简要点二"]
 
 

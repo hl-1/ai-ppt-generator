@@ -806,24 +806,60 @@ export interface components {
         AiEditApplyRequest: {
             /** Revision */
             revision: number;
-            /** Operations */
-            operations: (components["schemas"]["TextPatch"] | components["schemas"]["BulletsPatch"] | components["schemas"]["KpiPatch"] | components["schemas"]["TablePatch"] | components["schemas"]["CardsPatch"] | components["schemas"]["CalloutPatch"])[];
+            /**
+             * Op
+             * @default replace
+             * @enum {string}
+             */
+            op: "replace" | "add" | "delete" | "change_type";
+            /** Block Id */
+            block_id: string;
+            /** After Block Id */
+            after_block_id?: string | null;
+            /**
+             * Side
+             * @default after
+             * @enum {string}
+             */
+            side: "before" | "after";
+            /** Replace */
+            replace?: (components["schemas"]["TextPatch"] | components["schemas"]["BulletsPatch"] | components["schemas"]["KpiPatch"] | components["schemas"]["TablePatch"] | components["schemas"]["CardsPatch"] | components["schemas"]["CalloutPatch"]) | null;
+            /** Block */
+            block?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** AiEditHistoryTurn */
+        AiEditHistoryTurn: {
+            /** Instruction */
+            instruction: string;
+            /** Note */
+            note?: string | null;
         };
         /** AiEditOperationPublic */
         AiEditOperationPublic: {
+            /**
+             * Op
+             * @default replace
+             * @enum {string}
+             */
+            op: "replace" | "add" | "delete" | "change_type";
             /** Block Id */
             block_id: string;
             /** Slot Id */
             slot_id: string;
-            /**
-             * Type
-             * @enum {string}
-             */
-            type: "text" | "bullets" | "kpi" | "table" | "cards" | "callout";
+            /** Type */
+            type: string;
+            /** After Block Id */
+            after_block_id?: string | null;
             /** Before */
-            before: components["schemas"]["TextPatch"] | components["schemas"]["BulletsPatch"] | components["schemas"]["KpiPatch"] | components["schemas"]["TablePatch"] | components["schemas"]["CardsPatch"] | components["schemas"]["CalloutPatch"];
+            before?: {
+                [key: string]: unknown;
+            } | null;
             /** After */
-            after: components["schemas"]["TextPatch"] | components["schemas"]["BulletsPatch"] | components["schemas"]["KpiPatch"] | components["schemas"]["TablePatch"] | components["schemas"]["CardsPatch"] | components["schemas"]["CalloutPatch"];
+            after?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** AiEditProposalPublic */
         AiEditProposalPublic: {
@@ -838,16 +874,12 @@ export interface components {
         };
         /** AiEditRequest */
         AiEditRequest: {
-            /**
-             * Action
-             * @default instruct
-             * @enum {string}
-             */
-            action: "rewrite" | "condense" | "expand" | "instruct";
             /** Instruction */
-            instruction?: string | null;
+            instruction: string;
             /** Revision */
             revision: number;
+            /** History */
+            history?: components["schemas"]["AiEditHistoryTurn"][];
         };
         /** BlockCreateRequest */
         BlockCreateRequest: {
@@ -1218,8 +1250,8 @@ export interface components {
          * Deck
          * @description PPT 的统一内容模型。
          *
-         *     内容、布局、主题三者分离：这里只描述"有什么内容、放在哪个槽位"，
-         *     槽位几何来自布局，视觉表现来自主题。
+         *     内容、布局、主题三者分离：这里描述页面块内容；
+         *     fixed 页几何来自布局槽位，flex 页几何来自 layout_tree，视觉表现来自主题。
          */
         Deck: {
             /** Id */

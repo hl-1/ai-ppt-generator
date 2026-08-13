@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from openai import AsyncOpenAI
+from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import ValidationError
 
 from app.domain.content_density import density_prompt_block
@@ -12,8 +12,8 @@ from app.domain.flex_presets import BlockRef, seed_layout_for_blocks
 from app.domain.layout import Layout, Slot, get_layout
 from app.domain.slide_draft import FlexSlideDraft, SlideDraft
 from app.llm.base import SlideGenerationInput
-from app.llm.client import JsonChatClient
-from app.llm.errors import InvalidSlideOutputError
+from app.llm.client import StructuredChatClient
+from app.llm.errors import InvalidModelOutputError, InvalidSlideOutputError
 
 
 class DeepSeekSlideGenerator:
@@ -26,19 +26,16 @@ class DeepSeekSlideGenerator:
     def __init__(
         self,
         *,
-        client: AsyncOpenAI,
-        model: str,
-        api_key: str,
-        thinking_enabled: bool = False,
-        timeout_seconds: float = 60,
+        model: BaseChatModel | None = None,
+        api_key: str = "",
+        chat: StructuredChatClient | None = None,
     ) -> None:
-        self._chat = JsonChatClient(
-            client=client,
-            model=model,
-            api_key=api_key,
-            thinking_enabled=thinking_enabled,
-            timeout_seconds=timeout_seconds,
-        )
+        if chat is not None:
+            self._chat = chat
+        elif model is not None:
+            self._chat = StructuredChatClient(model=model, api_key=api_key)
+        else:
+            raise TypeError("需要 model 或 chat")
 
     async def generate(self, payload: SlideGenerationInput) -> SlideDraft | FlexSlideDraft:
         if payload.layout_mode == "flex":
@@ -47,30 +44,28 @@ class DeepSeekSlideGenerator:
 
     async def _generate_fixed(self, payload: SlideGenerationInput) -> SlideDraft:
         layout = get_layout(payload.layout_id)
-        content = await self._chat.complete_json(
-            system=self._system_prompt(layout),
-            user=self._user_prompt(payload, layout),
-            purpose="生成页面内容",
-        )
-
         try:
-            draft = SlideDraft.model_validate_json(content)
-        except ValidationError as error:
+            draft = await self._chat.complete(
+                SlideDraft,
+                system=self._system_prompt(layout),
+                user=self._user_prompt(payload, layout),
+                purpose="生成页面内容",
+            )
+        except (InvalidModelOutputError, ValidationError) as error:
             raise InvalidSlideOutputError("模型返回的页面 JSON 不符合约定结构") from error
 
         self._validate_draft(draft, layout)
         return draft
 
     async def _generate_flex(self, payload: SlideGenerationInput) -> FlexSlideDraft:
-        content = await self._chat.complete_json(
-            system=self._flex_system_prompt(payload),
-            user=self._flex_user_prompt(payload),
-            purpose="生成灵活布局页面",
-        )
-
         try:
-            draft = FlexSlideDraft.model_validate_json(content)
-        except ValidationError as error:
+            draft = await self._chat.complete(
+                FlexSlideDraft,
+                system=self._flex_system_prompt(payload),
+                user=self._flex_user_prompt(payload),
+                purpose="生成灵活布局页面",
+            )
+        except (InvalidModelOutputError, ValidationError) as error:
             raise InvalidSlideOutputError("模型返回的灵活布局 JSON 不符合约定结构") from error
 
         return self._finalize_flex_draft(draft, payload)

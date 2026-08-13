@@ -1,51 +1,74 @@
-from typing import Any
+from typing import TypeVar
 
-from openai import AsyncOpenAI
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, ValidationError
 
+from app.core.config import Settings, get_settings
 from app.llm.errors import InvalidModelOutputError, LLMNotConfiguredError
 
+T = TypeVar("T", bound=BaseModel)
 
-class JsonChatClient:
-    """OpenAI 兼容接口的 JSON 输出封装。
+# LCEL 负责一次结构化调用；有状态的校验/修复放在 LangGraph。
+_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        ("system", "{system}"),
+        ("human", "{user}"),
+    ]
+)
 
-    大纲与页面生成共用同一套调用姿势：强制 JSON 响应格式、显式控制思考
-    模式、统一的未配置与空响应处理。生成器只需关心提示词与契约校验。
-    """
 
-    def __init__(
-        self,
-        *,
-        client: AsyncOpenAI,
-        model: str,
-        api_key: str,
-        thinking_enabled: bool = False,
-        timeout_seconds: float = 60,
-    ) -> None:
-        self._client = client
+def create_chat_model(settings: Settings | None = None) -> ChatOpenAI:
+    """用 ChatOpenAI 对接 DeepSeek 兼容接口，业务层不再持有 OpenAI SDK。"""
+    cfg = settings or get_settings()
+    kwargs: dict = {
+        "model": cfg.llm_model,
+        "api_key": cfg.llm_api_key or "not-configured",
+        "base_url": cfg.llm_base_url,
+        "timeout": cfg.llm_timeout_seconds,
+        "max_retries": 2,
+    }
+    # 思考模式默认关闭；关闭时不要传 thinking，避免无谓地拉长延迟
+    if cfg.llm_thinking_enabled:
+        kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+    return ChatOpenAI(**kwargs)
+
+
+class StructuredChatClient:
+    """prompt | ChatOpenAI.with_structured_output(json_mode) 的薄封装。"""
+
+    def __init__(self, *, model: BaseChatModel, api_key: str) -> None:
         self._model = model
         self._api_key = api_key
-        self._thinking_enabled = thinking_enabled
-        self._timeout_seconds = timeout_seconds
 
-    async def complete_json(self, *, system: str, user: str, purpose: str) -> str:
+    async def complete(
+        self,
+        schema: type[T],
+        *,
+        system: str,
+        user: str,
+        purpose: str,
+    ) -> T:
         if not self._api_key.strip():
             raise LLMNotConfiguredError(f"未配置 LLM API Key，无法{purpose}")
 
-        create_kwargs: dict[str, Any] = {
-            "model": self._model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "response_format": {"type": "json_object"},
-            "timeout": self._timeout_seconds,
-        }
-        # 思考模式默认关闭；关闭时不要传 thinking，避免无谓地拉长延迟
-        if self._thinking_enabled:
-            create_kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+        chain = _PROMPT | self._model.with_structured_output(schema, method="json_mode")
+        try:
+            result = await chain.ainvoke({"system": system, "user": user})
+        except Exception as error:
+            raise InvalidModelOutputError("模型返回内容不符合约定结构") from error
 
-        response = await self._client.chat.completions.create(**create_kwargs)
-        content = response.choices[0].message.content
-        if not content:
-            raise InvalidModelOutputError("模型返回空内容")
-        return content
+        if isinstance(result, schema):
+            return result
+        if isinstance(result, BaseModel):
+            try:
+                return schema.model_validate(result.model_dump())
+            except ValidationError as error:
+                raise InvalidModelOutputError("模型返回内容不符合约定结构") from error
+        if isinstance(result, dict):
+            try:
+                return schema.model_validate(result)
+            except ValidationError as error:
+                raise InvalidModelOutputError("模型返回内容不符合约定结构") from error
+        raise InvalidModelOutputError("模型返回内容不符合约定结构")

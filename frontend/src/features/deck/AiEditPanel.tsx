@@ -4,20 +4,28 @@ import { Button } from '@/components/ui/Button'
 import { useApplyAiEdit, useProposeAiEdit } from '@/features/deck/api'
 import type {
   AiEditOperation,
-  AiEditPatch,
   AiEditProposal,
   DeckSlide,
 } from '@/features/deck/types'
 import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
-const TYPE_LABEL: Record<AiEditOperation['type'], string> = {
+const TYPE_LABEL: Record<string, string> = {
   text: '文字',
   bullets: '列表',
   kpi: '指标',
   table: '表格',
   cards: '卡片',
   callout: '提示',
+  image: '图片',
+  chart: '图表',
+}
+
+const OP_LABEL: Record<string, string> = {
+  replace: '替换',
+  add: '新增',
+  delete: '删除',
+  change_type: '改类型',
 }
 
 type ActiveSide = 'before' | 'after'
@@ -56,10 +64,11 @@ export function AiEditPanel({
 
   const generating = slide.status === 'generating'
   const busy = propose.isPending || applyingBlockId != null
+  const isFlex = slide.layout_mode === 'flex'
   const editableUnlocked = slide.blocks.some(
     (block) => !block.locked && block.type in TYPE_LABEL,
   )
-  const canPropose = !generating && !busy && editableUnlocked
+  const canPropose = !generating && !busy && (editableUnlocked || isFlex)
   const trimmedDraft = draft.trim()
   const canSend = canPropose && trimmedDraft.length > 0
 
@@ -111,9 +120,17 @@ export function AiEditPanel({
     setDraft('')
     propose.mutate(
       {
-        action: 'instruct',
         revision: slide.revision,
         instruction: instruction.slice(0, 500),
+        history: turns
+          .filter((turn) => turn.instruction.trim())
+          .slice(-5)
+          .map((turn) => ({
+            instruction: turn.instruction.slice(0, 500),
+            note: turn.proposal
+              ? `改了 ${turn.proposal.operations.length} 处`
+              : null,
+          })),
       },
       {
         onSuccess: (data) => {
@@ -146,13 +163,20 @@ export function AiEditPanel({
     if (applyingBlockId != null || generating) return
     if (activeSide[operation.block_id] === side) return
 
+    const snapshot = asSnapshot(side === 'after' ? operation.after : operation.before)
+    const op = operation.op ?? 'replace'
     setApplyingBlockId(operation.block_id)
     setApplyError(null)
     setApplyConflict(false)
     apply.mutate(
       {
         revision: workingRevision,
-        operations: [side === 'after' ? operation.after : operation.before],
+        op,
+        block_id: operation.block_id,
+        after_block_id: operation.after_block_id ?? null,
+        side,
+        replace: op === 'replace' ? snapshot : null,
+        block: op === 'replace' ? null : snapshot,
       },
       {
         onSuccess: (updated) => {
@@ -182,7 +206,7 @@ export function AiEditPanel({
 
       {generating && <p className="text-xs text-ink-muted">页面生成中，暂不可发起 AI 修改</p>}
 
-      {!generating && !editableUnlocked && (
+      {!generating && !editableUnlocked && !isFlex && (
         <p className="rounded-xl border border-dashed border-line px-3 py-3 text-xs leading-relaxed text-ink-muted">
           本页可编辑内容均已人工修改，AI 不会覆盖；如需改写请先手动调整或换一页。
         </p>
@@ -242,7 +266,7 @@ export function AiEditPanel({
           value={draft}
           maxLength={500}
           rows={2}
-          disabled={busy || generating || !editableUnlocked}
+          disabled={busy || generating || !(editableUnlocked || isFlex)}
           placeholder="输入修改指令，回车发送"
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
@@ -396,13 +420,16 @@ function OperationCard({
   disabled?: boolean
   onSelectSide: (side: ActiveSide) => void
 }) {
+  const typeLabel = TYPE_LABEL[operation.type] ?? operation.type
+  const opLabel = OP_LABEL[operation.op ?? 'replace'] ?? operation.op
   return (
     <li className="overflow-hidden rounded-xl border border-line">
       <div className="flex items-center gap-3 border-b border-line bg-surface-soft px-3 py-2">
         <div className="min-w-0 flex-1">
           <span className="text-[10px] tracking-[0.16em] text-accent uppercase">
-            {TYPE_LABEL[operation.type]}
+            {typeLabel}
           </span>
+          <span className="ml-2 text-[11px] text-ink-soft">{opLabel}</span>
           <span className="ml-2 text-[11px] text-ink-soft">{operation.slot_id}</span>
         </div>
         {applying && <span className="text-[11px] text-ink-muted">应用中…</span>}
@@ -411,8 +438,9 @@ function OperationCard({
         <PatchSide
           label="改动前"
           tone="before"
-          patch={operation.before}
+          patch={asSnapshot(operation.before)}
           type={operation.type}
+          emptyHint={operation.op === 'add' ? '（将新增）' : '（空）'}
           active={side === 'before'}
           disabled={disabled}
           onSelect={() => onSelectSide('before')}
@@ -420,8 +448,9 @@ function OperationCard({
         <PatchSide
           label="改动后"
           tone="after"
-          patch={operation.after}
+          patch={asSnapshot(operation.after)}
           type={operation.type}
+          emptyHint={operation.op === 'delete' ? '（将删除）' : '（空）'}
           active={side === 'after'}
           disabled={disabled}
           onSelect={() => onSelectSide('after')}
@@ -436,14 +465,16 @@ function PatchSide({
   tone,
   patch,
   type,
+  emptyHint,
   active,
   disabled,
   onSelect,
 }: {
   label: string
   tone: ActiveSide
-  patch: AiEditPatch
-  type: AiEditOperation['type']
+  patch: Record<string, unknown> | null
+  type: string
+  emptyHint: string
   active: boolean
   disabled?: boolean
   onSelect: () => void
@@ -489,28 +520,52 @@ function PatchSide({
           tone === 'after' && 'text-ink',
         )}
       >
-        <PatchContent patch={patch} type={type} />
+        <PatchContent patch={patch} type={type} emptyHint={emptyHint} />
       </div>
     </button>
   )
 }
 
+function asText(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function asSnapshot(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return null
+}
+
+function asStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => (typeof item === 'string' ? item : String(item))) : []
+}
+
 function PatchContent({
   patch,
   type,
+  emptyHint,
 }: {
-  patch: AiEditPatch
-  type: AiEditOperation['type']
+  patch: Record<string, unknown> | null
+  type: string
+  emptyHint: string
 }) {
-  if (type === 'text' && patch.type === 'text') {
-    return <p className="whitespace-pre-wrap">{patch.text || '（空）'}</p>
+  if (patch == null) {
+    return <p>{emptyHint}</p>
   }
 
-  if (type === 'bullets' && patch.type === 'bullets') {
-    if (patch.items.length === 0) return <p>（空列表）</p>
+  const kind = asText(patch.type) || type
+
+  if (kind === 'text') {
+    return <p className="whitespace-pre-wrap">{asText(patch.text) || '（空）'}</p>
+  }
+
+  if (kind === 'bullets') {
+    const items = asStringList(patch.items)
+    if (items.length === 0) return <p>（空列表）</p>
     return (
       <ul className="flex flex-col gap-1">
-        {patch.items.map((item, index) => (
+        {items.map((item, index) => (
           <li key={`${index}-${item.slice(0, 12)}`} className="flex gap-2">
             <span className="text-ink-soft tabular-nums">{String(index + 1).padStart(2, '0')}</span>
             <span className="min-w-0 flex-1 whitespace-pre-wrap">{item}</span>
@@ -520,32 +575,36 @@ function PatchContent({
     )
   }
 
-  if (type === 'kpi' && patch.type === 'kpi') {
+  if (kind === 'kpi') {
     return (
       <dl className="flex flex-col gap-1.5">
         <div>
           <dt className="text-[10px] text-ink-soft">数值</dt>
-          <dd>{patch.value || '—'}</dd>
+          <dd>{asText(patch.value) || '—'}</dd>
         </div>
         <div>
           <dt className="text-[10px] text-ink-soft">标签</dt>
-          <dd>{patch.label || '—'}</dd>
+          <dd>{asText(patch.label) || '—'}</dd>
         </div>
         <div>
           <dt className="text-[10px] text-ink-soft">备注</dt>
-          <dd>{patch.note?.trim() ? patch.note : '—'}</dd>
+          <dd>{asText(patch.note).trim() ? asText(patch.note) : '—'}</dd>
         </div>
       </dl>
     )
   }
 
-  if (type === 'table' && patch.type === 'table') {
+  if (kind === 'table') {
+    const header = asStringList(patch.header)
+    const rows = Array.isArray(patch.rows)
+      ? patch.rows.map((row) => (Array.isArray(row) ? row.map((cell) => String(cell ?? '')) : []))
+      : []
     return (
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left">
           <thead>
             <tr>
-              {patch.header.map((cell, index) => (
+              {header.map((cell, index) => (
                 <th
                   key={`h-${index}`}
                   className="border-b border-line px-1.5 py-1 font-medium"
@@ -556,7 +615,7 @@ function PatchContent({
             </tr>
           </thead>
           <tbody>
-            {patch.rows.map((row, rowIndex) => (
+            {rows.map((row, rowIndex) => (
               <tr key={`r-${rowIndex}`}>
                 {row.map((cell, cellIndex) => (
                   <td key={`c-${rowIndex}-${cellIndex}`} className="border-b border-line/60 px-1.5 py-1">
@@ -571,32 +630,46 @@ function PatchContent({
     )
   }
 
-  if (type === 'cards' && patch.type === 'cards') {
-    if (patch.items.length === 0) return <p>（空卡片）</p>
+  if (kind === 'cards') {
+    const items = Array.isArray(patch.items) ? patch.items : []
+    if (items.length === 0) return <p>（空卡片）</p>
     return (
       <ul className="flex flex-col gap-2">
-        {patch.items.map((item, index) => (
-          <li key={`${index}-${item.title.slice(0, 12)}`} className="flex flex-col gap-0.5">
-            <span className="font-medium">
-              {item.icon ? `${item.icon} ` : ''}
-              {item.title || '—'}
-            </span>
-            <span className="whitespace-pre-wrap text-ink-soft">{item.desc || '—'}</span>
-          </li>
-        ))}
+        {items.map((raw, index) => {
+          const item = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+          const title = asText(item.title)
+          return (
+            <li key={`${index}-${title.slice(0, 12)}`} className="flex flex-col gap-0.5">
+              <span className="font-medium">
+                {asText(item.icon) ? `${asText(item.icon)} ` : ''}
+                {title || '—'}
+              </span>
+              <span className="whitespace-pre-wrap text-ink-soft">{asText(item.desc) || '—'}</span>
+            </li>
+          )
+        })}
       </ul>
     )
   }
 
-  if (type === 'callout' && patch.type === 'callout') {
+  if (kind === 'callout') {
     return (
       <p className="whitespace-pre-wrap">
-        {patch.icon ? `${patch.icon} ` : ''}
-        {patch.text || '（空）'}
-        <span className="ml-2 text-[10px] text-ink-soft">[{patch.variant}]</span>
+        {asText(patch.icon) ? `${asText(patch.icon)} ` : ''}
+        {asText(patch.text) || '（空）'}
+        <span className="ml-2 text-[10px] text-ink-soft">[{asText(patch.variant) || 'note'}]</span>
       </p>
     )
   }
 
+  if (kind === 'image') {
+    return <p>{asText(patch.alt) || '图片占位'}</p>
+  }
+
+  if (kind === 'chart') {
+    return <p>图表</p>
+  }
+
   return <p>（无法展示）</p>
 }
+

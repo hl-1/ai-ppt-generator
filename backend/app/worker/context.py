@@ -1,88 +1,69 @@
 from typing import Any
 
 import httpx
-from openai import AsyncOpenAI
+from langchain_core.language_models.chat_models import BaseChatModel
 
 from app.core.config import get_settings
 from app.images.pipeline import create_image_pipeline
 from app.llm.base import OutlineGenerator, SlideEditGenerator, SlideGenerator
+from app.llm.client import create_chat_model
 from app.llm.deepseek import DeepSeekOutlineGenerator
 from app.llm.relayout import DeepSeekRelayoutGenerator
 from app.llm.slide import DeepSeekSlideGenerator
 from app.llm.slide_edit import DeepSeekSlideEditGenerator
 
 
-def create_llm_client() -> AsyncOpenAI:
-    settings = get_settings()
-    return AsyncOpenAI(
-        api_key=settings.llm_api_key or "not-configured",
-        base_url=settings.llm_base_url,
-        timeout=settings.llm_timeout_seconds,
-        max_retries=2,
-    )
-
-
-def create_outline_generator(client: AsyncOpenAI | None = None) -> OutlineGenerator:
+def create_outline_generator(model: BaseChatModel | None = None) -> OutlineGenerator:
     settings = get_settings()
     return DeepSeekOutlineGenerator(
-        client=client or create_llm_client(),
-        model=settings.llm_model,
+        model=model or create_chat_model(),
         api_key=settings.llm_api_key,
-        thinking_enabled=settings.llm_thinking_enabled,
-        timeout_seconds=settings.llm_timeout_seconds,
     )
 
 
-def create_slide_generator(client: AsyncOpenAI | None = None) -> SlideGenerator:
+def create_slide_generator(model: BaseChatModel | None = None) -> SlideGenerator:
     settings = get_settings()
     return DeepSeekSlideGenerator(
-        client=client or create_llm_client(),
-        model=settings.llm_model,
+        model=model or create_chat_model(),
         api_key=settings.llm_api_key,
-        thinking_enabled=settings.llm_thinking_enabled,
-        timeout_seconds=settings.llm_timeout_seconds,
     )
 
 
-def create_slide_edit_generator(client: AsyncOpenAI | None = None) -> SlideEditGenerator:
+def create_slide_edit_generator(model: BaseChatModel | None = None) -> SlideEditGenerator:
     settings = get_settings()
     return DeepSeekSlideEditGenerator(
-        client=client or create_llm_client(),
-        model=settings.llm_model,
+        model=model or create_chat_model(),
         api_key=settings.llm_api_key,
-        thinking_enabled=settings.llm_thinking_enabled,
-        timeout_seconds=settings.llm_timeout_seconds,
     )
 
 
-def create_relayout_generator(client: AsyncOpenAI | None = None) -> DeepSeekRelayoutGenerator:
+def create_relayout_generator(model: BaseChatModel | None = None) -> DeepSeekRelayoutGenerator:
     settings = get_settings()
     return DeepSeekRelayoutGenerator(
-        client=client or create_llm_client(),
-        model=settings.llm_model,
+        model=model or create_chat_model(),
         api_key=settings.llm_api_key,
-        thinking_enabled=settings.llm_thinking_enabled,
-        timeout_seconds=settings.llm_timeout_seconds,
     )
 
 
 async def startup(ctx: dict[str, Any]) -> None:
-    # 客户端在进程内复用：每个任务新建连接池会显著抬高首字节延迟
-    client = create_llm_client()
-    ctx["llm_client"] = client
-    ctx["outline_generator"] = create_outline_generator(client)
-    ctx["slide_generator"] = create_slide_generator(client)
+    # 模型在进程内复用：每个任务新建连接池会显著抬高首字节延迟
+    model = create_chat_model()
+    ctx["chat_model"] = model
+    ctx["outline_generator"] = create_outline_generator(model)
+    ctx["slide_generator"] = create_slide_generator(model)
 
-    # 生图走国内云厂商直连；显式禁用环境代理，避免 ALL_PROXY/socks 导致 ReadTimeout
     http_client = httpx.AsyncClient(trust_env=False, proxy=None)
     ctx["http_client"] = http_client
     ctx["image_pipeline"] = create_image_pipeline(http_client)
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
-    client = ctx.get("llm_client")
+    model = ctx.get("chat_model")
+    client = getattr(model, "async_client", None) if model is not None else None
     if client is not None:
-        await client.close()
+        close = getattr(client, "close", None)
+        if close is not None:
+            await close()
 
     http_client = ctx.get("http_client")
     if http_client is not None:

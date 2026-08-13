@@ -16,6 +16,7 @@ from app.llm.base import SlideGenerationInput, SlideGenerator
 from app.llm.errors import InvalidSlideOutputError
 
 # 只修一轮：结构 error 或过瘦/空话；溢出/容量 warning 不触发砍块重写。
+# generate 节点内部是 LCEL json_mode；校验与条件修复留在 Graph。
 MAX_REPAIR_ROUNDS = 1
 
 MAX_SECTION_CHARS = 1_500

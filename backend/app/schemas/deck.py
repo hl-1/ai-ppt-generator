@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.domain.block_style import BlockStyle
 from app.domain.content import Block
@@ -242,31 +242,32 @@ class LayoutCandidatePublic(BaseModel):
     current: bool = False
 
 
-AiEditAction = Literal["rewrite", "condense", "expand", "instruct"]
+class AiEditHistoryTurn(BaseModel):
+    instruction: str = Field(min_length=1, max_length=500)
+    note: str | None = Field(default=None, max_length=200)
 
 
 class AiEditRequest(BaseModel):
-    action: AiEditAction = "instruct"
-    instruction: str | None = Field(default=None, max_length=500)
+    instruction: str = Field(min_length=1, max_length=500)
     revision: int
+    history: list[AiEditHistoryTurn] = Field(default_factory=list, max_length=5)
 
-    @model_validator(mode="after")
-    def require_instruction_for_instruct(self) -> Self:
-        # action=instruct 时 instruction 必填非空；其余 action 可不带指令
-        if self.action == "instruct":
-            text = (self.instruction or "").strip()
-            if not text:
-                raise ValueError("对话修改必须提供 instruction")
-            self.instruction = text
-        return self
+    @field_validator("instruction", mode="before")
+    @classmethod
+    def strip_instruction(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 
 class AiEditOperationPublic(BaseModel):
+    op: Literal["replace", "add", "delete", "change_type"] = "replace"
     block_id: str
     slot_id: str
-    type: Literal["text", "bullets", "kpi", "table", "cards", "callout"]
-    before: BlockPatch
-    after: BlockPatch
+    type: str
+    after_block_id: str | None = None
+    before: dict | None = None
+    after: dict | None = None
 
 
 class DiscardedOperationPublic(BaseModel):
@@ -283,4 +284,9 @@ class AiEditProposalPublic(BaseModel):
 
 class AiEditApplyRequest(BaseModel):
     revision: int
-    operations: list[BlockPatch]
+    op: Literal["replace", "add", "delete", "change_type"] = "replace"
+    block_id: str
+    after_block_id: str | None = None
+    side: Literal["before", "after"] = "after"
+    replace: BlockPatch | None = None
+    block: dict | None = None

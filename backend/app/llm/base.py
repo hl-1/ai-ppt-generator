@@ -1,8 +1,10 @@
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
+from app.domain.content import Block
 from app.domain.content_density import DEFAULT_CONTENT_DENSITY, DEFAULT_PAGE_ROLE
+from app.domain.flex_layout import FlexContainer
 from app.domain.outline import OutlineDraft
 from app.domain.slide_draft import FlexSlideDraft, SlideDraft
 from app.domain.slide_patch import BlockPatch
@@ -78,7 +80,9 @@ class SlideGenerator(Protocol):
         """根据大纲页生成单页正文草稿（fixed 槽位或 flex 布局树）。"""
 
 
-SlideEditAction = Literal["rewrite", "condense", "expand", "instruct"]
+class AiEditHistoryTurn(BaseModel):
+    instruction: str = Field(min_length=1, max_length=500)
+    note: str | None = Field(default=None, max_length=200)
 
 
 class SlideEditCardItem(BaseModel):
@@ -119,12 +123,31 @@ class SlideEditInput(BaseModel):
     layout_id: str
     # flex 页没有固定槽位，提示词不能按 layout_id 去查槽位容量
     layout_mode: Literal["fixed", "flex"] = "fixed"
-    action: SlideEditAction
-    instruction: str | None = None
+    instruction: str = Field(min_length=1, max_length=500)
+    history: list[AiEditHistoryTurn] = Field(default_factory=list, max_length=5)
     blocks: list[SlideEditBlockInput] = Field(default_factory=list)
     issues: list[str] = Field(default_factory=list)
+    # 工具改的是整页副本（含 locked），与上面发给模型看的可写块快照分开
+    original_blocks: list[Block] = Field(default_factory=list)
+    layout_tree: FlexContainer | None = None
+
+
+class EditOperation(BaseModel):
+    op: Literal["replace", "add", "delete", "change_type"] = "replace"
+    block_id: str
+    slot_id: str = ""
+    type: str = "text"
+    after_block_id: str | None = None
+    before: dict[str, Any] | None = None
+    after: dict[str, Any] | None = None
+
+
+class SlideEditResult(BaseModel):
+    operations: list[EditOperation]
+    blocks: list[Block]
+    layout_tree: FlexContainer | None = None
 
 
 class SlideEditGenerator(Protocol):
-    async def generate(self, payload: SlideEditInput) -> list[BlockPatch]:
-        """根据动作与当前可改块生成块级操作清单。"""
+    async def generate(self, payload: SlideEditInput) -> list[BlockPatch] | SlideEditResult:
+        """按用户指令修改提案副本，返回块级操作或结构化结果。"""

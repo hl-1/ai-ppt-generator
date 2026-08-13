@@ -11,14 +11,14 @@ from app.domain.slide_patch import (
     BlockPatch,
     DiscardedPatch,
     apply_patches,
+    content_snapshot,
     filter_patches,
 )
 from app.domain.theme import resolve_theme
 from app.domain.validation import StructureIssue, has_blocking_issue, validate_slide
-from app.llm.base import SlideEditGenerator, SlideEditInput
+from app.llm.base import EditOperation, SlideEditGenerator, SlideEditInput, SlideEditResult
 from app.llm.errors import InvalidSlideEditOutputError
 
-# 与整页生成一致：只修一轮，避免线性放大延迟与成本
 MAX_REPAIR_ROUNDS = 1
 
 _blocks_adapter = TypeAdapter(list[Block])
@@ -33,25 +33,52 @@ class SlideEditWorkflowState(TypedDict, total=False):
     theme_id: str
     theme_overrides: dict[str, Any]
     original_blocks: list[Block]
-    operations: list[BlockPatch]
+    operations: list[EditOperation]
     discarded: list[DiscardedPatch]
     patched_blocks: list[Block]
     issues: list[StructureIssue]
     repairs: int
+    from_tools: bool
 
 
 def build_slide_edit_workflow(generator: SlideEditGenerator):
-    """编译「生成操作清单 → 应用到副本并校验 →（必要时）修复一轮」。"""
+    """编译「工具改提案副本 → 校验 →（必要时）修复一轮」。
+
+    改稿用 Graph 编排：生成器内 bind_tools 循环改内存副本；check 仍做领域校验。
+    与大纲/正文的 LCEL json_mode 不同，这里不走 with_structured_output。
+    """
 
     async def generate(state: SlideEditWorkflowState) -> dict:
-        operations = await generator.generate(state["input"])
-        return {"operations": operations, "repairs": state.get("repairs", 0)}
+        result = await generator.generate(state["input"])
+        if isinstance(result, SlideEditResult):
+            tree = result.layout_tree
+            if tree is None:
+                tree = state.get("layout_tree")
+            return {
+                "operations": result.operations,
+                "patched_blocks": result.blocks,
+                "layout_tree": tree,
+                "from_tools": True,
+                "repairs": state.get("repairs", 0),
+            }
+        operations = _patches_to_operations(list(result), state["original_blocks"])
+        return {
+            "operations": operations,
+            "from_tools": False,
+            "repairs": state.get("repairs", 0),
+        }
 
     async def check(state: SlideEditWorkflowState) -> dict:
-        filtered = filter_patches(state["original_blocks"], state["operations"])
-        patched = apply_patches(state["original_blocks"], filtered.accepted)
-        # 校验必须知道页面是 fixed 还是 flex：flex 页的 slot_id 是块自己的 id，
-        # 拿固定布局的槽位表去比对会把每个块都判成「布局没有这个槽位」
+        if state.get("from_tools"):
+            patched = list(state.get("patched_blocks") or [])
+            discarded: list[DiscardedPatch] = []
+            operations = list(state.get("operations") or [])
+        else:
+            patches = _operations_to_patches(state.get("operations") or [])
+            filtered = filter_patches(state["original_blocks"], patches)
+            patched = apply_patches(state["original_blocks"], filtered.accepted)
+            discarded = filtered.discarded
+            operations = _patches_to_operations(filtered.accepted, state["original_blocks"])
         slide = Slide(
             id=state["slide_id"],
             layout_id=state["layout_id"],
@@ -60,8 +87,8 @@ def build_slide_edit_workflow(generator: SlideEditGenerator):
             blocks=patched,
         )
         return {
-            "operations": filtered.accepted,
-            "discarded": filtered.discarded,
+            "operations": operations,
+            "discarded": discarded,
             "patched_blocks": patched,
             "issues": validate_slide(
                 slide,
@@ -77,7 +104,6 @@ def build_slide_edit_workflow(generator: SlideEditGenerator):
         return {"input": repaired, "repairs": state.get("repairs", 0) + 1}
 
     def route(state: SlideEditWorkflowState) -> str:
-        # 结构错误与容量超限都先尝试修一轮；修完后 warning 可放行，error 则失败
         if not state["issues"]:
             return END
         if state.get("repairs", 0) >= MAX_REPAIR_ROUNDS:
@@ -106,7 +132,7 @@ async def run_slide_edit_workflow(
     layout_tree: FlexContainer | None = None,
     theme_id: str | None = None,
     theme_overrides: dict[str, Any] | None = None,
-) -> tuple[list[BlockPatch], list[DiscardedPatch], list[StructureIssue], list[Block]]:
+) -> tuple[list[EditOperation], list[DiscardedPatch], list[StructureIssue], list[Block]]:
     result = await workflow.ainvoke(
         {
             "input": payload,
@@ -135,6 +161,41 @@ async def run_slide_edit_workflow(
 
 def parse_slide_blocks(raw: list[dict]) -> list[Block]:
     return _blocks_adapter.validate_python(raw)
+
+
+def _patches_to_operations(
+    patches: list[BlockPatch], originals: list[Block]
+) -> list[EditOperation]:
+    by_id = {block.id: block for block in originals}
+    operations: list[EditOperation] = []
+    for patch in patches:
+        block = by_id.get(patch.block_id)
+        before = None
+        if block is not None:
+            try:
+                before = content_snapshot(block).model_dump(mode="json")
+            except TypeError:
+                before = None
+        operations.append(
+            EditOperation(
+                op="replace",
+                block_id=patch.block_id,
+                slot_id=block.slot_id if block is not None else patch.block_id,
+                type=patch.type,
+                before=before,
+                after=patch.model_dump(mode="json"),
+            )
+        )
+    return operations
+
+
+def _operations_to_patches(operations: list[EditOperation]) -> list[BlockPatch]:
+    from app.domain.slide_patch import parse_block_patches
+
+    raw = [item.after for item in operations if item.op == "replace" and item.after]
+    if not raw:
+        return []
+    return parse_block_patches(raw)
 
 
 def _describe(issue: StructureIssue) -> str:

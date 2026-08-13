@@ -184,14 +184,14 @@ async def test_propose_instruct_requires_instruction(
     response = await client.post(
         f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
         headers=headers,
-        json={"action": "instruct", "revision": slide.revision},
+        json={"revision": slide.revision},
     )
     assert response.status_code == 422
 
     blank = await client.post(
         f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
         headers=headers,
-        json={"action": "instruct", "instruction": "   ", "revision": slide.revision},
+        json={"instruction": "   ", "revision": slide.revision},
     )
     assert blank.status_code == 422
 
@@ -215,7 +215,6 @@ async def test_propose_instruct_returns_before_after(
         f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
         headers=headers,
         json={
-            "action": "instruct",
             "instruction": "标题改得更正式",
             "revision": slide.revision,
         },
@@ -227,7 +226,6 @@ async def test_propose_instruct_returns_before_after(
     title_op = body["operations"][0]
     assert title_op["before"]["text"] == "原标题"
     assert title_op["after"]["text"] == "按指令改过的标题"
-    assert generator.seen_payloads[0].action == "instruct"
     assert generator.seen_payloads[0].instruction == "标题改得更正式"
 
 
@@ -260,7 +258,6 @@ async def test_propose_on_flex_slide_skips_fixed_slot_check(
         f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
         headers=headers,
         json={
-            "action": "instruct",
             "instruction": "空白区域太多了",
             "revision": slide.revision,
         },
@@ -287,7 +284,7 @@ async def test_propose_returns_before_after(
     response = await client.post(
         f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
         headers=headers,
-        json={"action": "rewrite", "revision": slide.revision},
+        json={"instruction": "改写本页标题和要点", "revision": slide.revision},
     )
     assert response.status_code == 200, response.text
     body = response.json()
@@ -319,7 +316,7 @@ async def test_propose_excludes_locked_blocks_from_model(
     response = await client.post(
         f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
         headers=headers,
-        json={"action": "condense", "revision": slide.revision},
+        json={"instruction": "正文再短一点", "revision": slide.revision},
     )
     assert response.status_code == 200, response.text
     assert generator.seen_block_ids[0] == ["b1"]
@@ -342,7 +339,7 @@ async def test_propose_revision_conflict(
     response = await client.post(
         f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
         headers=headers,
-        json={"action": "expand", "revision": slide.revision - 1},
+        json={"instruction": "展开要点", "revision": slide.revision - 1},
     )
     assert response.status_code == 409
     assert "刷新" in response.json()["detail"]
@@ -363,7 +360,7 @@ async def test_propose_rejects_while_generating(
     response = await client.post(
         f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
         headers=headers,
-        json={"action": "rewrite", "revision": slide.revision},
+        json={"instruction": "改写本页", "revision": slide.revision},
     )
     assert response.status_code == 409
     assert "生成中" in response.json()["detail"]
@@ -386,7 +383,7 @@ async def test_propose_llm_not_configured(
     response = await client.post(
         f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
         headers=headers,
-        json={"action": "rewrite", "revision": slide.revision},
+        json={"instruction": "改写本页", "revision": slide.revision},
     )
     assert response.status_code == 503
     assert "未配置 LLM API Key" in response.json()["detail"]
@@ -398,25 +395,40 @@ async def test_apply_updates_content_without_locking(
 ) -> None:
     headers = await _sign_up(client)
     project, slide = await _project_with_slide(client, headers)
+    url = f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit/apply"
 
-    response = await client.post(
-        f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit/apply",
+    first = await client.post(
+        url,
         headers=headers,
         json={
             "revision": slide.revision,
-            "operations": [
-                {"block_id": "t1", "type": "text", "text": "AI 改过的标题"},
-                {
-                    "block_id": "b1",
-                    "type": "bullets",
-                    "items": ["很长" * 30, "另一条也很长" * 20],
-                },
-            ],
+            "op": "replace",
+            "block_id": "t1",
+            "side": "after",
+            "replace": {"block_id": "t1", "type": "text", "text": "AI 改过的标题"},
         },
     )
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["revision"] == slide.revision + 1
+    assert first.status_code == 200, first.text
+    first_body = first.json()
+
+    second = await client.post(
+        url,
+        headers=headers,
+        json={
+            "revision": first_body["revision"],
+            "op": "replace",
+            "block_id": "b1",
+            "side": "after",
+            "replace": {
+                "block_id": "b1",
+                "type": "bullets",
+                "items": ["很长" * 30, "另一条也很长" * 20],
+            },
+        },
+    )
+    assert second.status_code == 200, second.text
+    body = second.json()
+    assert body["revision"] == slide.revision + 2
     by_id = {block["id"]: block for block in body["blocks"]}
     assert by_id["t1"]["text"] == "AI 改过的标题"
     assert by_id["t1"]["locked"] is False
@@ -432,22 +444,130 @@ async def test_apply_skips_locked_blocks(client: AsyncClient) -> None:
         headers,
         blocks=_bullets_blocks(locked_title=True),
     )
+    url = f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit/apply"
 
-    response = await client.post(
-        f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit/apply",
+    locked = await client.post(
+        url,
         headers=headers,
         json={
             "revision": slide.revision,
-            "operations": [
-                {"block_id": "t1", "type": "text", "text": "不应覆盖"},
-                {"block_id": "b1", "type": "bullets", "items": ["可改"]},
-            ],
+            "op": "replace",
+            "block_id": "t1",
+            "side": "after",
+            "replace": {"block_id": "t1", "type": "text", "text": "不应覆盖"},
+        },
+    )
+    assert locked.status_code == 200
+    locked_body = locked.json()
+    by_id = {block["id"]: block for block in locked_body["blocks"]}
+    assert by_id["t1"]["text"] == "原标题"
+    assert by_id["t1"]["locked"] is True
+
+    response = await client.post(
+        url,
+        headers=headers,
+        json={
+            "revision": locked_body["revision"],
+            "op": "replace",
+            "block_id": "b1",
+            "side": "after",
+            "replace": {"block_id": "b1", "type": "bullets", "items": ["可改"]},
         },
     )
     assert response.status_code == 200
     body = response.json()
     by_id = {block["id"]: block for block in body["blocks"]}
     assert by_id["t1"]["text"] == "原标题"
-    assert by_id["t1"]["locked"] is True
     assert by_id["b1"]["items"] == ["可改"]
     assert by_id["b1"]["locked"] is False
+
+
+@pytest.mark.asyncio
+async def test_propose_passes_history(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generator = ScriptedEditGenerator(
+        operations=[TextPatch(block_id="t1", text="更短的标题")]
+    )
+    monkeypatch.setattr(
+        "app.api.v1.deck.ai_edit.create_slide_edit_generator",
+        lambda: generator,
+    )
+    headers = await _sign_up(client)
+    project, slide = await _project_with_slide(client, headers)
+
+    response = await client.post(
+        f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit",
+        headers=headers,
+        json={
+            "instruction": "再短一点",
+            "revision": slide.revision,
+            "history": [{"instruction": "把标题改商务", "note": "改了 1 处"}],
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert generator.seen_payloads[0].instruction == "再短一点"
+    assert generator.seen_payloads[0].history[0].instruction == "把标题改商务"
+
+
+@pytest.mark.asyncio
+async def test_apply_add_on_flex_updates_tree(client: AsyncClient) -> None:
+    headers = await _sign_up(client)
+    project, slide = await _project_with_slide(
+        client,
+        headers,
+        blocks=_flex_cover_blocks(),
+        layout_id="cover",
+        layout_mode="flex",
+        layout_tree=_flex_cover_tree(),
+    )
+
+    response = await client.post(
+        f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit/apply",
+        headers=headers,
+        json={
+            "revision": slide.revision,
+            "op": "add",
+            "block_id": "pg-extra",
+            "after_block_id": "pg-title",
+            "side": "after",
+            "block": {
+                "id": "pg-extra",
+                "slot_id": "pg-extra",
+                "type": "text",
+                "text": "新增段落",
+                "locked": False,
+            },
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [block["id"] for block in body["blocks"]] == ["pg-title", "pg-lead", "pg-extra"]
+    leaf_ids = [
+        child["block_id"]
+        for child in body["layout_tree"]["children"]
+        if child["type"] == "block"
+    ]
+    assert "pg-extra" in leaf_ids
+
+
+@pytest.mark.asyncio
+async def test_apply_add_on_fixed_is_rejected(client: AsyncClient) -> None:
+    headers = await _sign_up(client)
+    project, slide = await _project_with_slide(client, headers)
+
+    response = await client.post(
+        f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/ai-edit/apply",
+        headers=headers,
+        json={
+            "revision": slide.revision,
+            "op": "add",
+            "block_id": "n1",
+            "after_block_id": "t1",
+            "side": "after",
+            "block": {"id": "n1", "slot_id": "n1", "type": "text", "text": "新块"},
+        },
+    )
+    assert response.status_code == 422
+
