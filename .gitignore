@@ -67,6 +67,7 @@ __pycache__/
 .eggs/
 dist/
 build/
+target/
 *.egg
 
 # 包管理锁文件旁产物 / 缓存
