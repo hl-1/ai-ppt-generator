@@ -13,12 +13,12 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from app.core.paths import REPO_ROOT
 from app.domain.theme import TextStyle
 
 logger = logging.getLogger(__name__)
 
-FONTS_DIR = REPO_ROOT / "backend" / "fonts"
+# 与 fetch_fonts.py 对齐：本地是 backend/fonts，镜像里 backend 被拷到 /app，即 /app/fonts
+FONTS_DIR = Path(__file__).resolve().parents[2] / "fonts"
 LATIN_FONT_NAME = "NotoSans-Regular.ttf"
 CJK_FONT_NAME = "NotoSansSC-Regular.otf"
 
