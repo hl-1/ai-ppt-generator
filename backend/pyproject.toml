@@ -27,6 +27,7 @@ dependencies = [
     "arq>=0.26",
     "httpx[socks]>=0.28.1",
     "fonttools>=4.63.0",
+    "cos-python-sdk-v5>=1.9.44",
 ]
 
 [build-system]

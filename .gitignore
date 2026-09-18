@@ -49,6 +49,9 @@ Desktop.ini
 credentials.json
 secrets.json
 
+# 部署证书（私钥等敏感文件，走 scp 上传，不进 Git）
+deploy/
+
 # 依赖
 node_modules/
 .pnpm-store/
