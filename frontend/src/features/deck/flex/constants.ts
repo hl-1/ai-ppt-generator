@@ -27,6 +27,7 @@ export type FlexBlockType =
   | 'bullets'
   | 'image'
   | 'chart'
+  | 'diagram'
   | 'table'
   | 'kpi'
   | 'cards'

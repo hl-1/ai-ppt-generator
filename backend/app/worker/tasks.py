@@ -42,6 +42,7 @@ async def generate_outline(ctx: dict[str, Any], project_id: str, job_id: str) ->
             pages,
             input_signature,
             expected_revision,
+            blueprint=draft.blueprint.model_dump(mode="json"),
         )
     except Exception as error:
         retry = retry_after_failure(ctx, error)
@@ -99,6 +100,7 @@ async def _load_generation_input(
         from app.domain.content_density import normalize_density
 
         payload = OutlineGenerationInput(
+            report_brief=getattr(project, "report_brief", None) or {},
             title=project.title,
             audience=project.audience,
             tone=project.tone,
@@ -115,6 +117,8 @@ async def _save_completed(
     pages: list[OutlinePage],
     input_signature: str,
     expected_revision: int,
+    *,
+    blueprint: dict | None = None,
 ) -> int | None:
     async with async_session_factory() as session:
         result = await session.execute(
@@ -135,6 +139,7 @@ async def _save_completed(
             return None
 
         outline.pages = [page.model_dump(mode="json") for page in pages]
+        outline.blueprint = blueprint or {}
         outline.input_signature = input_signature
         outline.status = "draft"
         outline.error = None

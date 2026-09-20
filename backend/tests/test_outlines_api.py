@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_queue
 from app.api.sse import _encode
 from app.core.db import async_session_factory
-from app.domain.outline import OutlineDraft, OutlinePageDraft
+from app.domain.outline import EvidenceItem, OutlineDraft, OutlinePageDraft
 from app.llm.base import OutlineGenerationInput
 from app.llm.errors import InvalidOutlineOutputError, LLMNotConfiguredError
 from app.main import app
@@ -118,6 +118,43 @@ class FakeGenerator:
                 )
                 for index in range(1, payload.page_count + 1)
             ]
+        )
+
+
+class FakeRefitGenerator:
+    async def refit_page(self, page, desired_evidence_kind, sections):
+        assert desired_evidence_kind == "trend"
+        assert any(section.ref == "S2:1" for section in sections)
+        return page.model_copy(
+            update={
+                "title": "收入持续增长",
+                "objective": "展示收入在两个年度的变化",
+                "key_points": ["2023 年收入为 100 万元", "2024 年收入为 120 万元"],
+                "key_message": "收入从 100 万元提升至 120 万元",
+                "layout_id": "chart",
+                "evidence_kind": "trend",
+                "source_refs": ["S2:1"],
+                "evidence": [
+                    EvidenceItem(
+                        source_ref="S2:1",
+                        quote="2023年收入100万元。",
+                        metric="收入",
+                        value="100",
+                        unit="万元",
+                        period="2023年",
+                        scope="",
+                    ),
+                    EvidenceItem(
+                        source_ref="S2:1",
+                        quote="2024年收入120万元。",
+                        metric="收入",
+                        value="120",
+                        unit="万元",
+                        period="2024年",
+                        scope="",
+                    ),
+                ],
+            }
         )
 
 
@@ -256,6 +293,40 @@ async def test_outline_edit_confirm_unlock_flow(
         headers=headers,
     )
     assert changed.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_fit_outline_page_rebuilds_chart_content_from_sources(
+    client: AsyncClient,
+    queue: FakeQueue,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = await _sign_up(client)
+    project = await _project(client, headers)
+    await client.post(
+        f"/api/v1/projects/{project['id']}/sources",
+        json={"kind": "text", "content": "2023年收入100万元。2024年收入120万元。"},
+        headers=headers,
+    )
+    await client.post(f"/api/v1/projects/{project['id']}/outline/generate", headers=headers)
+    outline = await _complete_outline(project["id"])
+    monkeypatch.setattr(
+        "app.api.v1.outlines.create_outline_generator",
+        lambda: FakeRefitGenerator(),
+    )
+
+    response = await client.post(
+        f"/api/v1/projects/{project['id']}/outline/pages/{outline.pages[0]['id']}/fit-evidence",
+        json={"revision": outline.revision, "evidence_kind": "trend"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    page = response.json()["pages"][0]
+    assert page["evidence_kind"] == "trend"
+    assert page["layout_id"] == "chart"
+    assert page["title"] == "收入持续增长"
+    assert len(page["evidence"]) == 2
 
 
 @pytest.mark.asyncio

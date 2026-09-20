@@ -2,6 +2,7 @@ import {
   BarChart3,
   Columns2,
   Columns3,
+  GitBranch,
   Hash,
   Image as ImageIcon,
   LayoutGrid,
@@ -42,6 +43,7 @@ const BLOCK_BUTTONS: Array<{
   { type: 'callout', label: '提示', icon: MessageSquare },
   { type: 'table', label: '表格', icon: Table2 },
   { type: 'chart', label: '图表', icon: BarChart3 },
+  { type: 'diagram', label: '流程', icon: GitBranch },
 ]
 
 export type InsertAnchor = { parentId: string; index: number }

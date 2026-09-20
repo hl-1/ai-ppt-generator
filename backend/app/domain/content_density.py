@@ -62,7 +62,7 @@ PROFILES: dict[ContentDensity, DensityProfile] = {
         target_bullets=(3, 4),
         min_chars_per_bullet=18,
         max_chars_per_bullet=56,
-        prefer_block_mix="kicker + 标题 + 引言/要点 + KPI、cards 或配图至少一类",
+        prefer_block_mix="标题 + 主证据（图表、表格、对比或要点）+ 必要的解读和来源",
         prompt_hint="均衡充实：结论 + 支撑细节，多用具体事实与机制说明。",
     ),
     "detailed": DensityProfile(
@@ -73,7 +73,7 @@ PROFILES: dict[ContentDensity, DensityProfile] = {
         target_bullets=(4, 6),
         min_chars_per_bullet=22,
         max_chars_per_bullet=72,
-        prefer_block_mix="kicker + 标题 + 引言 + cards/双栏要点 + KPI 或表/图 + 可选 callout",
+        prefer_block_mix="标题 + 主证据 + 支撑解读；细节可放讲稿或附录",
         prompt_hint="信息更满：展开论证、对比或步骤，可含表格/图表（有数据时）。",
     ),
 }
@@ -128,31 +128,35 @@ def effective_block_targets(density: str | None, role: str | None) -> tuple[int,
     return (profile.min_blocks, profile.max_blocks)
 
 
-def density_prompt_block(density: str | None, role: str | None) -> str:
+def density_prompt_block(
+    density: str | None, role: str | None, evidence_kind: str = "narrative"
+) -> str:
     """写入单页 user/system 的密度与角色约束段落。"""
     profile = get_profile(density)
     page_role = normalize_page_role(role)
     min_blocks, max_blocks = effective_block_targets(density, role)
+    if evidence_kind != "narrative":
+        min_blocks = 2
     b_lo, b_hi = profile.target_bullets
     lines = [
         f"文字量档位：{profile.label}（{profile.id}）。{profile.prompt_hint}",
         f"页型角色：{page_role}。{role_writing_hint(page_role)}",
         f"内容块数量目标：{min_blocks}–{max_blocks} 个；推荐组合：{profile.prefer_block_mix}。",
-        f"要点条目目标：{b_lo}–{b_hi} 条；每条约 {profile.min_chars_per_bullet}–"
+        f"如果使用要点列表，条目目标：{b_lo}–{b_hi} 条；每条约 {profile.min_chars_per_bullet}–"
         f"{profile.max_chars_per_bullet} 字，写具体结论与事实。",
         "用 key_points 展开论证，不要复述标题；禁止「本页介绍……」「待补充」等空话。",
-        "在槽位/画布容量上限内尽量贴近目标中上沿，不要为了「少写」而留下空洞页面。",
+        "以证据表达完整、投影可读为准；允许留白，不为填满画布增加内容。",
         "数字须来自给定来源；缺数据时用定性机制、对比或步骤充实，禁止编造数字。",
     ]
     if page_role == "content":
         lines.append(
-            "内容页必须有 kicker：单独 text 块，text_style=caption，不超过 6 字；"
+            "仅在有助于定位章节时添加 kicker：text_style=caption，不超过 6 字；"
             "可选 lead 引言：text 块，text_style=subtitle，一句话。"
         )
     if page_role == "content" and profile.id in {"medium", "detailed"}:
         lines.append(
-            "禁止仅输出「标题 + 一段正文」两块；至少包含要点列表或 cards，"
-            "并尽量再加 KPI/图/表/callout 之一。"
+            "禁止仅输出空泛标题和空话正文；图表、表格、对比或行动计划可独立承担主证据，"
+            "不必再重复添加列表或卡片，不为凑块数添加 KPI。"
         )
     return "\n".join(lines)
 

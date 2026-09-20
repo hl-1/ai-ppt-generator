@@ -4,12 +4,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain.outline import OutlinePage
+from app.domain.outline import DeckBlueprint, OutlinePage
 
 OutlineStatus = Literal["generating", "draft", "confirmed", "failed"]
 
 
 class OutlinePublic(BaseModel):
+    blueprint: DeckBlueprint = Field(default_factory=DeckBlueprint)
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
@@ -29,8 +30,14 @@ class OutlineGenerateAccepted(BaseModel):
 
 
 class OutlineUpdate(BaseModel):
+    blueprint: DeckBlueprint | None = None
     revision: int = Field(ge=1)
     pages: list[OutlinePage] = Field(min_length=1, max_length=20)
+
+
+class OutlinePageEvidenceFitRequest(BaseModel):
+    revision: int = Field(ge=1)
+    evidence_kind: Literal["trend", "chart"]
 
 
 class OutlineRevisionRequest(BaseModel):

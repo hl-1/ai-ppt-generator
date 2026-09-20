@@ -31,6 +31,7 @@ _BREATHING = 1.12
 _PREFERRED_HEIGHT_PT: dict[str, float] = {
     "image": 224.0,
     "chart": 240.0,
+    "diagram": 220.0,
     "kpi": 96.0,
     "callout": 48.0,
 }
@@ -40,7 +41,7 @@ _CARD_LINE_HEIGHT_PT = 22.0
 _MIN_LEAF_HEIGHT_PT = 36.0
 
 # 这些块可以无限吃掉富余高度：拉大反而更好看
-_ABSORBING_TYPES = frozenset({"image", "chart"})
+_ABSORBING_TYPES = frozenset({"image", "chart", "diagram"})
 
 # 有限吸收：可在偏好高度的这个倍数内吃富余（KPI/表/卡片拉高观感更好）
 _LIMITED_ABSORB_TYPES = frozenset({"kpi", "table", "cards"})

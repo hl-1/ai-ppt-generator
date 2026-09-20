@@ -1,13 +1,14 @@
 import { useMutation } from '@tanstack/react-query'
 import { useGenerateDeck } from '@/features/deck/api'
 import { useConfirmOutline, useUpdateOutline } from '@/features/outline/api'
-import type { OutlinePage } from '@/features/outline/types'
+import type { Outline, OutlinePage } from '@/features/outline/types'
 import { useUpdateProject } from '@/features/projects/api'
 
 interface LaunchInput {
   revision: number
   /** 有未保存的改动时先落库：确认校验的是服务端的大纲 */
   pages?: OutlinePage[]
+  blueprint?: Outline['blueprint']
   /** 与当前项目主题不同时才提交 */
   themeId?: string
 }
@@ -25,11 +26,11 @@ export function useConfirmAndGenerate(projectId: string) {
   const generate = useGenerateDeck(projectId)
 
   return useMutation({
-    mutationFn: async ({ revision, pages, themeId }: LaunchInput) => {
+    mutationFn: async ({ revision, pages, blueprint, themeId }: LaunchInput) => {
       let current = revision
 
       if (pages) {
-        const saved = await updateOutline.mutateAsync({ revision, pages })
+        const saved = await updateOutline.mutateAsync({ revision, pages, blueprint })
         current = saved.revision
       }
       // 主题不参与大纲输入指纹，可以在确认前安全落库

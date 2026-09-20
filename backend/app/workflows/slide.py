@@ -6,9 +6,12 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from app.domain.content import Slide
+from app.domain.enterprise_layout import bind_planned_evidence, compose_report_slide
+from app.domain.enterprise_quality import check_page_readability, check_planned_data
 from app.domain.flex_fit import fit_tree_to_content
 from app.domain.flex_width import fit_row_widths
-from app.domain.quality import check_slide_richness, is_repair_worthy
+from app.domain.outline import OutlinePageDraft
+from app.domain.quality import check_evidence_alignment, check_slide_richness, is_repair_worthy
 from app.domain.slide_draft import FlexSlideDraft, SlideDraft, draft_to_slide, flex_draft_to_slide
 from app.domain.theme import resolve_theme
 from app.domain.validation import StructureIssue, validate_slide
@@ -91,6 +94,26 @@ def build_slide_workflow(generator: SlideGenerator):
             slide = draft_to_slide(slide_id, state["input"].layout_id, draft)
         theme = resolve_theme(state.get("theme_id") or "ivory", state.get("theme_overrides"))
         payload = state["input"]
+        enterprise = bool(payload.key_message or payload.blueprint.core_message or payload.evidence)
+        if enterprise:
+            plan = OutlinePageDraft(
+                title=payload.page_title,
+                objective=payload.objective,
+                key_points=payload.key_points,
+                layout_id=payload.layout_id,
+                page_role=payload.page_role,
+                narrative_role=payload.narrative_role,
+                evidence_kind=payload.evidence_kind,
+                visual_type=payload.visual_type,
+                key_message=payload.key_message,
+                evidence=payload.evidence,
+            )
+            if slide.layout_mode == "flex":
+                labels = {
+                    s.ref: " · ".join(filter(None, [s.heading, s.locator, s.ref]))
+                    for s in payload.sections
+                }
+                slide = compose_report_slide(bind_planned_evidence(slide, plan, labels), plan)
         # 生成期先定列宽再定行高：宽度决定折行，折行决定自然高度。
         # 两步都放在校验之前，让溢出/容量告警反映的是最终版面。
         if slide.layout_mode == "flex" and slide.layout_tree is not None:
@@ -106,6 +129,10 @@ def build_slide_workflow(generator: SlideGenerator):
                 }
             )
         issues = validate_slide(slide, theme=theme)
+        if enterprise:
+            issues.extend(check_planned_data(slide, plan))
+        issues.extend(check_page_readability(slide))
+        issues.extend(check_evidence_alignment(slide, payload.evidence_kind))
         issues.extend(
             check_slide_richness(
                 slide,
@@ -121,7 +148,12 @@ def build_slide_workflow(generator: SlideGenerator):
     async def repair(state: SlideWorkflowState) -> dict:
         repairable = [issue for issue in state["issues"] if is_repair_worthy(issue)]
         messages = [_describe(issue) for issue in repairable]
-        repaired = state["input"].model_copy(update={"issues": messages})
+        repaired = state["input"].model_copy(
+            update={
+                "issues": messages,
+                "previous_draft": state["draft"].model_dump(mode="json"),
+            }
+        )
         return {"input": repaired, "repairs": state.get("repairs", 0) + 1}
 
     def route(state: SlideWorkflowState) -> str:

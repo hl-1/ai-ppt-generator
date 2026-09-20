@@ -59,6 +59,19 @@ export type ChartBlockUpdate = {
   unit?: string | null
 }
 
+export type DiagramBlockUpdate = {
+  type: 'diagram'
+  revision: number
+  diagram_type: 'flow' | 'timeline' | 'cycle'
+  nodes: Array<{
+    id: string
+    title: string
+    desc: string
+    status: 'default' | 'active' | 'done' | 'risk'
+  }>
+  edges: Array<{ source: string; target: string; label?: string | null }>
+}
+
 export type CardsBlockUpdate = {
   type: 'cards'
   revision: number
@@ -80,6 +93,7 @@ export type BlockUpdateBody =
   | Omit<Schemas['KpiBlockUpdate'], 'revision'>
   | Omit<Schemas['TableBlockUpdate'], 'revision'>
   | Omit<ChartBlockUpdate, 'revision'>
+  | Omit<DiagramBlockUpdate, 'revision'>
   | Omit<CardsBlockUpdate, 'revision'>
   | Omit<CalloutBlockUpdate, 'revision'>
 

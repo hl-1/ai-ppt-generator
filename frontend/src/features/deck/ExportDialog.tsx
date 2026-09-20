@@ -7,6 +7,7 @@ import { classifyExportError, type ExportFailure } from '@/features/deck/exportE
 import type { Deck, DeckSlide, ExportCheckReport, StructureIssue } from '@/features/deck/types'
 import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
+import { PptxPreview } from './PptxPreview'
 
 /** 导出前的检查结论。拿不到报告与「报告说有错」是两回事，必须分开表达。 */
 type CheckState =
@@ -131,6 +132,7 @@ export function ExportDialog({
           )}
 
           {failure && <FailureNote failure={failure} />}
+          {!incomplete && <PptxPreview projectId={projectId} deck={deck} />}
 
           {errors.length > 0 && (
             <IssueList

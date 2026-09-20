@@ -50,6 +50,13 @@ export function contentBodyFromBlock(block: Block): BlockUpdateBody | null {
         })),
         unit: block.unit ?? null,
       }
+    case 'diagram':
+      return {
+        type: 'diagram',
+        diagram_type: block.diagram_type,
+        nodes: block.nodes.map((node) => ({ ...node })),
+        edges: block.edges.map((edge) => ({ ...edge })),
+      }
     default:
       return null
   }
@@ -96,6 +103,14 @@ export function applyContentBody(block: Block, body: BlockUpdateBody): Block {
       categories: body.categories,
       series: body.series,
       unit: body.unit ?? null,
+    }
+  }
+  if (body.type === 'diagram' && block.type === 'diagram') {
+    return {
+      ...block,
+      diagram_type: body.diagram_type,
+      nodes: body.nodes,
+      edges: body.edges,
     }
   }
   return block

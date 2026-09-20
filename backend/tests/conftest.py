@@ -6,6 +6,7 @@ import tempfile
 # backend/var/storage 落文件。
 _STORAGE_DIR = tempfile.mkdtemp(prefix="aippt-test-storage-")
 os.environ["STORAGE_LOCAL_DIR"] = _STORAGE_DIR
+os.environ["STORAGE_DRIVER"] = "local"
 
 import pytest  # noqa: E402
 

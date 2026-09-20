@@ -1,6 +1,7 @@
 import { useRef, useState, type CSSProperties } from 'react'
 import { boxCss, mergeTextCss } from '@/render/blockStyle'
 import { ChartView } from '@/render/ChartView'
+import { DiagramView } from '@/render/DiagramView'
 import { EditableText } from '@/render/EditableText'
 import { pt, resolveColor } from '@/render/style'
 import type {
@@ -9,6 +10,7 @@ import type {
   CalloutBlock,
   CardsBlock,
   EditableBlockCommit,
+  DiagramBlock,
   ImageBlock,
   KpiBlock,
   Slot,
@@ -372,6 +374,7 @@ function KpiView({ block, theme, editable, onCommit, onSelect }: BlockProps<KpiB
 
 const CARD_GAP_PT = 16
 const CARD_PAD_PT = 12
+const CARD_MIN_WIDTH_PT = 96
 
 function CardsView({ block, theme, editable, onCommit, onSelect }: BlockProps<CardsBlock>) {
   const titleStyle = mergeTextCss(theme, 'subtitle', block.style)
@@ -384,8 +387,8 @@ function CardsView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ca
     <div
       style={{
         ...chrome,
-        display: 'flex',
-        flexDirection: 'row',
+        display: 'grid',
+        gridTemplateColumns: `repeat(auto-fit, minmax(${pt(CARD_MIN_WIDTH_PT)}, 1fr))`,
         gap: pt(CARD_GAP_PT),
         width: '100%',
         height: '100%',
@@ -396,8 +399,8 @@ function CardsView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ca
         <div
           key={`${block.id}-${index}`}
           style={{
-            flex: 1,
             minWidth: 0,
+            minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
             gap: pt(6),
@@ -417,14 +420,21 @@ function CardsView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ca
               <EditableText
                 value={item.title}
                 ariaLabel={`编辑卡片标题 ${index + 1}`}
-                style={{ ...titleStyle, flex: 1 }}
+                style={{
+                  ...titleStyle,
+                  flex: 1,
+                  minWidth: 0,
+                  overflowWrap: 'break-word',
+                }}
                 onFocus={() => onSelect?.(block.id)}
                 onCommit={(text) =>
                   onCommit(block.id, { type: 'cards', index, field: 'title', text })
                 }
               />
             ) : (
-              <span style={titleStyle}>{item.title}</span>
+              <span style={{ ...titleStyle, minWidth: 0, overflowWrap: 'break-word' }}>
+                {item.title}
+              </span>
             )}
           </div>
           {editable && onCommit ? (
@@ -432,14 +442,16 @@ function CardsView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ca
               value={item.desc}
               ariaLabel={`编辑卡片描述 ${index + 1}`}
               multiline
-              style={descStyle}
+              style={{ ...descStyle, minWidth: 0, overflowWrap: 'break-word' }}
               onFocus={() => onSelect?.(block.id)}
               onCommit={(text) =>
                 onCommit(block.id, { type: 'cards', index, field: 'desc', text })
               }
             />
           ) : (
-            <span style={descStyle}>{item.desc}</span>
+            <span style={{ ...descStyle, minWidth: 0, overflowWrap: 'break-word' }}>
+              {item.desc}
+            </span>
           )}
         </div>
       ))}
@@ -535,6 +547,17 @@ export function BlockView({
       return <ImageView block={block} slot={slot} theme={theme} />
     case 'chart':
       return <ChartView block={block} slot={slot} theme={theme} />
+    case 'diagram':
+      return (
+        <DiagramView
+          block={block as DiagramBlock}
+          slot={slot}
+          theme={theme}
+          editable={editable}
+          onCommit={onCommit}
+          onSelect={onSelect}
+        />
+      )
     case 'table':
       return (
         <TableView

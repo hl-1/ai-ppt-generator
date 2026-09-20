@@ -11,7 +11,7 @@ def _hash_payload(payload: dict) -> str:
 
 
 def _core_payload(project: Project) -> dict:
-    return {
+    payload = {
         "title": project.title,
         "audience": project.audience,
         "tone": project.tone,
@@ -23,6 +23,12 @@ def _core_payload(project: Project) -> dict:
             for source in project.sources
         ],
     }
+    from app.domain.outline import ReportBrief
+
+    brief = ReportBrief.model_validate(getattr(project, "report_brief", None) or {})
+    if brief != ReportBrief():
+        payload["report_brief"] = brief.model_dump()
+    return payload
 
 
 def project_input_signature(project: Project) -> str:

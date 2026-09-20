@@ -9,7 +9,16 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
-from app.domain.content import Block, Deck, Slide
+from app.domain.content import (
+    Block,
+    CardsBlock,
+    ChartBlock,
+    Deck,
+    DiagramBlock,
+    KpiBlock,
+    Slide,
+    TableBlock,
+)
 from app.domain.content_density import (
     contains_empty_phrase,
     effective_block_targets,
@@ -92,6 +101,10 @@ def _block_plain_text(block: Block) -> str:
                 f"{item.name}:{'/'.join(str(v) for v in item.values)}" for item in block.series
             )
             return f"{' '.join(block.categories)} {series}"
+        case "diagram":
+            nodes = "\n".join(f"{item.title}\n{item.desc}" for item in block.nodes)
+            edges = " ".join(f"{item.source}->{item.target}" for item in block.edges)
+            return f"{nodes}\n{edges}".strip()
         case "image":
             return block.alt
         case "cards":
@@ -242,6 +255,52 @@ def check_empty_phrases(slide: Slide) -> list[StructureIssue]:
     ]
 
 
+def check_evidence_alignment(slide: Slide, evidence_kind: str | None) -> list[StructureIssue]:
+    """检查大纲承诺的证据形态是否真的落到了页面。
+
+    这是企业汇报里很容易被忽略的一层：页面标题说“趋势”，正文却只剩一段
+    文字；页面说“行动计划”，却没有负责人/期限可承载的表格或卡片。这里只做
+    结构提示，不判断数据本身是否正确。
+    """
+    kind = evidence_kind or "narrative"
+    blocks = slide.blocks
+    checks: dict[str, tuple[bool, str]] = {
+        "kpi": (any(isinstance(block, KpiBlock) for block in blocks), "应包含 KPI 指标块"),
+        "trend": (any(isinstance(block, ChartBlock) for block in blocks), "应包含趋势图表块"),
+        "chart": (any(isinstance(block, ChartBlock) for block in blocks), "应包含图表块"),
+        "composition": (
+            any(
+                isinstance(block, ChartBlock) and block.chart_type in {"pie", "bar", "column"}
+                for block in blocks
+            ),
+            "应包含构成或分类比较图表",
+        ),
+        "comparison": (any(isinstance(block, ChartBlock) for block in blocks), "应包含对比图表"),
+        "flow": (any(isinstance(block, DiagramBlock) for block in blocks), "应包含流程图"),
+        "timeline": (
+            any(isinstance(block, DiagramBlock) for block in blocks),
+            "应包含阶段时间轴",
+        ),
+        "table": (any(isinstance(block, TableBlock) for block in blocks), "应包含结构化表格"),
+        "actions": (
+            any(isinstance(block, (TableBlock, CardsBlock)) for block in blocks),
+            "应包含行动表格或行动卡片",
+        ),
+    }
+    passed, expected = checks.get(kind, (True, ""))
+    if passed:
+        return []
+    return [
+        StructureIssue(
+            severity="warning",
+            slide_id=slide.id,
+            slot_id=None,
+            message=f"大纲标记为 {kind}，但页面{expected}；请确认表达方式与证据形态一致",
+            code="evidence_alignment",
+        )
+    ]
+
+
 def check_thin_content(
     slide: Slide,
     *,
@@ -257,6 +316,11 @@ def check_thin_content(
 
     profile = get_profile(density)
     min_blocks, _max_blocks = effective_block_targets(density, role)
+    structured = any(
+        block.type in {"chart", "diagram", "table", "cards", "kpi"} for block in slide.blocks
+    )
+    if structured:
+        min_blocks = 2
     issues: list[StructureIssue] = []
 
     # 固定布局块数受槽位上限约束，块数下限只约束 flex 多元素页
@@ -279,6 +343,7 @@ def check_thin_content(
         slide.layout_mode == "flex"
         and role == "content"
         and not bullet_blocks
+        and not structured
         and density in {"medium", "detailed"}
     ):
         issues.append(
@@ -300,8 +365,7 @@ def check_thin_content(
                     slide_id=slide.id,
                     slot_id=block.slot_id,
                     message=(
-                        f"要点偏少：{len(block.items)} 条，"
-                        f"{profile.label}档建议至少 {b_lo} 条"
+                        f"要点偏少：{len(block.items)} 条，{profile.label}档建议至少 {b_lo} 条"
                     ),
                     code="thin_content",
                 )
@@ -325,6 +389,8 @@ def check_thin_content(
     if (
         slide.layout_mode == "flex"
         and role == "content"
+        and not structured
+        and len(_slide_body_text(slide)) < 80
         and fill is not None
         and fill < _MIN_FILL_RATE
     ):
@@ -334,8 +400,8 @@ def check_thin_content(
                 slide_id=slide.id,
                 slot_id=None,
                 message=(
-                    f"页面下半部空白（填充率 {fill:.0%}），"
-                    "建议补要点、KPI、卡片或视觉块充实版面"
+                    f"页面有效信息偏少（内容占高 {fill:.0%}），"
+                    "请核对是否缺少支撑核心观点的依据；无需为填满页面添加内容"
                 ),
                 code="thin_content",
             )
@@ -387,11 +453,13 @@ def check_deck_content_quality(
     slide_sources: Mapping[str, str] | None = None,
     content_density: str | None = None,
     slide_roles: Mapping[str, str] | None = None,
+    slide_evidence: Mapping[str, str] | None = None,
 ) -> list[StructureIssue]:
     """生成后内容质量检查（重复 + 无来源 + 过瘦/空话）。"""
     issues = check_duplicate_pages(deck, slide_titles=slide_titles)
     sources = slide_sources or {}
     roles = slide_roles or {}
+    evidence = slide_evidence or {}
     for slide in deck.slides:
         issues.extend(check_unsourced_numbers(slide, sources.get(slide.id, "")))
         issues.extend(
@@ -401,6 +469,7 @@ def check_deck_content_quality(
                 page_role=roles.get(slide.id),
             )
         )
+        issues.extend(check_evidence_alignment(slide, evidence.get(slide.id)))
     return issues
 
 

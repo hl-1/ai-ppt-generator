@@ -24,7 +24,7 @@ from app.domain.flex_normalize import normalize
 _block_adapter = TypeAdapter(Block)
 
 STRUCTURAL_TYPES: frozenset[str] = frozenset(
-    {"text", "bullets", "image", "chart", "table", "kpi", "cards", "callout"}
+    {"text", "bullets", "image", "chart", "diagram", "table", "kpi", "cards", "callout"}
 )
 
 

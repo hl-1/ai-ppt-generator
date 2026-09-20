@@ -4,6 +4,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from app.domain.evidence import prepare_page_plan
 from app.domain.outline import OutlineDraft
 from app.llm.base import OutlineGenerationInput, OutlineGenerator, OutlineSourceSection
 
@@ -82,7 +83,14 @@ def build_outline_workflow(generator: OutlineGenerator):
 
     async def generate(state: OutlineWorkflowState) -> dict[str, OutlineDraft]:
         draft = await generator.generate(state["prepared"])
-        return {"draft": draft}
+        sources = {s.ref: s.text for s in state["prepared"].sections}
+        return {
+            "draft": draft.model_copy(
+                update={
+                    "pages": [prepare_page_plan(page, sources) for page in draft.pages],
+                }
+            )
+        }
 
     graph = StateGraph(OutlineWorkflowState)
     graph.add_node("prepare", prepare)

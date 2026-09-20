@@ -29,7 +29,14 @@ class CosStorage:
         self._client.put_object(Bucket=self.bucket, Key=key, Body=data)
 
     def load(self, key: str) -> bytes:
-        response = self._client.get_object(Bucket=self.bucket, Key=key)
+        from qcloud_cos.cos_exception import CosServiceError
+
+        try:
+            response = self._client.get_object(Bucket=self.bucket, Key=key)
+        except CosServiceError as error:
+            if error.get_status_code() == 404:
+                raise FileNotFoundError(key) from error
+            raise
         return response["Body"].get_raw_stream().read()
 
     def delete(self, key: str) -> None:

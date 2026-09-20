@@ -8,6 +8,8 @@ from pptx.util import Pt
 
 from app.domain.content import (
     BulletsBlock,
+    CardItem,
+    CardsBlock,
     ChartBlock,
     ChartSeries,
     Deck,
@@ -399,3 +401,43 @@ def test_flex_slide_with_preset_renders_pptx() -> None:
     presentation = Presentation(buffer)
     # 背景 + 2 个 fill_box 皮肤 + 内容形状，至少多于无皮肤时
     assert len(presentation.slides[0].shapes) >= 4
+
+
+def test_narrow_cards_render_as_a_grid() -> None:
+    slide = Slide(
+        id="narrow-cards",
+        layout_id="bullets",
+        layout_mode="flex",
+        layout_tree=FlexContainer(
+            type="row",
+            id="root",
+            gap_pt=16,
+            ratios=[67, 33],
+            children=[
+                FlexLeaf(id="leaf-image", block_id="image"),
+                FlexLeaf(id="leaf-cards", block_id="cards"),
+            ],
+        ),
+        blocks=[
+            ImageBlock(id="image", slot_id="image", alt="配图", source="placeholder"),
+            CardsBlock(
+                id="cards",
+                slot_id="cards",
+                items=[
+                    CardItem(title=f"卡片 {index}", desc="窄栏中也应保持正常换行")
+                    for index in range(1, 5)
+                ],
+            ),
+        ],
+    )
+    deck = Deck(id="narrow-cards", title="窄卡片", theme_id="enterprise-dark", slides=[slide])
+    presentation = Presentation(render_deck_to_pptx(deck))
+
+    card_shapes = [
+        shape
+        for shape in presentation.slides[0].shapes
+        if shape.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+        and shape.fill.fore_color.rgb == to_rgb(get_theme("enterprise-dark").palette.surface)
+    ]
+    assert len(card_shapes) == 4
+    assert len({shape.top for shape in card_shapes}) >= 2

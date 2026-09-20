@@ -5,8 +5,9 @@ from __future__ import annotations
 import uuid
 
 from app.domain.content import Deck as ContentDeck
+from app.domain.enterprise_quality import check_report_quality
 from app.domain.export_check import ExportCheckReport, run_export_check
-from app.domain.outline import OutlinePage
+from app.domain.outline import DeckBlueprint, OutlinePage, ReportBrief
 from app.domain.theme import resolve_project_theme
 from app.llm.base import OutlineSourceSection
 from app.models.project import Project
@@ -89,16 +90,39 @@ def slide_roles_map(project: Project, slides: list[Slide]) -> dict[str, str]:
     return result
 
 
+def slide_evidence_map(project: Project, slides: list[Slide]) -> dict[str, str]:
+    """每页的大纲证据形态，供导出前检查核对“承诺的图表是否真的存在”。"""
+    pages = _page_by_outline_id(project)
+    return {
+        str(slide.id): getattr(pages[slide.outline_page_id], "evidence_kind", "narrative")
+        for slide in slides
+        if slide.status == "ready" and slide.outline_page_id in pages
+    }
+
+
 def build_quality_report(project: Project, slides: list[Slide]) -> ExportCheckReport:
     """可复用的质量报告入口，供导出等接口直接调用。"""
     deck = project_to_content_deck(project, slides)
-    return run_export_check(
+    report = run_export_check(
         deck,
         theme=resolve_project_theme(project),
         slide_titles=slide_titles_map(slides),
         slide_sources=slide_sources_map(project, slides),
         content_density=getattr(project, "content_density", None) or "medium",
         slide_roles=slide_roles_map(project, slides),
+        slide_evidence=slide_evidence_map(project, slides),
         load_image=load_image,
         media_key_from_url=media_key_from_url,
     )
+    pages = _page_by_outline_id(project)
+    plans = {str(s.id): pages[s.outline_page_id] for s in slides if s.outline_page_id in pages}
+    extra = check_report_quality(
+        deck,
+        plans,
+        {ref: s.text for ref, s in _section_index(project).items()},
+        DeckBlueprint.model_validate(getattr(project.outline, "blueprint", None) or {}),
+        ReportBrief.model_validate(getattr(project, "report_brief", None) or {}),
+    )
+    report.issues.extend(extra)
+    report.export_allowed = not any(i.severity == "error" for i in report.issues)
+    return report

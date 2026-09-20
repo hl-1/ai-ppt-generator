@@ -110,6 +110,9 @@ class DeepSeekSlideGenerator:
             '- table: {"slot_id":"body","type":"table","header":["..."],"rows":[["..."]]}\n'
             '- chart: {"slot_id":"visual","type":"chart","chart_type":"bar",'
             '"categories":["..."],"series":[{"name":"...","values":[1,2]}],"unit":"%"}\n'
+            '- diagram: {"slot_id":"visual","type":"diagram","diagram_type":"flow",'
+            '"nodes":[{"id":"n1","title":"步骤一","desc":"...","status":"default"}],'
+            '"edges":[{"source":"n1","target":"n2","label":"下一步"}]}\n'
             '- cards: {"slot_id":"body","type":"cards",'
             '"items":[{"title":"...","desc":"...","icon":"💡"}]}\n'
             '- callout: {"slot_id":"note","type":"callout","text":"...","icon":null,'
@@ -117,7 +120,7 @@ class DeepSeekSlideGenerator:
             "硬性约束：\n"
             "1. 只能使用下面列出的 slot_id，每个槽位最多出现一次，必填槽位不得缺失。\n"
             "2. 每个槽位只能使用它声明接受的 type。\n"
-            "3. 严格遵守每个槽位的字数与条目上限；在上限内尽量写满支撑细节，贴近容量中上沿。\n"
+            "3. 遵守槽位容量，保留必要证据与留白；不要为填满页面增加文字。\n"
             "4. 正文使用中文，写具体结论与事实，不写「本页介绍……」这类空话。\n"
             "5. 数字必须来自给定来源，缺少数据时不要编造，改用文字表述。\n"
             "6. speaker_notes 用 2–3 句话给出讲稿提示。\n"
@@ -134,6 +137,13 @@ class DeepSeekSlideGenerator:
             "tone": payload.tone,
             "content_density": payload.content_density,
             "page_role": payload.page_role,
+            "narrative_role": payload.narrative_role,
+            "evidence_kind": payload.evidence_kind,
+            "visual_type": getattr(payload, "visual_type", "auto"),
+            "blueprint": payload.blueprint.model_dump(),
+            "key_message": payload.key_message,
+            "evidence": [item.model_dump() for item in payload.evidence],
+            "previous_draft": payload.previous_draft,
             "page": {
                 "position": payload.position,
                 "total_pages": payload.total_pages,
@@ -149,14 +159,17 @@ class DeepSeekSlideGenerator:
         }
         prompt = (
             "请为以下页面生成正文 JSON。\n"
-            f"{density_prompt_block(payload.content_density, payload.page_role)}\n"
+            + density_prompt_block(
+                payload.content_density, payload.page_role, payload.evidence_kind
+            )
+            + "\n"
+            f"{_enterprise_writing_rules(payload)}\n"
             f"{json.dumps(body, ensure_ascii=False)}"
         )
         if payload.issues:
             prompt += (
                 "\n上一次生成存在以下问题，请只修正这些问题并保持其余内容稳定："
-                "若问题是内容过瘦或空话，请充实到密度带，勿超槽位上限；"
-                "不要为消除溢出而删光支撑细节。\n"
+                "若内容空泛，请补充已有证据；重复细节可精简或移至讲稿，勿超槽位上限。\n"
                 + "\n".join(f"- {issue}" for issue in payload.issues)
             )
         return prompt
@@ -168,6 +181,13 @@ class DeepSeekSlideGenerator:
             "tone": payload.tone,
             "content_density": payload.content_density,
             "page_role": payload.page_role,
+            "narrative_role": payload.narrative_role,
+            "evidence_kind": payload.evidence_kind,
+            "visual_type": getattr(payload, "visual_type", "auto"),
+            "blueprint": payload.blueprint.model_dump(),
+            "key_message": payload.key_message,
+            "evidence": [item.model_dump() for item in payload.evidence],
+            "previous_draft": payload.previous_draft,
             "page": {
                 "position": payload.position,
                 "total_pages": payload.total_pages,
@@ -184,14 +204,17 @@ class DeepSeekSlideGenerator:
         }
         prompt = (
             "请为以下页面生成灵活布局正文 JSON（blocks + layout_tree）。\n"
-            f"{density_prompt_block(payload.content_density, payload.page_role)}\n"
+            + density_prompt_block(
+                payload.content_density, payload.page_role, payload.evidence_kind
+            )
+            + "\n"
+            f"{_enterprise_writing_rules(payload)}\n"
             f"{json.dumps(body, ensure_ascii=False)}"
         )
         if payload.issues:
             prompt += (
                 "\n上一次生成存在以下问题，请只修正这些问题并保持其余内容稳定："
-                "若问题是内容过瘦或空话，请充实到密度带并保持多块结构；"
-                "不要为消除溢出而合并/删掉内容块。\n"
+                "若内容空泛，请补充已有证据；重复细节可精简或移至讲稿，保留核心证据。\n"
                 + "\n".join(f"- {issue}" for issue in payload.issues)
             )
         return prompt
@@ -225,8 +248,11 @@ _FLEX_SYSTEM_PROMPT = (
     '- image: {"id":"visual","type":"image","alt":"这张图应该表达什么"}\n'
     '- kpi: {"id":"kpi_1","type":"kpi","value":"37%","label":"...","note":"..."}\n'
     '- table: {"id":"table","type":"table","header":["..."],"rows":[["..."]]}\n'
-    '- chart: {"id":"chart","type":"chart","chart_type":"bar",'
-    '"categories":["..."],"series":[{"name":"...","values":[1,2]}],"unit":"%"}\n'
+            '- chart: {"id":"chart","type":"chart","chart_type":"bar",'
+            '"categories":["..."],"series":[{"name":"...","values":[1,2]}],"unit":"%"}\n'
+            '- diagram: {"id":"diagram","type":"diagram","diagram_type":"flow",'
+            '"nodes":[{"id":"n1","title":"步骤一","desc":"...","status":"default"}],'
+            '"edges":[{"source":"n1","target":"n2","label":"下一步"}]}\n'
     '- cards: {"id":"cards","type":"cards",'
     '"items":[{"title":"...","desc":"...","icon":"💡"}]}\n'
     '- callout: {"id":"note","type":"callout","text":"...","icon":null,'
@@ -247,8 +273,8 @@ _FLEX_SYSTEM_PROMPT = (
     "4. grow 建议在 0.25–4；标题类 text_style 用 title/subtitle，grow 宜偏小。\n"
     "5. 正文使用中文，写具体结论与事实；数字须来自给定来源。\n"
     "6. speaker_notes 用 2–3 句话给出讲稿提示。\n"
-    "7. 一页必须用多个内容块丰富表达（标题 + 要点 + KPI/图/表等），"
-    "禁止只有一个大块；按用户给定的文字量档位与页型组织块数与组合。"
+    "7. 按证据形态组织标题与主体：图表、流程、指标、对比或定性说明，"
+    "不强制添加要点列表、KPI 或装饰性图片；让核心证据占据主要空间。"
 )
 
 
@@ -266,14 +292,35 @@ def _page_directives(payload: SlideGenerationInput) -> str:
         )
     if payload.skeleton_hint:
         rules.append(f"本页版式必须按此骨架组织：{payload.skeleton_hint}。")
+    rules.append(
+        f"本页叙事职责是 {payload.narrative_role}，证据形态是 {payload.evidence_kind}；"
+        "标题应优先写结论，避免只写主题名。"
+    )
     if not payload.allow_callout:
         rules.append(
-            "本页不得出现 callout 块（note 与 source 都不行）；"
-            "数据出处写进 kpi 的 note 或正文句尾。"
+            "本页不得出现 variant=note 的强调框；variant=source 的来源说明始终允许，"
+            "来源不受强调框配额影响。"
         )
     else:
-        rules.append("本页最多使用一个 callout 块。")
+        rules.append("本页最多使用一个 variant=note 的强调框，来源说明另计。")
     return "".join(f"\n{index}. {rule}" for index, rule in enumerate(rules, start=8))
+
+
+def _enterprise_writing_rules(payload: SlideGenerationInput) -> str:
+    return (
+        "企业汇报约束：一页只支撑一个核心观点，保持与 blueprint 的主线一致。"
+        "分析页标题表达有证据的判断，封面/目录/定义页可用主题标题。"
+        "图表和 KPI 的数字仅使用 evidence 中的值，保留指标、单位、时间和范围。"
+        "没有数值证据就使用定性描述；不要编造增长率、负责人、期限或资源承诺。"
+        "图表页的解读说明变化与影响，不逐项重复读数；相关性不能表述为因果。"
+        "事实、推断、建议、预测须明确区分。行动页缺负责人或日期时注明尚未确定。"
+        "正文用短句，cards 不使用装饰性 emoji，图表图例和来源保持可读。"
+        "主标题块 id=title，来源说明 id=source，主体图表 id=chart；"
+        "图表只使用已支持的 line/column/bar/pie 类型；流程或阶段关系使用 diagram，"
+        "不要用 cards 假装有箭头的流程图。"
+        "修复时参考 previous_draft 保留证据和核心结论，优先重排、精简重复措辞，"
+        "不要通过添加无依据内容或不断缩小字号满足检查。"
+    )
 
 
 def _slot_spec(slot: Slot) -> dict:

@@ -13,6 +13,8 @@ from pptx.util import Emu, Inches, Pt
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.api.deps import get_queue
+from app.core.config import get_settings
 from app.core.db import async_session_factory
 from app.domain.content import BulletsBlock, Deck, Slide, TextBlock
 from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT
@@ -22,6 +24,9 @@ from app.models.project import Project, ProjectOutline, ProjectSource
 from app.models.slide import Slide as SlideRow
 from app.render.pptx import render_deck_to_pptx
 from app.render.verify import verify_pptx
+from app.services.preview import preview_key
+from app.storage import get_storage
+from app.worker.preview_tasks import generate_preview
 
 PPTX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
@@ -348,3 +353,75 @@ async def test_export_allows_warnings(client: AsyncClient, monkeypatch: pytest.M
 
     assert response.status_code == 200, response.text
     assert response.content[:2] == b"PK"
+
+
+async def test_preview_worker_export_and_owner_isolation(client, monkeypatch):
+    project_id, headers = await _seed_ready_project()
+    settings = get_settings()
+    monkeypatch.setattr(settings, "preview_soffice", "test-soffice")
+    monkeypatch.setattr(settings, "export_require_preview", True)
+    monkeypatch.setattr(
+        "app.worker.preview_tasks.render_pptx_preview", lambda *a, **k: [b"png-data"]
+    )
+    url = f"/api/v1/projects/{project_id}/deck"
+    before = await client.get(f"{url}/export", headers=headers)
+    assert before.status_code == 409
+    initial = (await client.get(f"{url}/preview", headers=headers)).json()
+    fingerprint = initial["fingerprint"]
+    assert initial["status"] == "missing"
+    await generate_preview({}, project_id, fingerprint)
+    ready = (await client.get(f"{url}/preview", headers=headers)).json()
+    assert ready["status"] == "ready"
+    png = await client.get(f"{url}/preview/{fingerprint}/pages/1", headers=headers)
+    assert png.content == b"png-data"
+    other = await _sign_up(client)
+    denied = await client.get(f"{url}/preview/{fingerprint}/pages/1", headers=other)
+    assert denied.status_code == 404
+    exported = await client.get(f"{url}/export", headers=headers)
+    assert exported.status_code == 200
+    async with async_session_factory() as session:
+        project = await session.get(Project, uuid.UUID(project_id))
+        cached = get_storage().load(
+            f"{preview_key(project.user_id, project.id, fingerprint)}/deck.pptx"
+        )
+        assert exported.content == cached
+        project.theme_id = "enterprise-dark"
+        await session.commit()
+    changed = (await client.get(f"{url}/preview", headers=headers)).json()
+    assert changed["fingerprint"] != fingerprint
+    assert changed["status"] == "missing"
+    assert (await client.get(f"{url}/export", headers=headers)).status_code == 409
+
+
+async def test_preview_queue_failure_is_retryable(client, monkeypatch):
+    project_id, headers = await _seed_ready_project()
+    monkeypatch.setattr(get_settings(), "preview_soffice", "test-soffice")
+
+    class Queue:
+        async def enqueue_job(self, *args, **kwargs):
+            return None
+
+    app.dependency_overrides[get_queue] = Queue
+    try:
+        url = f"/api/v1/projects/{project_id}/deck/preview"
+        response = await client.post(url, headers=headers)
+        assert response.status_code == 503
+        assert (await client.get(url, headers=headers)).json()["status"] == "failed"
+    finally:
+        app.dependency_overrides.pop(get_queue, None)
+
+
+async def test_preview_render_failure_does_not_claim_ready(client, monkeypatch):
+    project_id, headers = await _seed_ready_project()
+    monkeypatch.setattr(get_settings(), "preview_soffice", "test-soffice")
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("engine failed")
+
+    monkeypatch.setattr("app.worker.preview_tasks.render_pptx_preview", fail)
+    url = f"/api/v1/projects/{project_id}/deck/preview"
+    fingerprint = (await client.get(url, headers=headers)).json()["fingerprint"]
+    await generate_preview({}, project_id, fingerprint)
+    result = (await client.get(url, headers=headers)).json()
+    assert result["status"] == "failed"
+    assert result["page_count"] == 0

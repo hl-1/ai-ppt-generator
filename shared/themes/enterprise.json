@@ -1,0 +1,140 @@
+{
+  "id": "enterprise",
+  "name": "企业蓝白",
+  "description": "统一网格与清晰数据层级，适合经营复盘、项目汇报和决策提案",
+  "palette": {
+    "background": "#FFFFFF",
+    "surface": "#F1F5FA",
+    "ink": "#12233F",
+    "ink_soft": "#34465F",
+    "ink_muted": "#5A6C83",
+    "accent": "#1559B7",
+    "accent_soft": "#E8F0FC",
+    "line": "#DBE3EE",
+    "line_strong": "#A9B8CD",
+    "chart_series": [
+      "#1559B7",
+      "#00A3A3",
+      "#7297C7",
+      "#9CB4D2",
+      "#718297",
+      "#D39D42"
+    ]
+  },
+  "fonts": {
+    "display": {
+      "web": "'Microsoft YaHei', 'Noto Sans SC', Arial, sans-serif",
+      "pptx_latin": "Arial",
+      "pptx_east_asian": "微软雅黑"
+    },
+    "body": {
+      "web": "'Microsoft YaHei', 'Noto Sans SC', Arial, sans-serif",
+      "pptx_latin": "Arial",
+      "pptx_east_asian": "微软雅黑"
+    }
+  },
+  "text_styles": {
+    "display": {
+      "font": "body",
+      "size_pt": 48,
+      "line_height": 1.35,
+      "weight": 600,
+      "letter_spacing_pt": 0,
+      "color": "ink"
+    },
+    "title": {
+      "font": "body",
+      "size_pt": 32,
+      "line_height": 1.35,
+      "weight": 600,
+      "letter_spacing_pt": 0,
+      "color": "ink"
+    },
+    "subtitle": {
+      "font": "body",
+      "size_pt": 20,
+      "line_height": 1.35,
+      "weight": 600,
+      "letter_spacing_pt": 0,
+      "color": "ink_soft"
+    },
+    "body": {
+      "font": "body",
+      "size_pt": 18,
+      "line_height": 1.35,
+      "weight": 400,
+      "letter_spacing_pt": 0,
+      "color": "ink_soft"
+    },
+    "bullet": {
+      "font": "body",
+      "size_pt": 18,
+      "line_height": 1.35,
+      "weight": 400,
+      "letter_spacing_pt": 0,
+      "color": "ink_soft"
+    },
+    "caption": {
+      "font": "body",
+      "size_pt": 12,
+      "line_height": 1.35,
+      "weight": 400,
+      "letter_spacing_pt": 0,
+      "color": "ink_muted"
+    },
+    "kpi_value": {
+      "font": "body",
+      "size_pt": 42,
+      "line_height": 1.35,
+      "weight": 600,
+      "letter_spacing_pt": 0,
+      "color": "accent"
+    },
+    "kpi_label": {
+      "font": "body",
+      "size_pt": 18,
+      "line_height": 1.35,
+      "weight": 600,
+      "letter_spacing_pt": 0,
+      "color": "ink"
+    },
+    "kpi_note": {
+      "font": "body",
+      "size_pt": 12,
+      "line_height": 1.35,
+      "weight": 400,
+      "letter_spacing_pt": 0,
+      "color": "ink_muted"
+    },
+    "table_header": {
+      "font": "body",
+      "size_pt": 18,
+      "line_height": 1.35,
+      "weight": 600,
+      "letter_spacing_pt": 0,
+      "color": "ink"
+    },
+    "table_cell": {
+      "font": "body",
+      "size_pt": 17,
+      "line_height": 1.35,
+      "weight": 400,
+      "letter_spacing_pt": 0,
+      "color": "ink_soft"
+    },
+    "chart_label": {
+      "font": "body",
+      "size_pt": 14,
+      "line_height": 1.35,
+      "weight": 400,
+      "letter_spacing_pt": 0,
+      "color": "ink_muted"
+    }
+  },
+  "shape": {
+    "radius_pt": 4,
+    "border_width_pt": 0.6,
+    "bullet_marker": "rule"
+  },
+  "ambient": []
+}

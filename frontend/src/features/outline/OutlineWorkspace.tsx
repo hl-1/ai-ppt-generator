@@ -2,7 +2,12 @@ import { Check, GripVertical, Loader2, Plus, RefreshCw, Sparkles, Trash2, X } fr
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { WorkbenchHeader } from '@/components/WorkbenchHeader'
 import { Button } from '@/components/ui/Button'
-import { useGenerateOutline, useOutline, useUpdateOutline } from '@/features/outline/api'
+import {
+  useGenerateOutline,
+  useOutline,
+  useRefitOutlinePage,
+  useUpdateOutline,
+} from '@/features/outline/api'
 import type { Outline, OutlinePage } from '@/features/outline/types'
 import { useConfirmAndGenerate } from '@/features/outline/useConfirmAndGenerate'
 import { useOutlineProgress } from '@/features/outline/useOutlineProgress'
@@ -16,6 +21,14 @@ import { ThemeCover } from '@/render/ThemeCover'
 
 const MAX_KEY_POINTS = 5
 const MIN_KEY_POINTS = 2
+const NARRATIVE_LABELS = {
+  cover: '封面', executive_summary: '执行摘要', performance: '表现与现状', driver: '原因分析',
+  risk: '风险与挑战', action: '行动计划', decision: '决策建议', supporting: '支撑说明', summary: '总结',
+}
+const EVIDENCE_LABELS = {
+  narrative: '定性分析', kpi: '关键指标', trend: '趋势图', comparison: '对比', timeline: '时间轴',
+  actions: '行动计划表', table: '表格', chart: '图表',
+}
 
 export function OutlineWorkspace({ project }: { project: ProjectDetail }) {
   const outlineQuery = useOutline(project.id)
@@ -83,40 +96,47 @@ export function OutlineWorkspace({ project }: { project: ProjectDetail }) {
 
 function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: Outline }) {
   const [pages, setPages] = useState<OutlinePage[]>(outline.pages)
+  const [blueprint, setBlueprint] = useState(outline.blueprint)
   const [themeId, setThemeId] = useState(project.theme_id)
   const target = project.page_count
 
   const save = useUpdateOutline(project.id)
+  const refit = useRefitOutlinePage(project.id)
   const updateProject = useUpdateProject(project.id)
   const regenerate = useGenerateOutline(project.id)
   const launch = useConfirmAndGenerate(project.id)
+  const [refitPageId, setRefitPageId] = useState<string | null>(null)
+  const [refitError, setRefitError] = useState<Record<string, string>>({})
 
   useEffect(() => setPages(outline.pages), [outline.pages, outline.revision])
+  useEffect(() => setBlueprint(outline.blueprint), [outline.blueprint, outline.revision])
 
   const dirty = useMemo(
-    () => JSON.stringify(pages) !== JSON.stringify(outline.pages),
-    [outline.pages, pages],
+    () => JSON.stringify(pages) !== JSON.stringify(outline.pages)
+      || JSON.stringify(blueprint) !== JSON.stringify(outline.blueprint),
+    [outline.pages, pages, blueprint, outline.blueprint],
   )
   const countValid = pages.length === target
   const incomplete = pages.some(pageIncomplete)
   // 刚点「+ 要点」的空行：暂停 autosave，避免 normalize 后空行被立刻清掉
   const draftingPoint = pages.some((page) => page.key_points.some((point) => point.trim().length === 0))
-  const persisting = save.isPending || updateProject.isPending
+  const persisting = save.isPending || updateProject.isPending || refit.isPending
   const autosave = useAutosave({
+    blueprint,
     revision: outline.revision,
     pages,
     pageCount: target,
     dirty,
     draftingPoint,
     // 页数不一致时仍保存：先对齐 page_count，避免增删页后改动卡在「待保存」
-    enabled: dirty && !incomplete && !draftingPoint && !launch.isPending,
+    enabled: dirty && !incomplete && !draftingPoint && !launch.isPending && !refit.isPending,
     saving: persisting,
     save: async ({ revision, pages: nextPages }) => {
       try {
         if (nextPages.length !== target) {
           await updateProject.mutateAsync({ page_count: nextPages.length })
         }
-        await save.mutateAsync({ revision, pages: nextPages })
+        await save.mutateAsync({ revision, pages: nextPages, blueprint })
         save.reset()
         updateProject.reset()
         launch.reset()
@@ -131,6 +151,49 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
   const changePage = (index: number, next: OutlinePage) =>
     setPages((current) => current.map((page, i) => (i === index ? next : page)))
 
+  const refitPage = (index: number, evidenceKind: 'trend' | 'chart') => {
+    const current = pages[index]
+    if (!current?.id) return
+    const previous = current
+    setRefitError((errors) => {
+      const next = { ...errors }
+      delete next[current.id as string]
+      return next
+    })
+    setPages((currentPages) =>
+      currentPages.map((page, i) =>
+        i === index
+          ? {
+              ...page,
+              evidence_kind: evidenceKind,
+              planning_notes: ['正在根据来源材料重构图表页面…'],
+            }
+          : page,
+      ),
+    )
+    setRefitPageId(current.id)
+    refit.mutate(
+      {
+        pageId: current.id,
+        revision: outline.revision,
+        evidenceKind,
+      },
+      {
+        onSuccess: () => setRefitPageId(null),
+        onError: (error) => {
+          setRefitPageId(null)
+          setPages((currentPages) =>
+            currentPages.map((page) => (page.id === previous.id ? previous : page)),
+          )
+          setRefitError((errors) => ({
+            ...errors,
+            [previous.id as string]: errorMessage(error),
+          }))
+        },
+      },
+    )
+  }
+
   const startGeneration = async () => {
     if (incomplete || draftingPoint || launch.isPending) return
     // 页数被用户改过时先对齐目标，再走确认+生成
@@ -140,7 +203,7 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
     // 确认成功后大纲状态变为 confirmed，页面自身会切到编辑工作台，无需跳转
     launch.mutate({
       revision: outline.revision,
-      ...(dirty ? { pages: normalizePages(pages) } : {}),
+      ...(dirty ? { pages: normalizePages(pages), blueprint } : {}),
       ...(themeId === project.theme_id ? {} : { themeId }),
     })
   }
@@ -179,7 +242,7 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
           </Button>
           <Button
             size="sm"
-            disabled={incomplete || draftingPoint || launch.isPending || updateProject.isPending}
+            disabled={incomplete || draftingPoint || launch.isPending || persisting}
             onClick={() => void startGeneration()}
           >
             {launch.isPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
@@ -203,6 +266,24 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
             </p>
           )}
 
+          {blueprint && (
+            <section className="mb-5 rounded-2xl border border-line bg-surface p-5">
+              <h3 className="text-sm font-semibold">整套汇报主线</h3>
+              <label className="mt-3 block text-xs text-ink-muted">核心判断
+                <textarea value={blueprint.core_message ?? ''} maxLength={300} rows={2}
+                  aria-label="整套核心判断"
+                  onChange={(event) => setBlueprint({ ...blueprint, core_message: event.target.value })}
+                  className="mt-1 w-full rounded-lg border border-line bg-surface p-2 text-sm text-ink" />
+              </label>
+              <p className="mt-2 text-sm text-ink-soft">{blueprint.narrative?.join(' → ')}</p>
+              <label className="mt-3 block text-xs text-ink-muted">决策诉求
+                <input value={blueprint.decision_request ?? ''} maxLength={300} aria-label="整套决策诉求"
+                  onChange={(event) => setBlueprint({ ...blueprint, decision_request: event.target.value })}
+                  className="mt-1 w-full rounded-lg border border-line bg-surface p-2 text-sm text-ink" />
+              </label>
+            </section>
+          )}
+
           <ol className="flex flex-col gap-3">
             {pages.map((page, index) => (
               <PageCard
@@ -214,6 +295,13 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
                 dragging={drag.draggingIndex === index}
                 canRemove={pages.length > PAGE_COUNT_RANGE.min}
                 onChange={(next) => changePage(index, next)}
+                onEvidenceKindChange={(kind) =>
+                  kind === 'trend' || kind === 'chart'
+                    ? refitPage(index, kind)
+                    : changePage(index, { ...page, evidence_kind: kind })
+                }
+                refitting={refitPageId === page.id}
+                refitError={page.id ? refitError[page.id] : undefined}
                 onRemove={() => setPages((current) => current.filter((_, i) => i !== index))}
               />
             ))}
@@ -290,6 +378,9 @@ function PageCard({
   dragging,
   canRemove,
   onChange,
+  onEvidenceKindChange,
+  refitting,
+  refitError,
   onRemove,
 }: {
   page: OutlinePage
@@ -299,6 +390,9 @@ function PageCard({
   dragging: boolean
   canRemove: boolean
   onChange: (page: OutlinePage) => void
+  onEvidenceKindChange: (kind: OutlinePage['evidence_kind']) => void
+  refitting: boolean
+  refitError?: string
   onRemove: () => void
 }) {
   const keyPoints = page.key_points
@@ -342,6 +436,49 @@ function PageCard({
             className="mt-1 w-full resize-none rounded-lg bg-transparent px-1.5 py-1 text-[13px] leading-relaxed text-ink-muted transition-colors hover:bg-surface-soft focus:bg-surface-soft focus:text-ink-soft focus:outline-none"
           />
 
+          <div className="my-2 flex flex-wrap gap-2 text-xs">
+            <select aria-label={`第 ${index + 1} 页叙事职责`} value={page.narrative_role ?? 'supporting'}
+              onChange={(event) => onChange({ ...page, narrative_role: event.target.value as OutlinePage['narrative_role'] })}
+              className="rounded-lg border border-line bg-surface p-2">
+              {Object.entries(NARRATIVE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <select aria-label={`第 ${index + 1} 页表达方式`} value={page.evidence_kind ?? 'narrative'}
+              disabled={refitting}
+              onChange={(event) => onEvidenceKindChange(event.target.value as OutlinePage['evidence_kind'])}
+              className="rounded-lg border border-line bg-surface p-2">
+              {Object.entries(EVIDENCE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </div>
+          {refitting && (
+            <p className="mb-2 rounded-lg bg-accent/8 px-3 py-2 text-xs text-accent">
+              AI 正在根据来源数据重构当前页面…
+            </p>
+          )}
+          {refitError && (
+            <p className="mb-2 rounded-lg bg-warning/8 px-3 py-2 text-xs text-warning">
+              {refitError}
+            </p>
+          )}
+          <input aria-label={`第 ${index + 1} 页核心观点`} value={page.key_message ?? ''} maxLength={200}
+            placeholder="本页唯一需要观众记住的观点"
+            onChange={(event) => onChange({ ...page, key_message: event.target.value })}
+            className="mb-2 w-full rounded-lg border border-line px-2 py-1.5 text-sm" />
+          {(page.planning_notes?.length ?? 0) > 0 && (
+            <ul className="mb-2 rounded-lg bg-warning/8 p-3 text-xs text-warning">
+              {page.planning_notes?.map((note, i) => <li key={i}>{note}</li>)}
+            </ul>
+          )}
+          {(page.evidence?.length ?? 0) > 0 && (
+            <details className="mb-3 text-xs text-ink-muted">
+              <summary className="cursor-pointer">查看支撑证据（{page.evidence?.length}）</summary>
+              {page.evidence?.map((item, i) => (
+                <blockquote key={i} className="mt-2 border-l-2 border-line pl-3">
+                  <span className="font-medium">{item.source_ref} {item.period} {item.scope}</span>
+                  <p className="mt-1">{item.quote}</p>
+                </blockquote>
+              ))}
+            </details>
+          )}
           <ul className="mt-1.5 flex flex-col gap-0.5">
             {keyPoints.map((point, pointIndex) => (
               <li key={pointIndex} className="flex items-center gap-2">
@@ -400,6 +537,7 @@ function PageCard({
 
 /** 大纲改动自动落库；同一时刻只允许一个保存在飞，避免 revision 撞车 */
 function useAutosave({
+  blueprint,
   revision,
   pages,
   pageCount,
@@ -409,6 +547,7 @@ function useAutosave({
   save,
   saving,
 }: {
+  blueprint: Outline['blueprint']
   revision: number
   pages: OutlinePage[]
   pageCount: number
@@ -429,7 +568,7 @@ function useAutosave({
       void saveRef.current({ revision, pages: normalizePages(pages) })
     }, 900)
     return () => window.clearTimeout(timer)
-  }, [dirty, enabled, saving, pages, revision, pageCount])
+  }, [dirty, enabled, saving, pages, revision, pageCount, blueprint])
 
   if (saving) return '保存中…'
   if (dirty && draftingPoint) return '编辑中…'
@@ -478,6 +617,11 @@ function blankPage(index: number): OutlinePage {
     source_refs: [],
     layout_id: 'bullets',
     page_role: 'content',
+    narrative_role: 'supporting',
+    evidence_kind: 'narrative',
+    key_message: '',
+    evidence: [],
+    planning_notes: [],
   }
 }
 

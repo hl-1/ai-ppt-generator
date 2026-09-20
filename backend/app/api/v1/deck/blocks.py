@@ -141,6 +141,10 @@ async def update_slide_block(
         updated["categories"] = body.categories
         updated["series"] = [item.model_dump() for item in body.series]
         updated["unit"] = body.unit
+    elif body.type == "diagram":
+        updated["diagram_type"] = body.diagram_type
+        updated["nodes"] = [item.model_dump() for item in body.nodes]
+        updated["edges"] = [item.model_dump() for item in body.edges]
     elif body.type == "cards":
         updated["items"] = [item.model_dump() for item in body.items]
     elif body.type == "callout":

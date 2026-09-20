@@ -8,7 +8,7 @@ from app.domain.flex_layout import FlexContainer, FlexLeaf
 from app.domain.layout import Layout, Slot
 
 BlockCreateType = Literal[
-    "text", "bullets", "image", "chart", "table", "kpi", "cards", "callout"
+    "text", "bullets", "image", "chart", "diagram", "table", "kpi", "cards", "callout"
 ]
 
 _Y_TOLERANCE = 0.05
@@ -19,6 +19,7 @@ _DEFAULT_TEXT_STYLE: dict[str, str] = {
     "text": "body",
     "cards": "body",
     "callout": "body",
+    "diagram": None,
 }
 
 
@@ -55,6 +56,21 @@ def default_block_dict(block_type: BlockCreateType, block_id: str) -> dict[str, 
             "categories": ["类别A", "类别B"],
             "series": [{"name": "系列1", "values": [3.0, 5.0]}],
             "unit": None,
+        }
+    if block_type == "diagram":
+        return {
+            **base,
+            "type": "diagram",
+            "diagram_type": "flow",
+            "nodes": [
+                {"id": "n1", "title": "步骤一", "desc": "补充说明", "status": "active"},
+                {"id": "n2", "title": "步骤二", "desc": "补充说明", "status": "default"},
+                {"id": "n3", "title": "步骤三", "desc": "补充说明", "status": "default"},
+            ],
+            "edges": [
+                {"source": "n1", "target": "n2", "label": None},
+                {"source": "n2", "target": "n3", "label": None},
+            ],
         }
     if block_type == "table":
         return {

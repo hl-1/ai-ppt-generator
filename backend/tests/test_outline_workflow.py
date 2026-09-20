@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
 
 from app.core.config import Settings
-from app.domain.outline import OutlineDraft, OutlinePageDraft
+from app.domain.outline import OutlineDraft, OutlinePage, OutlinePageDraft
 from app.llm.base import OutlineGenerationInput, OutlineSourceSection
 from app.llm.client import create_chat_model
 from app.llm.deepseek import (
@@ -288,3 +289,26 @@ def test_real_layouts_cover_the_preferred_multi_slot_hints() -> None:
     generator = DeepSeekOutlineGenerator(chat=FakeChat(_valid_outline_json()))
 
     assert "多槽布局" in generator._system_prompt()
+
+
+def test_refit_user_prompt_serializes_outline_page_uuid() -> None:
+    """重构页面提示词必须能序列化真实 OutlinePage 的 UUID。"""
+    generator = DeepSeekOutlineGenerator(
+        chat=FakeChat(_valid_outline_json()),
+        layout_ids=frozenset({"bullets", "chart"}),
+    )
+    page = OutlinePage(
+        title="收入趋势",
+        objective="展示收入变化",
+        key_points=["收入上升", "增长持续"],
+        layout_id="bullets",
+    )
+
+    prompt = generator._refit_user_prompt(
+        page,
+        "trend",
+        [_section("S1:1", "2023 年收入 100 万元。")],
+    )
+
+    body = json.loads(prompt.split("\n", 1)[1])
+    assert body["current_page"]["id"] == str(page.id)

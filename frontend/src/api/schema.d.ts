@@ -414,6 +414,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/deck/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Preview */
+        get: operations["get_preview_api_v1_projects__project_id__deck_preview_get"];
+        put?: never;
+        /** Request Preview */
+        post: operations["request_preview_api_v1_projects__project_id__deck_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/preview/{fingerprint}/pages/{page_number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Preview Page */
+        get: operations["get_preview_page_api_v1_projects__project_id__deck_preview__fingerprint__pages__page_number__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/deck/generate": {
         parameters: {
             query?: never;
@@ -1263,6 +1298,21 @@ export interface components {
             /** Slides */
             slides: components["schemas"]["Slide"][];
         };
+        /** DeckBlueprint */
+        DeckBlueprint: {
+            /**
+             * Core Message
+             * @default
+             */
+            core_message: string;
+            /** Narrative */
+            narrative?: string[];
+            /**
+             * Decision Request
+             * @default
+             */
+            decision_request: string;
+        };
         /** DeckGenerateAccepted */
         DeckGenerateAccepted: {
             /** Job Id */
@@ -1392,6 +1442,41 @@ export interface components {
              * @default 1
              */
             end: number;
+        };
+        /**
+         * EvidenceItem
+         * @description 来源原句与数据口径；仅表示可追溯性，不代表来源已获独立核实。
+         */
+        EvidenceItem: {
+            /** Source Ref */
+            source_ref: string;
+            /** Quote */
+            quote: string;
+            /**
+             * Metric
+             * @default
+             */
+            metric: string;
+            /**
+             * Value
+             * @default
+             */
+            value: string;
+            /**
+             * Unit
+             * @default
+             */
+            unit: string;
+            /**
+             * Period
+             * @default
+             */
+            period: string;
+            /**
+             * Scope
+             * @default
+             */
+            scope: string;
         };
         /**
          * ExportCheckReport
@@ -1823,6 +1908,27 @@ export interface components {
              * @enum {string}
              */
             page_role: "cover" | "toc" | "section" | "content" | "summary";
+            /**
+             * Narrative Role
+             * @default supporting
+             * @enum {string}
+             */
+            narrative_role: "cover" | "executive_summary" | "performance" | "driver" | "risk" | "action" | "decision" | "supporting" | "summary";
+            /**
+             * Evidence Kind
+             * @default narrative
+             * @enum {string}
+             */
+            evidence_kind: "narrative" | "kpi" | "trend" | "comparison" | "timeline" | "actions" | "table" | "chart";
+            /**
+             * Key Message
+             * @default
+             */
+            key_message: string;
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceItem"][];
+            /** Planning Notes */
+            planning_notes?: string[];
             /** Visual */
             visual?: string | null;
             /**
@@ -1833,6 +1939,7 @@ export interface components {
         };
         /** OutlinePublic */
         OutlinePublic: {
+            blueprint?: components["schemas"]["DeckBlueprint"];
             /**
              * Id
              * Format: uuid
@@ -1874,6 +1981,7 @@ export interface components {
         };
         /** OutlineUpdate */
         OutlineUpdate: {
+            blueprint?: components["schemas"]["DeckBlueprint"] | null;
             /** Revision */
             revision: number;
             /** Pages */
@@ -1925,6 +2033,7 @@ export interface components {
         };
         /** ProjectCreate */
         ProjectCreate: {
+            report_brief?: components["schemas"]["ReportBrief"];
             /** Title */
             title: string;
             /** Audience */
@@ -1960,6 +2069,7 @@ export interface components {
         };
         /** ProjectDetail */
         ProjectDetail: {
+            report_brief?: components["schemas"]["ReportBrief"];
             /**
              * Id
              * Format: uuid
@@ -2014,6 +2124,7 @@ export interface components {
         };
         /** ProjectPublic */
         ProjectPublic: {
+            report_brief?: components["schemas"]["ReportBrief"];
             /**
              * Id
              * Format: uuid
@@ -2075,6 +2186,7 @@ export interface components {
         };
         /** ProjectUpdate */
         ProjectUpdate: {
+            report_brief?: components["schemas"]["ReportBrief"];
             /** Title */
             title?: string | null;
             /** Audience */
@@ -2140,6 +2252,25 @@ export interface components {
         RelayoutRequest: {
             /** Revision */
             revision: number;
+        };
+        /** ReportBrief */
+        ReportBrief: {
+            /**
+             * Scenario
+             * @default general
+             * @enum {string}
+             */
+            scenario: "general" | "business_review" | "project_review" | "proposal" | "strategy";
+            /**
+             * Goal
+             * @default
+             */
+            goal: string;
+            /**
+             * Decision Request
+             * @default
+             */
+            decision_request: string;
         };
         /** Shape */
         Shape: {
@@ -3413,6 +3544,105 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_preview_api_v1_projects__project_id__deck_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_preview_api_v1_projects__project_id__deck_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_preview_page_api_v1_projects__project_id__deck_preview__fingerprint__pages__page_number__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fingerprint: string;
+                page_number: number;
                 project_id: string;
             };
             cookie?: never;

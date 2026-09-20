@@ -13,7 +13,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.db import async_session_factory
-from app.domain.content import BulletsBlock, Deck, ImageBlock, Slide, TextBlock
+from app.domain.content import (
+    BulletsBlock,
+    CardsBlock,
+    Deck,
+    ImageBlock,
+    Slide,
+    TextBlock,
+)
 from app.domain.export_check import (
     allow_export,
     check_images,
@@ -22,6 +29,7 @@ from app.domain.export_check import (
 )
 from app.domain.quality import (
     check_duplicate_pages,
+    check_evidence_alignment,
     check_unsourced_numbers,
     extract_numbers,
 )
@@ -193,6 +201,30 @@ def test_sourced_numbers_pass() -> None:
         ],
     )
     assert check_unsourced_numbers(slide, source_text="本季营收增长 37%，表现良好") == []
+
+
+def test_evidence_alignment_warns_when_promised_chart_is_missing() -> None:
+    slide = _overflow_title_slide(text="本季度增长", slide_id="s-evidence")
+    issues = check_evidence_alignment(slide, "trend")
+    assert len(issues) == 1
+    assert issues[0].code == "evidence_alignment"
+    assert "趋势图表块" in issues[0].message
+
+
+def test_evidence_alignment_accepts_actions_cards() -> None:
+    slide = Slide(
+        id="s-actions",
+        layout_id="bullets",
+        blocks=[
+            TextBlock(id="t1", slot_id="title", text="行动计划"),
+            CardsBlock(
+                id="c1",
+                slot_id="body",
+                items=[{"title": "推进", "desc": "本周完成"}],
+            ),
+        ],
+    )
+    assert check_evidence_alignment(slide, "actions") == []
 
 
 # --- 导出前检查 ---

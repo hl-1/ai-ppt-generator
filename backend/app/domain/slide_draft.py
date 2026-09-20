@@ -12,6 +12,10 @@ from app.domain.content import (
     ChartBlock,
     ChartKind,
     ChartSeries,
+    DiagramBlock,
+    DiagramEdge,
+    DiagramKind,
+    DiagramNode,
     ImageBlock,
     KpiBlock,
     Slide,
@@ -68,6 +72,26 @@ class ChartContent(SlotContentBase):
     unit: str | None = None
 
 
+class DiagramNodeContent(BaseModel):
+    id: str
+    title: str
+    desc: str = ""
+    status: Literal["default", "active", "done", "risk"] = "default"
+
+
+class DiagramEdgeContent(BaseModel):
+    source: str
+    target: str
+    label: str | None = None
+
+
+class DiagramContent(SlotContentBase):
+    type: Literal["diagram"] = "diagram"
+    diagram_type: DiagramKind
+    nodes: list[DiagramNodeContent] = Field(min_length=1)
+    edges: list[DiagramEdgeContent] = Field(default_factory=list)
+
+
 class TableContent(SlotContentBase):
     type: Literal["table"] = "table"
     header: list[str] = Field(min_length=1)
@@ -104,6 +128,7 @@ SlotContent = Annotated[
     | BulletsContent
     | ImageContent
     | ChartContent
+    | DiagramContent
     | TableContent
     | KpiContent
     | CardsContent
@@ -144,6 +169,13 @@ class FlexChartContent(FlexBlockBase):
     unit: str | None = None
 
 
+class FlexDiagramContent(FlexBlockBase):
+    type: Literal["diagram"] = "diagram"
+    diagram_type: DiagramKind
+    nodes: list[DiagramNodeContent] = Field(min_length=1)
+    edges: list[DiagramEdgeContent] = Field(default_factory=list)
+
+
 class FlexTableContent(FlexBlockBase):
     type: Literal["table"] = "table"
     header: list[str] = Field(min_length=1)
@@ -174,6 +206,7 @@ FlexBlockContent = Annotated[
     | FlexBulletsContent
     | FlexImageContent
     | FlexChartContent
+    | FlexDiagramContent
     | FlexTableContent
     | FlexKpiContent
     | FlexCardsContent
@@ -266,6 +299,24 @@ def _to_block(block_id: str, content: SlotContent):  # noqa: ANN202
                 series=[ChartSeries(name=s.name, values=s.values) for s in content.series],
                 unit=content.unit,
             )
+        case DiagramContent():
+            return DiagramBlock(
+                **common,
+                diagram_type=content.diagram_type,
+                nodes=[
+                    DiagramNode(
+                        id=node.id,
+                        title=node.title,
+                        desc=node.desc,
+                        status=node.status,
+                    )
+                    for node in content.nodes
+                ],
+                edges=[
+                    DiagramEdge(source=edge.source, target=edge.target, label=edge.label)
+                    for edge in content.edges
+                ],
+            )
         case TableContent():
             return TableBlock(**common, header=content.header, rows=content.rows)
         case KpiContent():
@@ -304,6 +355,24 @@ def _to_flex_block(block_id: str, content: FlexBlockContent):  # noqa: ANN202
                 categories=content.categories,
                 series=[ChartSeries(name=s.name, values=s.values) for s in content.series],
                 unit=content.unit,
+            )
+        case FlexDiagramContent():
+            return DiagramBlock(
+                **common,
+                diagram_type=content.diagram_type,
+                nodes=[
+                    DiagramNode(
+                        id=node.id,
+                        title=node.title,
+                        desc=node.desc,
+                        status=node.status,
+                    )
+                    for node in content.nodes
+                ],
+                edges=[
+                    DiagramEdge(source=edge.source, target=edge.target, label=edge.label)
+                    for edge in content.edges
+                ],
             )
         case FlexTableContent():
             return TableBlock(**common, header=content.header, rows=content.rows)

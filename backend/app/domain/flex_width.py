@@ -110,13 +110,20 @@ def _fix_row(
         return _recurse_row(_with_allocs(node, balanced), balanced, ctx)
 
     regrouped = _regroup(node, allocs, needs, ctx, pass_index=pass_index)
-    if regrouped is None:
-        return _recurse_row(node, allocs, ctx)
-    if regrouped.type != "row":
-        return _fix_container(regrouped, avail_w_pt, ctx)
-    if pass_index + 1 >= _MAX_PASSES:
+    if regrouped is not None:
+        if regrouped.type != "row":
+            return _fix_container(regrouped, avail_w_pt, ctx)
+        if pass_index + 1 < _MAX_PASSES:
+            return _fix_row(regrouped, avail_w_pt, ctx, pass_index=pass_index + 1)
         return _recurse_row(regrouped, _allocs_of(regrouped, avail_w_pt), ctx)
-    return _fix_row(regrouped, avail_w_pt, ctx, pass_index=pass_index + 1)
+
+    # 需求总宽超过当前行、但只有一个子节点过窄时，无法 regroup。
+    # 这时仍要把空间优先给最需要的列，避免典型的窄栏 CardsBlock
+    # 继续沿用极端 ratios，被压到几十 pt 后逐字换行。
+    compressed = _compress_overconstrained(allocs, needs, inner_total)
+    if compressed is None:
+        return _recurse_row(node, allocs, ctx)
+    return _recurse_row(_with_allocs(node, compressed), compressed, ctx)
 
 
 def _recurse_row(node: FlexContainer, allocs: list[float], ctx: _WidthContext) -> FlexContainer:
@@ -142,6 +149,36 @@ def _rebalance(allocs: list[float], needs: list[float]) -> list[float]:
     return [
         max(alloc, need) if alloc < need else alloc - room * ratio
         for alloc, need, room in zip(allocs, needs, surplus, strict=True)
+    ]
+
+
+def _compress_overconstrained(
+    allocs: list[float], needs: list[float], total: float
+) -> list[float] | None:
+    """需求总宽不足时按需求比例压缩，但保留每个子项的最低可见宽度。
+
+    这是最后一道几何兜底，不承诺所有内容都能一行放下；它只保证
+    一个过宽块不会继续沿用极端 ratios，从而把相邻文本压成逐字竖排。
+    """
+    if not needs or total <= 0:
+        return None
+
+    floors = [min(need, _MIN_LEAF_WIDTH_PT) for need in needs]
+    floor_total = sum(floors)
+    if floor_total > total + _EPS:
+        # 极端情况下连最低宽度都放不下，按需求比例分配，仍保持总宽不变。
+        need_total = sum(max(need, _EPS) for need in needs)
+        return [total * max(need, _EPS) / need_total for need in needs]
+
+    remaining = total - floor_total
+    weights = [max(need - floor, 0.0) for need, floor in zip(needs, floors, strict=True)]
+    weight_total = sum(weights)
+    if weight_total <= _EPS:
+        return floors
+
+    return [
+        floor + remaining * weight / weight_total
+        for floor, weight in zip(floors, weights, strict=True)
     ]
 
 
@@ -301,7 +338,7 @@ def _leaf_min_width_pt(leaf: FlexLeaf, ctx: _WidthContext) -> float:
             return widest + 2 * max(box.padding_pt, _KPI_PAD_PT)
         case "table":
             return max(len(block.header), 1) * _MIN_TABLE_COLUMN_PT
-        case "image" | "chart":
+        case "image" | "chart" | "diagram":
             return _MIN_VISUAL_WIDTH_PT
 
     return _MIN_LEAF_WIDTH_PT

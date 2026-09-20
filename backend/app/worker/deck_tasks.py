@@ -9,7 +9,8 @@ from sqlalchemy.orm import selectinload
 from app.core.config import get_settings
 from app.core.db import async_session_factory
 from app.domain.content import Slide as SlideContent
-from app.domain.outline import OutlinePage
+from app.domain.evidence import prepare_page_plan
+from app.domain.outline import DeckBlueprint, OutlinePage
 from app.domain.page_rhythm import allows_callout, skeleton_hint
 from app.domain.validation import StructureIssue
 from app.images.pipeline import ImagePipeline, create_image_pipeline
@@ -88,6 +89,8 @@ async def _generate_one(
 
     from app.domain.content_density import normalize_page_role
 
+    plan = prepare_page_plan(page.page, {ref: s.text for ref, s in context.sections.items()})
+    page = SlideTarget(page.position, plan)
     page_role = normalize_page_role(getattr(page.page, "page_role", None))
     visual_hint = getattr(page.page, "visual", None)
     payload = SlideGenerationInput(
@@ -103,6 +106,12 @@ async def _generate_one(
         layout_mode=context.layout_mode,
         content_density=context.content_density,
         page_role=page_role,
+        narrative_role=getattr(page.page, "narrative_role", None) or "supporting",
+        evidence_kind=getattr(page.page, "evidence_kind", None) or "narrative",
+        visual_type=getattr(page.page, "visual_type", None) or "auto",
+        key_message=page.page.key_message,
+        evidence=page.page.evidence,
+        blueprint=context.blueprint,
         sections=[
             context.sections[ref] for ref in page.page.source_refs if ref in context.sections
         ],
@@ -110,7 +119,11 @@ async def _generate_one(
         visual_hint=visual_hint,
         # 跨页多样性必须提前分配：各页并发生成，看不到彼此的版式
         skeleton_hint=skeleton_hint(
-            page.position, page_role=page_role, has_visual=bool(visual_hint)
+            page.position,
+            page_role=page_role,
+            has_visual=bool(visual_hint),
+            evidence_kind=getattr(page.page, "evidence_kind", None) or "narrative",
+            narrative_role=getattr(page.page, "narrative_role", None) or "supporting",
         ),
         allow_callout=allows_callout(page.position),
     )
@@ -157,6 +170,7 @@ class DeckContext:
         sections: dict[str, OutlineSourceSection],
         pages: dict[uuid.UUID, "SlideTarget"],
         ordered_titles: list[str],
+        blueprint: DeckBlueprint | None = None,
     ) -> None:
         from app.domain.content_density import normalize_density
 
@@ -172,6 +186,7 @@ class DeckContext:
         self.pages = pages
         self.total = len(ordered_titles)
         self._ordered_titles = ordered_titles
+        self.blueprint = blueprint or DeckBlueprint()
 
     def neighbor_titles(self, position: int) -> list[str]:
         start = max(0, position - 2)
@@ -229,6 +244,7 @@ async def _load_context(project_id: uuid.UUID) -> DeckContext | None:
             sections=sections,
             pages=targets,
             ordered_titles=[page.title for page in pages],
+            blueprint=DeckBlueprint.model_validate(project.outline.blueprint or {}),
         )
 
 

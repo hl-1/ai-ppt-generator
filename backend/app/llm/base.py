@@ -5,7 +5,15 @@ from pydantic import BaseModel, Field
 from app.domain.content import Block
 from app.domain.content_density import DEFAULT_CONTENT_DENSITY, DEFAULT_PAGE_ROLE
 from app.domain.flex_layout import FlexContainer
-from app.domain.outline import OutlineDraft
+from app.domain.outline import (
+    DeckBlueprint,
+    EvidenceItem,
+    EvidenceKind,
+    NarrativeRole,
+    OutlineDraft,
+    OutlinePageDraft,
+    ReportBrief,
+)
 from app.domain.slide_draft import FlexSlideDraft, SlideDraft
 from app.domain.slide_patch import BlockPatch
 from app.schemas.project import MAX_DECK_PAGE_COUNT
@@ -29,6 +37,7 @@ class OutlineSourceSection(BaseModel):
 
 
 class OutlineGenerationInput(BaseModel):
+    report_brief: ReportBrief = Field(default_factory=ReportBrief)
     title: str = Field(min_length=1, max_length=200)
     audience: str | None = Field(default=None, max_length=100)
     tone: str = Field(min_length=1, max_length=32)
@@ -41,6 +50,14 @@ class OutlineGenerationInput(BaseModel):
 class OutlineGenerator(Protocol):
     async def generate(self, payload: OutlineGenerationInput) -> OutlineDraft:
         """根据项目参数与来源小节生成大纲草稿。"""
+
+    async def refit_page(
+        self,
+        page: OutlinePageDraft,
+        desired_evidence_kind: Literal["trend", "chart"],
+        sections: list[OutlineSourceSection],
+    ) -> OutlinePageDraft:
+        """仅使用来源材料，把一页重构为可验证的图表页。"""
 
 
 class SlideGenerationInput(BaseModel):
@@ -63,6 +80,12 @@ class SlideGenerationInput(BaseModel):
     layout_mode: Literal["fixed", "flex"] = "flex"
     content_density: ContentDensity = DEFAULT_CONTENT_DENSITY
     page_role: PageRole = DEFAULT_PAGE_ROLE
+    narrative_role: NarrativeRole = "supporting"
+    evidence_kind: EvidenceKind = "narrative"
+    visual_type: Literal["auto", "line", "column", "bar", "pie", "flow", "timeline"] = "auto"
+    key_message: str = ""
+    evidence: list[EvidenceItem] = Field(default_factory=list)
+    blueprint: DeckBlueprint = Field(default_factory=DeckBlueprint)
     sections: list[OutlineSourceSection] = Field(default_factory=list)
     # 相邻页标题，用来避免内容重复或衔接断裂
     neighbor_titles: list[str] = Field(default_factory=list)
@@ -73,6 +96,7 @@ class SlideGenerationInput(BaseModel):
     allow_callout: bool = True
     # 修复轮次带上上一轮的结构问题，让模型定向改而不是从头重来
     issues: list[str] = Field(default_factory=list)
+    previous_draft: dict[str, Any] | None = None
 
 
 class SlideGenerator(Protocol):

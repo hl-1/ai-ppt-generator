@@ -3,7 +3,7 @@ from io import BytesIO
 from typing import NamedTuple
 
 from pptx import Presentation
-from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.parts.image import Image as PptxImage
 from pptx.presentation import Presentation as PresentationType
@@ -21,6 +21,7 @@ from app.domain.content import (
     CardsBlock,
     ChartBlock,
     Deck,
+    DiagramBlock,
     ImageBlock,
     KpiBlock,
     Slide,
@@ -64,6 +65,7 @@ BULLET_INDENT_PT = 18.0
 BULLET_GAP_PT = 12.0
 CARD_GAP_PT = 16.0
 CARD_PAD_PT = 12.0
+CARD_MIN_WIDTH_PT = 96.0
 # 卡片标题与描述、KPI 各行之间的段前距
 STACK_GAP_PT = 6.0
 KPI_GAP_PT = 6.0
@@ -425,6 +427,8 @@ class PptxRenderer:
                 self._render_image(pptx_slide, block, rect=rect)
             case ChartBlock():
                 self._render_chart(pptx_slide, block, rect=rect)
+            case DiagramBlock():
+                self._render_diagram(pptx_slide, block, rect=rect)
             case CardsBlock():
                 self._render_cards(pptx_slide, block, rect=rect)
             case CalloutBlock():
@@ -506,13 +510,22 @@ class PptxRenderer:
         self._fit_stack(target, lines, gap_pt=KPI_GAP_PT)
 
     def _render_cards(self, pptx_slide: PptxSlide, block: CardsBlock, *, rect: Rect) -> None:
-        """卡片横排：surface 底 + subtitle 标题 + body 描述，观感对齐 solid_boxes。"""
+        """卡片网格：宽栏横排，窄栏自动折成多行，观感对齐 Web 端。"""
         n = len(block.items)
         if n == 0:
             return
         gap = CARD_GAP_PT / CANVAS_WIDTH_PT
-        total_gap = gap * max(n - 1, 0)
-        card_w = max((rect.w - total_gap) / n, 1e-6)
+        width_pt = rect.w * CANVAS_WIDTH_PT
+        columns = min(
+            n,
+            max(1, int((width_pt + CARD_GAP_PT) // (CARD_MIN_WIDTH_PT + CARD_GAP_PT))),
+        )
+        rows = (n + columns - 1) // columns
+        total_gap_x = gap * max(columns - 1, 0)
+        gap_y = CARD_GAP_PT / CANVAS_HEIGHT_PT
+        total_gap_y = gap_y * max(rows - 1, 0)
+        card_w = max((rect.w - total_gap_x) / columns, 1e-6)
+        card_h = max((rect.h - total_gap_y) / rows, 1e-6)
         pad_x = CARD_PAD_PT / CANVAS_WIDTH_PT
         pad_y = CARD_PAD_PT / CANVAS_HEIGHT_PT
         title_style = merge_text_style(self.theme, "subtitle", block.style)
@@ -520,11 +533,13 @@ class PptxRenderer:
         align = block.style.align if block.style else None
 
         for index, item in enumerate(block.items):
+            row = index // columns
+            column = index % columns
             card = Rect(
-                x=rect.x + index * (card_w + gap),
-                y=rect.y,
+                x=rect.x + column * (card_w + gap),
+                y=rect.y + row * (card_h + gap_y),
                 w=card_w,
-                h=rect.h,
+                h=card_h,
             )
             self._add_filled_rect(
                 pptx_slide,
@@ -766,6 +781,114 @@ class PptxRenderer:
 
     def _render_chart(self, pptx_slide: PptxSlide, block: ChartBlock, *, rect: Rect) -> None:
         render_chart(pptx_slide, rect, block, self.theme)
+
+    def _render_diagram(
+        self, pptx_slide: PptxSlide, block: DiagramBlock, *, rect: Rect
+    ) -> None:
+        """用原生形状和连接线绘制流程/时间轴，导出后节点仍可单独编辑。"""
+        if not block.nodes:
+            return
+
+        node_rects = self._diagram_node_rects(block, rect)
+        by_id = {node.id: node for node in block.nodes}
+
+        for edge in block.edges:
+            source = node_rects.get(edge.source)
+            target = node_rects.get(edge.target)
+            if source is None or target is None:
+                continue
+            self._add_diagram_connector(pptx_slide, source, target)
+
+        for node in block.nodes:
+            node_rect = node_rects[node.id]
+            fill = {
+                "active": self.theme.palette.accent_soft,
+                "done": self.theme.palette.surface,
+                "risk": mix(self.theme.palette.accent, self.theme.palette.background, 0.12),
+            }.get(node.status, self.theme.palette.surface)
+            self._add_filled_rect(
+                pptx_slide,
+                node_rect,
+                fill,
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                radius_pt=BOX_RADIUS_PT,
+                border_width_pt=1.0,
+                border_color=self.theme.palette.line,
+            )
+            content = self._padded_rect(node_rect, 12.0)
+            target = _TextTarget(
+                frame=self._add_textbox(pptx_slide, content),
+                align=None,
+                rect=content,
+            )
+            title_style = merge_text_style(self.theme, "subtitle", block.style)
+            body_style = merge_text_style(self.theme, "body", block.style)
+            lines = [(title_style, node.title)]
+            if node.desc:
+                lines.append((body_style, node.desc))
+            for index, (style, text) in enumerate(lines):
+                paragraph = (
+                    target.frame.paragraphs[0]
+                    if index == 0
+                    else target.frame.add_paragraph()
+                )
+                if index > 0:
+                    paragraph.space_before = Pt(STACK_GAP_PT)
+                write_paragraph(paragraph, text, self.theme, style)
+            self._fit_stack(target, lines, gap_pt=STACK_GAP_PT)
+
+        # 避免图边界处残留虚构节点被误以为是数据，变量只用于明确校验边引用。
+        _ = by_id
+
+    def _diagram_node_rects(self, block: DiagramBlock, rect: Rect) -> dict[str, Rect]:
+        count = len(block.nodes)
+        gap_x = 18.0 / CANVAS_WIDTH_PT
+        gap_y = 16.0 / CANVAS_HEIGHT_PT
+        if block.diagram_type == "timeline":
+            node_h = max((rect.h - gap_y * (count - 1)) / count, 0.08)
+            return {
+                node.id: Rect(
+                    x=rect.x + 0.12 * rect.w,
+                    y=rect.y + index * (node_h + gap_y),
+                    w=0.82 * rect.w,
+                    h=node_h,
+                )
+                for index, node in enumerate(block.nodes)
+            }
+        node_w = max((rect.w - gap_x * (count - 1)) / count, 0.12)
+        return {
+            node.id: Rect(
+                x=rect.x + index * (node_w + gap_x),
+                y=rect.y + 0.18 * rect.h,
+                w=node_w,
+                h=0.64 * rect.h,
+            )
+            for index, node in enumerate(block.nodes)
+        }
+
+    def _add_diagram_connector(
+        self, pptx_slide: PptxSlide, source: Rect, target: Rect
+    ) -> None:
+        if target.x >= source.x + source.w:
+            start = (source.x + source.w, source.y + source.h / 2)
+            end = (target.x, target.y + target.h / 2)
+        else:
+            start = (source.x + source.w / 2, source.y + source.h)
+            end = (target.x + target.w / 2, target.y)
+        connector = pptx_slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT,
+            Emu(round(start[0] * CANVAS_WIDTH_PT * EMU_PER_POINT)),
+            Emu(round(start[1] * CANVAS_HEIGHT_PT * EMU_PER_POINT)),
+            Emu(round(end[0] * CANVAS_WIDTH_PT * EMU_PER_POINT)),
+            Emu(round(end[1] * CANVAS_HEIGHT_PT * EMU_PER_POINT)),
+        )
+        connector.line.color.rgb = to_rgb(self.theme.palette.accent)
+        connector.line.width = Pt(1.5)
+        try:
+            connector.line.end_arrowhead = True
+        except AttributeError:
+            # 某些 python-pptx 版本没有公开箭头属性，连接线本身仍保留流程方向。
+            pass
 
 
 def render_deck_to_pptx(

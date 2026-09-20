@@ -46,6 +46,9 @@ export default function CreatePage() {
   const [content, setContent] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [audience, setAudience] = useState('')
+  const [scenario, setScenario] = useState<'general' | 'business_review' | 'project_review' | 'proposal' | 'strategy'>('business_review')
+  const [reportGoal, setReportGoal] = useState('')
+  const [decisionRequest, setDecisionRequest] = useState('')
   const [tone, setTone] = useState<NonNullable<Tone>>('professional')
   const [pageCount, setPageCount] = useState(10)
   const [layoutMode, setLayoutMode] = useState<'fixed' | 'flex'>('flex')
@@ -72,6 +75,7 @@ export default function CreatePage() {
         themeId: DEFAULT_THEME_ID,
         layoutMode,
         contentDensity,
+        reportBrief: { scenario, goal: reportGoal.trim(), decision_request: decisionRequest.trim() },
         onStep: setStep,
       },
       {
@@ -200,6 +204,28 @@ export default function CreatePage() {
               {!busy && <ArrowRight className="size-4" />}
             </Button>
           </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 rounded-2xl border border-line bg-surface p-5 sm:grid-cols-2">
+          <label className="text-sm text-ink-soft">汇报场景
+            <select aria-label="汇报场景" value={scenario} disabled={busy}
+              onChange={(event) => setScenario(event.target.value as typeof scenario)}
+              className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2">
+              <option value="business_review">经营复盘</option><option value="project_review">项目汇报</option>
+              <option value="proposal">方案提案</option><option value="strategy">战略汇报</option>
+              <option value="general">通用演示</option>
+            </select>
+          </label>
+          <label className="text-sm text-ink-soft">希望获得的决策（可选）
+            <input aria-label="希望获得的决策" value={decisionRequest} disabled={busy} maxLength={300}
+              onChange={(event) => setDecisionRequest(event.target.value)} placeholder="例如：批准下一阶段试点资源"
+              className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2" />
+          </label>
+          <label className="text-sm text-ink-soft sm:col-span-2">汇报目的（可选）
+            <input aria-label="汇报目的" value={reportGoal} disabled={busy} maxLength={500}
+              onChange={(event) => setReportGoal(event.target.value)} placeholder="例如：说明利润变化原因，并明确下季度的改进重点"
+              className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2" />
+          </label>
         </div>
 
         <div className="mt-4 min-h-6 text-center">

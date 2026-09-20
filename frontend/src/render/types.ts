@@ -20,6 +20,27 @@ export type TextBlock = Schemas['TextBlock']
 export type BulletsBlock = Schemas['BulletsBlock']
 export type ImageBlock = Schemas['ImageBlock']
 export type ChartBlock = Schemas['ChartBlock']
+export type DiagramNode = {
+  id: string
+  title: string
+  desc: string
+  status: 'default' | 'active' | 'done' | 'risk'
+}
+export type DiagramEdge = {
+  source: string
+  target: string
+  label?: string | null
+}
+export type DiagramBlock = {
+  id: string
+  slot_id: string
+  locked: boolean
+  style?: Schemas['BlockStyle'] | null
+  type: 'diagram'
+  diagram_type: 'flow' | 'timeline' | 'cycle'
+  nodes: DiagramNode[]
+  edges: DiagramEdge[]
+}
 export type TableBlock = Schemas['TableBlock']
 export type KpiBlock = Schemas['KpiBlock']
 
@@ -55,6 +76,7 @@ export type Block =
   | BulletsBlock
   | ImageBlock
   | ChartBlock
+  | DiagramBlock
   | TableBlock
   | KpiBlock
   | CardsBlock
@@ -115,5 +137,11 @@ export type EditableBlockCommit =
       categories: string[]
       series: ChartBlock['series']
       unit?: string | null
+    }
+  | {
+      type: 'diagram'
+      diagram_type: DiagramBlock['diagram_type']
+      nodes: DiagramNode[]
+      edges: DiagramEdge[]
     }
   | { type: 'style'; style: import('@/render/blockStyle').BlockStyle | null }

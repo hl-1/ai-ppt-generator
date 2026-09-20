@@ -40,3 +40,28 @@ def test_non_content_pages_keep_their_own_layout() -> None:
 def test_callout_is_rationed() -> None:
     allowed = [position for position in range(1, 13) if allows_callout(position)]
     assert allowed == list(range(CALLOUT_EVERY, 13, CALLOUT_EVERY))
+
+
+def test_evidence_kind_overrides_page_number_rotation() -> None:
+    trend = skeleton_hint(1, page_role="content", has_visual=False, evidence_kind="trend")
+    actions = skeleton_hint(1, page_role="content", has_visual=False, evidence_kind="actions")
+    assert "趋势" in trend
+    assert "行动" in actions
+    assert trend != actions
+
+
+def test_executive_summary_and_decision_have_dedicated_skeletons() -> None:
+    summary = skeleton_hint(
+        2,
+        page_role="content",
+        has_visual=False,
+        narrative_role="executive_summary",
+    )
+    decision = skeleton_hint(
+        3,
+        page_role="content",
+        has_visual=False,
+        narrative_role="decision",
+    )
+    assert "执行摘要" in summary
+    assert "决策" in decision

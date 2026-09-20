@@ -1,0 +1,19 @@
+{
+  "cover": {"name": "汇报封面", "composition": "stack"},
+  "executive_summary": {"name": "执行摘要", "composition": "columns"},
+  "performance": {"name": "经营表现", "composition": "columns"},
+  "driver": {"name": "原因分析", "composition": "columns"},
+  "risk": {"name": "风险与应对", "composition": "columns"},
+  "decision": {"name": "决策建议", "composition": "columns"},
+  "summary": {"name": "总结与下一步", "composition": "stack"},
+  "trend": {"name": "趋势与解读", "composition": "evidence"},
+  "chart": {"name": "数据与结论", "composition": "evidence"},
+  "composition": {"name": "构成与占比", "composition": "evidence"},
+  "kpi": {"name": "关键指标", "composition": "metrics"},
+  "comparison": {"name": "方案对比", "composition": "columns"},
+  "flow": {"name": "流程与路径", "composition": "diagram"},
+  "timeline": {"name": "阶段计划", "composition": "timeline"},
+  "actions": {"name": "行动计划", "composition": "stack"},
+  "table": {"name": "结构化对照", "composition": "stack"},
+  "supporting": {"name": "观点与支撑", "composition": "stack"}
+}

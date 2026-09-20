@@ -7,13 +7,16 @@ from fastapi.responses import StreamingResponse
 
 from app.api.v1.deck._shared import SessionDep
 from app.api.v1.projects import OwnedProject
+from app.core.config import get_settings
 from app.domain.export_check import ExportCheckReport
 from app.domain.theme import resolve_project_theme
 from app.render.pptx import PPTX_MEDIA_TYPE, render_deck_to_pptx
 from app.render.verify import verify_pptx
 from app.schemas.deck import DeckPublic
 from app.services.deck import load_slides, to_deck_public
+from app.services.preview import load_preview_status, preview_fingerprint, preview_key
 from app.services.quality import build_quality_report, project_to_content_deck
+from app.storage import get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +57,20 @@ async def export_deck(project: OwnedProject, session: SessionDep) -> StreamingRe
         )
 
     deck = project_to_content_deck(project, slides)
+    theme = resolve_project_theme(project)
+    cache_key = preview_key(project.user_id, project.id, preview_fingerprint(deck, theme))
+    preview_ready = bool(get_settings().preview_soffice) and (
+        load_preview_status(cache_key)["status"] == "ready"
+    )
+    if get_settings().export_require_preview and not preview_ready:
+        raise HTTPException(status_code=409, detail="请先生成当前版本的实际 PPTX 预览")
     try:
-        buffer = render_deck_to_pptx(deck, theme=resolve_project_theme(project))
-        payload = buffer.getvalue()
+        if preview_ready:
+            # 返回与实际预览一致的文件，避免预览后重新渲染造成偏差。
+            payload = get_storage().load(f"{cache_key}/deck.pptx")
+        else:
+            buffer = render_deck_to_pptx(deck, theme=theme)
+            payload = buffer.getvalue()
     except Exception as error:
         logger.exception("项目 %s 导出渲染失败", project.id)
         raise HTTPException(

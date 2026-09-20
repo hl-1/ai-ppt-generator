@@ -48,6 +48,25 @@ export function useUpdateOutline(projectId: string) {
   })
 }
 
+export function useRefitOutlinePage(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      pageId: string
+      revision: number
+      evidenceKind: 'trend' | 'chart'
+    }) =>
+      request<Outline>(`/projects/${projectId}/outline/pages/${input.pageId}/fit-evidence`, {
+        method: 'POST',
+        body: JSON.stringify({
+          revision: input.revision,
+          evidence_kind: input.evidenceKind,
+        }),
+      }),
+    onSuccess: (outline) => queryClient.setQueryData(outlineKey(projectId), outline),
+  })
+}
+
 function useRevisionMutation(projectId: string, action: 'confirm') {
   const queryClient = useQueryClient()
   return useMutation({

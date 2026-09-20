@@ -26,8 +26,8 @@ _ROLE_TYPE_HINTS: dict[str, tuple[str, ...]] = {
     "callout": ("callout",),
     "note": ("callout",),
     "source": ("callout",),
-    "image": ("image", "chart"),
-    "visual": ("image", "chart"),
+    "image": ("image", "chart", "diagram"),
+    "visual": ("image", "chart", "diagram"),
     "kpi_1": ("kpi",),
     "kpi_2": ("kpi",),
     "kpi_3": ("kpi",),
@@ -191,7 +191,9 @@ def _score_preset(
     score = 0
     if "image" in types and any(role in ("image", "visual") for role in leaf_roles):
         score += 3
-    if "chart" in types and any(role in ("image", "visual") for role in leaf_roles):
+    if ("chart" in types or "diagram" in types) and any(
+        role in ("image", "visual") for role in leaf_roles
+    ):
         score += 2
     if "kpi" in types and any(role.startswith("kpi") for role in leaf_roles):
         score += 3

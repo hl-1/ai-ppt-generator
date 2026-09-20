@@ -58,7 +58,7 @@ def test_flex_user_prompt_includes_multi_block_guidance() -> None:
     assert "内容块数量目标" in prompt
     system = gen._flex_system_prompt(payload)
     assert "宁可少写" not in system
-    assert "多个内容块" in system
+    assert "按证据形态组织标题与主体" in system
 
 
 def test_visual_hint_becomes_a_hard_constraint() -> None:
@@ -81,5 +81,7 @@ def test_skeleton_hint_becomes_a_hard_constraint() -> None:
 
 def test_callout_quota_is_stated_either_way() -> None:
     gen = _generator()
-    assert "最多使用一个 callout" in gen._flex_system_prompt(_flex_payload())
-    assert "不得出现 callout" in gen._flex_system_prompt(_flex_payload(allow_callout=False))
+    assert "最多使用一个 variant=note" in gen._flex_system_prompt(_flex_payload())
+    system = gen._flex_system_prompt(_flex_payload(allow_callout=False))
+    assert "不得出现 variant=note" in system
+    assert "variant=source 的来源说明始终允许" in system

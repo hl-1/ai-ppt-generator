@@ -119,6 +119,27 @@ class ChartBlockUpdate(BaseModel):
     unit: str | None = None
 
 
+class DiagramNodeUpdate(BaseModel):
+    id: str
+    title: str
+    desc: str = ""
+    status: Literal["default", "active", "done", "risk"] = "default"
+
+
+class DiagramEdgeUpdate(BaseModel):
+    source: str
+    target: str
+    label: str | None = None
+
+
+class DiagramBlockUpdate(BaseModel):
+    type: Literal["diagram"]
+    revision: int
+    diagram_type: Literal["flow", "timeline", "cycle"]
+    nodes: list[DiagramNodeUpdate]
+    edges: list[DiagramEdgeUpdate] = Field(default_factory=list)
+
+
 class CardItemUpdate(BaseModel):
     title: str
     desc: str
@@ -145,6 +166,7 @@ BlockUpdate = Annotated[
     | KpiBlockUpdate
     | TableBlockUpdate
     | ChartBlockUpdate
+    | DiagramBlockUpdate
     | CardsBlockUpdate
     | CalloutBlockUpdate,
     Field(discriminator="type"),
@@ -161,7 +183,7 @@ class BlockStyleUpdate(BaseModel):
 class BlockCreateRequest(BaseModel):
     revision: int
     type: Literal[
-        "text", "bullets", "image", "chart", "table", "kpi", "cards", "callout"
+        "text", "bullets", "image", "chart", "diagram", "table", "kpi", "cards", "callout"
     ]
     parent_id: str
     index: int = 0

@@ -25,6 +25,7 @@ from app.domain.content import (
     CardsBlock,
     ChartBlock,
     Deck,
+    DiagramBlock,
     ImageBlock,
     KpiBlock,
     Slide,
@@ -153,8 +154,31 @@ def _check_slide(
     issues.extend(_check_shape_bounds(slide_index, shapes, presentation))
     issues.extend(_check_native_tables(slide_index, source, shapes))
     issues.extend(_check_native_charts(slide_index, source, shapes))
+    issues.extend(_check_chart_values(slide_index, source, shapes))
     issues.extend(_check_text_in_frames(slide_index, source, shapes))
     issues.extend(_check_content_integrity(slide_index, source, shapes))
+    return issues
+
+
+def _check_chart_values(
+    slide_index: int, source: Slide, shapes: list[BaseShape]
+) -> list[VerifyIssue]:
+    """原生对象存在还不够：回读实际系列，防止导出时截断或补零。"""
+    expected = [b for b in source.blocks if isinstance(b, ChartBlock)]
+    actual = [shape for shape in shapes if shape.has_chart]
+    issues = []
+    for block, shape in zip(expected, actual, strict=False):
+        values = [tuple(s.values) for s in shape.chart.series]
+        target = [tuple(s.values) for s in block.series]
+        if values != target:
+            issues.append(
+                VerifyIssue(
+                    check="chart_values",
+                    slide_index=slide_index,
+                    shape=_shape_label(shape),
+                    message=f"第 {slide_index} 页图表数据与源内容不一致，不能截断或补零导出",
+                )
+            )
     return issues
 
 
@@ -286,7 +310,7 @@ def _check_text_in_frames(
     expected_texts = [
         text
         for block in source.blocks
-        if isinstance(block, (TextBlock, BulletsBlock, KpiBlock))
+        if isinstance(block, (TextBlock, BulletsBlock, KpiBlock, DiagramBlock))
         for text in key_texts_from_block(block)
     ]
     if not expected_texts:
@@ -362,6 +386,14 @@ def key_texts_from_block(block: Block) -> list[str]:
             texts = list(categories)
             texts.extend(item.name for item in series if item.name)
             return [item for item in texts if item.strip()]
+        case DiagramBlock(nodes=nodes):
+            texts: list[str] = []
+            for node in nodes:
+                if node.title.strip():
+                    texts.append(node.title)
+                if node.desc.strip():
+                    texts.append(node.desc)
+            return texts
         case ImageBlock():
             return []
         case CardsBlock(items=items):

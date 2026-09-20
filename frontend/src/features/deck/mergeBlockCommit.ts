@@ -145,5 +145,14 @@ export function mergeBlockCommit(
     }
   }
 
+  if (commit.type === 'diagram' && block.type === 'diagram') {
+    return {
+      type: 'diagram',
+      diagram_type: commit.diagram_type,
+      nodes: commit.nodes,
+      edges: commit.edges,
+    }
+  }
+
   return null
 }

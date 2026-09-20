@@ -34,6 +34,7 @@ class Project(Base):
     layout_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="flex")
     # 整份文字量：concise / medium / detailed
     content_density: Mapped[str] = mapped_column(String(16), nullable=False, default="medium")
+    report_brief: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
 
     created_at: Mapped[datetime] = mapped_column(
@@ -107,6 +108,7 @@ class ProjectOutline(Base):
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="generating")
     pages: Mapped[list[dict]] = mapped_column(JSONB, nullable=False, default=list)
+    blueprint: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     job_id: Mapped[str | None] = mapped_column(String(100))
     input_signature: Mapped[str | None] = mapped_column(String(64))

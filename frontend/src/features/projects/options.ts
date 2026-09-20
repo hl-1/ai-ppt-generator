@@ -12,4 +12,4 @@ export const PAGE_COUNT_OPTIONS = Array.from(
 )
 
 /** 创作时先给一个确定的主题，真正的选择发生在生成前的自定义步骤 */
-export const DEFAULT_THEME_ID = themes.has('ivory') ? 'ivory' : themeList[0].id
+export const DEFAULT_THEME_ID = themes.has('enterprise') ? 'enterprise' : themeList[0].id

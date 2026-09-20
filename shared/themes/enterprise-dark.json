@@ -1,0 +1,140 @@
+{
+  "id": "enterprise-dark",
+  "name": "深蓝战略",
+  "description": "深蓝底与青绿重点，适合战略、科技业务和管理层汇报",
+  "palette": {
+    "background": "#101C30",
+    "surface": "#1B2B44",
+    "ink": "#F4F7FC",
+    "ink_soft": "#DAE4F2",
+    "ink_muted": "#A6B7CF",
+    "accent": "#48D9C4",
+    "accent_soft": "#173F46",
+    "line": "#35475F",
+    "line_strong": "#6D829F",
+    "chart_series": [
+      "#48D9C4",
+      "#72ACF5",
+      "#A3B2FF",
+      "#F2C37B",
+      "#A6B7CF",
+      "#CC91B2"
+    ]
+  },
+  "fonts": {
+    "display": {
+      "web": "'Microsoft YaHei', 'Noto Sans SC', Arial, sans-serif",
+      "pptx_latin": "Arial",
+      "pptx_east_asian": "微软雅黑"
+    },
+    "body": {
+      "web": "'Microsoft YaHei', 'Noto Sans SC', Arial, sans-serif",
+      "pptx_latin": "Arial",
+      "pptx_east_asian": "微软雅黑"
+    }
+  },
+  "text_styles": {
+    "display": {
+      "font": "body",
+      "size_pt": 48,
+      "line_height": 1.35,
+      "weight": 600,
+      "letter_spacing_pt": 0,
+      "color": "ink"
+    },
+    "title": {
+      "font": "body",
+      "size_pt": 32,
+      "line_height": 1.35,
+      "weight": 600,
+      "letter_spacing_pt": 0,
+      "color": "ink"
+    },
+    "subtitle": {
+      "font": "body",
+      "size_pt": 20,
+      "line_height": 1.35,
+      "weight": 600,
+      "letter_spacing_pt": 0,
+      "color": "ink_soft"
+    },
+    "body": {
+      "font": "body",
+      "size_pt": 18,
+      "line_height": 1.35,
+      "weight": 400,
+      "letter_spacing_pt": 0,
+      "color": "ink_soft"
+    },
+    "bullet": {
+      "font": "body",
+      "size_pt": 18,
+      "line_height": 1.35,
+      "weight": 400,
+      "letter_spacing_pt": 0,
+      "color": "ink_soft"
+    },
+    "caption": {
+      "font": "body",
+      "size_pt": 12,
+      "line_height": 1.35,
+      "weight": 400,
+      "letter_spacing_pt": 0,
+      "color": "ink_muted"
+    },
+    "kpi_value": {
+      "font": "body",
+      "size_pt": 42,
+      "line_height": 1.35,
+      "weight": 600,
+      "letter_spacing_pt": 0,
+      "color": "accent"
+    },
+    "kpi_label": {
+      "font": "body",
+      "size_pt": 18,
+      "line_height": 1.35,
+      "weight": 600,
+      "letter_spacing_pt": 0,
+      "color": "ink"
+    },
+    "kpi_note": {
+      "font": "body",
+      "size_pt": 12,
+      "line_height": 1.35,
+      "weight": 400,
+      "letter_spacing_pt": 0,
+      "color": "ink_muted"
+    },
+    "table_header": {
+      "font": "body",
+      "size_pt": 18,
+      "line_height": 1.35,
+      "weight": 600,
+      "letter_spacing_pt": 0,
+      "color": "ink"
+    },
+    "table_cell": {
+      "font": "body",
+      "size_pt": 17,
+      "line_height": 1.35,
+      "weight": 400,
+      "letter_spacing_pt": 0,
+      "color": "ink_soft"
+    },
+    "chart_label": {
+      "font": "body",
+      "size_pt": 14,
+      "line_height": 1.35,
+      "weight": 400,
+      "letter_spacing_pt": 0,
+      "color": "ink_muted"
+    }
+  },
+  "shape": {
+    "radius_pt": 4,
+    "border_width_pt": 0.6,
+    "bullet_marker": "rule"
+  },
+  "ambient": []
+}

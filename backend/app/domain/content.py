@@ -6,10 +6,11 @@ from app.domain.block_style import BlockStyle
 from app.domain.flex_layout import FlexContainer
 
 BlockType = Literal[
-    "text", "bullets", "image", "chart", "table", "kpi", "cards", "callout"
+    "text", "bullets", "image", "chart", "diagram", "table", "kpi", "cards", "callout"
 ]
 ImageSource = Literal["generated", "stock", "upload", "placeholder"]
 ChartKind = Literal["bar", "column", "line", "pie"]
+DiagramKind = Literal["flow", "timeline", "cycle"]
 CalloutVariant = Literal["note", "source"]
 
 
@@ -57,6 +58,26 @@ class ChartBlock(BlockBase):
     unit: str | None = None
 
 
+class DiagramNode(BaseModel):
+    id: str
+    title: str
+    desc: str = ""
+    status: Literal["default", "active", "done", "risk"] = "default"
+
+
+class DiagramEdge(BaseModel):
+    source: str
+    target: str
+    label: str | None = None
+
+
+class DiagramBlock(BlockBase):
+    type: Literal["diagram"] = "diagram"
+    diagram_type: DiagramKind
+    nodes: list[DiagramNode] = Field(min_length=1)
+    edges: list[DiagramEdge] = Field(default_factory=list)
+
+
 class TableBlock(BlockBase):
     type: Literal["table"] = "table"
     header: list[str]
@@ -93,6 +114,7 @@ Block = Annotated[
     | BulletsBlock
     | ImageBlock
     | ChartBlock
+    | DiagramBlock
     | TableBlock
     | KpiBlock
     | CardsBlock

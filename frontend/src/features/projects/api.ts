@@ -78,6 +78,7 @@ export interface DraftInput {
   themeId: string
   layoutMode?: 'fixed' | 'flex'
   contentDensity?: 'concise' | 'medium' | 'detailed'
+  reportBrief?: ProjectCreate['report_brief']
   onStep?: (step: string) => void
 }
 
@@ -103,6 +104,7 @@ export function useCreateDraft() {
           theme_id: input.themeId,
           layout_mode: input.layoutMode ?? 'flex',
           content_density: input.contentDensity ?? 'medium',
+          report_brief: input.reportBrief,
         }),
       })
 

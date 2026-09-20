@@ -300,6 +300,7 @@ def run_export_check(
     slide_sources: Mapping[str, str] | None = None,
     content_density: str | None = None,
     slide_roles: Mapping[str, str] | None = None,
+    slide_evidence: Mapping[str, str] | None = None,
     load_image: ImageLoader | None = None,
     media_key_from_url: Callable[[str], str | None] | None = None,
 ) -> ExportCheckReport:
@@ -324,6 +325,7 @@ def run_export_check(
             slide_sources=slide_sources,
             content_density=content_density,
             slide_roles=slide_roles,
+            slide_evidence=slide_evidence,
         )
     )
     issues.extend(check_font_metrics_availability())

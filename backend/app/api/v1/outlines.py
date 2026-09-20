@@ -11,17 +11,22 @@ from app.api.deps import get_queue
 from app.api.sse import event_stream_response
 from app.api.v1.projects import OwnedProject
 from app.core.db import get_session
+from app.domain.evidence import evidence_problem, prepare_page_plan
 from app.domain.layout import load_layouts
+from app.llm.base import OutlineSourceSection
+from app.llm.errors import InvalidOutlineOutputError, LLMNotConfiguredError
 from app.models.project import Project, ProjectOutline
 from app.schemas.outline import (
     OutlineEvent,
     OutlineGenerateAccepted,
+    OutlinePageEvidenceFitRequest,
     OutlinePublic,
     OutlineRevisionRequest,
     OutlineUpdate,
 )
 from app.services.outline_inputs import migrate_outline_signature, outline_input_matches
 from app.services.outline_progress import outline_events, publish_outline_event
+from app.worker.context import create_outline_generator
 
 router = APIRouter(prefix="/projects/{project_id}/outline", tags=["outline"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -49,6 +54,18 @@ def _ensure_draft(outline: ProjectOutline) -> None:
 
 
 def _validate_pages(project: Project, pages: list) -> None:
+    sources = {
+        f"S{i}:{j}": section.get("text", "")
+        for i, source in enumerate(project.sources, 1)
+        for j, section in enumerate(source.sections, 1)
+    }
+    for page in pages:
+        if any(ref not in sources for ref in page.source_refs):
+            raise HTTPException(status_code=422, detail=f"{page.title}：引用的来源不存在")
+        for item in page.evidence:
+            problem = evidence_problem(item, sources)
+            if problem:
+                raise HTTPException(status_code=422, detail=f"{page.title}：{problem}")
     valid_layouts = load_layouts()
     invalid = sorted({page.layout_id for page in pages if page.layout_id not in valid_layouts})
     if invalid:
@@ -141,7 +158,89 @@ async def update_outline(
     _ensure_revision(outline, body.revision)
     _validate_pages(project, body.pages)
 
-    outline.pages = [page.model_dump(mode="json") for page in body.pages]
+    sources = {
+        f"S{i}:{j}": section.get("text", "")
+        for i, source in enumerate(project.sources, 1)
+        for j, section in enumerate(source.sections, 1)
+    }
+    outline.pages = [
+        prepare_page_plan(page, sources).model_dump(mode="json") for page in body.pages
+    ]
+    if body.blueprint is not None:
+        outline.blueprint = body.blueprint.model_dump(mode="json")
+    outline.revision += 1
+    await session.commit()
+    await session.refresh(outline)
+    return outline
+
+
+@router.post("/pages/{page_id}/fit-evidence", response_model=OutlinePublic)
+async def fit_outline_page_evidence(
+    page_id: uuid.UUID,
+    body: OutlinePageEvidenceFitRequest,
+    project: OwnedProject,
+    session: SessionDep,
+) -> ProjectOutline:
+    """按用户选择的图表类型，用来源材料重构一页大纲。"""
+    outline = _outline_or_404(project)
+    _ensure_draft(outline)
+    _ensure_revision(outline, body.revision)
+
+    pages = [_page_from_dict(item) for item in outline.pages]
+    page_index = next((index for index, page in enumerate(pages) if page.id == page_id), None)
+    if page_index is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="大纲页面不存在")
+
+    source_sections: list[OutlineSourceSection] = []
+    sources: dict[str, str] = {}
+    for source_index, source in enumerate(project.sources, 1):
+        for section_index, section in enumerate(source.sections, 1):
+            ref = f"S{source_index}:{section_index}"
+            text = section.get("text", "")
+            sources[ref] = text
+            source_sections.append(
+                OutlineSourceSection(
+                    ref=ref,
+                    heading=section.get("heading"),
+                    level=section.get("level", 0),
+                    text=text,
+                    locator=section.get("locator", ""),
+                )
+            )
+
+    current = pages[page_index].model_copy(
+        update={"evidence_kind": body.evidence_kind, "planning_notes": []}
+    )
+    try:
+        generator = create_outline_generator()
+        fitted = await generator.refit_page(current, body.evidence_kind, source_sections)
+    except LLMNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(error),
+        ) from error
+    except (InvalidOutlineOutputError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="AI 无法按当前来源重构图表页面，请补充同指标、单位、时间和范围的数据",
+        ) from error
+
+    prepared = prepare_page_plan(
+        fitted.model_copy(update={"evidence_kind": body.evidence_kind}),
+        sources,
+    )
+    if prepared.evidence_kind != body.evidence_kind:
+        detail = "；".join(prepared.planning_notes) or (
+            "当前来源没有足够的可比数据，无法自动重构为图表"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=detail,
+        )
+
+    pages[page_index] = prepared
+    _validate_pages(project, pages)
+    outline.pages = [page.model_dump(mode="json") for page in pages]
     outline.revision += 1
     await session.commit()
     await session.refresh(outline)

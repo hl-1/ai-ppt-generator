@@ -139,6 +139,29 @@ def test_text_column_gets_at_least_the_readable_minimum() -> None:
     assert widths["body"] >= MIN_CHARS_PER_LINE * BODY_SIZE_PT
 
 
+def test_overconstrained_single_cards_column_still_gets_priority_width() -> None:
+    """窄栏里的单个 CardsBlock 不能因为无法 regroup 就保留极端窄宽。"""
+    tree = FlexContainer(
+        type="row",
+        id="root",
+        gap_pt=16,
+        ratios=[67, 33],
+        children=[_leaf("visual"), _leaf("cards")],
+    )
+    blocks: list[Block] = [
+        ImageBlock(id="visual", slot_id="visual", alt="配图", source="placeholder"),
+        _cards(4),
+    ]
+
+    before = _widths_pt(tree)
+    after_tree = fit_row_widths(tree, blocks, theme=THEME)
+    after = _widths_pt(after_tree)
+
+    assert after["cards"] > before["cards"]
+    assert after["cards"] >= 2 * before["cards"]
+    assert sum(after.values()) + 16 <= CANVAS_WIDTH_PT + 1
+
+
 def test_unknown_block_ids_do_not_crash() -> None:
     tree = FlexContainer(
         type="row",
