@@ -7,7 +7,7 @@ export function isLeaf(node: FlexNode): node is FlexLeaf {
 }
 
 export function isContainer(node: FlexNode): node is FlexContainer {
-  return node.type === 'row' || node.type === 'column'
+  return node.type === 'row' || node.type === 'column' || node.type === 'overlay'
 }
 
 export function cloneTree(tree: FlexContainer): FlexContainer {

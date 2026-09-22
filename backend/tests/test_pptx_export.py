@@ -12,10 +12,15 @@ from app.domain.content import (
     CardsBlock,
     ChartBlock,
     ChartSeries,
+    ComboChartBlock,
     Deck,
+    FinancialTableBlock,
+    FinancialTableRow,
     ImageBlock,
     Slide,
     TextBlock,
+    WaterfallBlock,
+    WaterfallItem,
 )
 from app.domain.flex_layout import FlexContainer, FlexLeaf
 from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT
@@ -304,6 +309,70 @@ def test_chart_mismatched_lengths_still_export() -> None:
     chart = _first_chart(Presentation(buffer))
     assert list(chart.plots[0].categories) == ["A", "B"]
     assert list(chart.series[0].values) == [1.0, 2.0]
+
+
+def test_advanced_business_blocks_export_as_editable_shapes() -> None:
+    slide = Slide(
+        id="advanced-business",
+        layout_id="bullets",
+        layout_mode="flex",
+        layout_tree=FlexContainer(
+            type="column",
+            id="advanced-root",
+            gap_pt=12,
+            children=[
+                FlexLeaf(id="title-leaf", block_id="title", text_style="title", grow=0.35),
+                FlexLeaf(id="financial-leaf", block_id="financial", grow=1),
+                FlexLeaf(id="bridge-leaf", block_id="bridge", grow=1),
+                FlexLeaf(id="combo-leaf", block_id="combo", grow=1),
+            ],
+        ),
+        blocks=[
+            TextBlock(id="title", slot_id="title", text="高级经营分析"),
+            FinancialTableBlock(
+                id="financial",
+                slot_id="body",
+                unit="RMB Mil",
+                columns=["1H2025", "1H2026"],
+                rows=[
+                    FinancialTableRow(
+                        label="Operating revenue",
+                        values=["543,769", "538,035"],
+                        emphasis=True,
+                    ),
+                    FinancialTableRow(label="Operating costs", values=["371,851", "379,250"]),
+                ],
+                highlight_columns=[1],
+            ),
+            WaterfallBlock(
+                id="bridge",
+                slot_id="visual",
+                unit="€bn",
+                items=[
+                    WaterfallItem(label="Net debt Q2", value=44.1, kind="start"),
+                    WaterfallItem(label="Operating cash flow", value=4.5, kind="increase"),
+                    WaterfallItem(label="Settlement", value=-3.8, kind="decrease"),
+                    WaterfallItem(label="Net debt Q3", value=37.5, kind="total"),
+                ],
+            ),
+            ComboChartBlock(
+                id="combo",
+                slot_id="note",
+                categories=["1H2025", "1H2026"],
+                bars=[ChartSeries(name="Net profit", values=[84235, 78934])],
+                lines=[ChartSeries(name="Margin", values=[34.2, 32.3])],
+                line_unit="%",
+            ),
+        ],
+    )
+    deck = Deck(id="advanced", title="高级经营分析", theme_id="enterprise", slides=[slide])
+    presentation = Presentation(render_deck_to_pptx(deck))
+    shapes = list(presentation.slides[0].shapes)
+
+    assert any(shape.has_table for shape in shapes)
+    # 瀑布图和组合图由原生形状/文本框绘制，导出后仍可逐项编辑。
+    assert sum(1 for shape in shapes if shape.has_text_frame) >= 4
+    assert len(shapes) >= 12
 
 
 def test_chart_capacity_overflow_is_warning_not_error() -> None:

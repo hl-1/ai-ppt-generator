@@ -72,6 +72,10 @@ class _WidthContext:
 def _fix_container(node: FlexContainer, avail_w_pt: float, ctx: _WidthContext) -> FlexContainer:
     if not node.children:
         return node
+    if node.type == "overlay":
+        return node.model_copy(
+            update={"children": [_fix_child(child, avail_w_pt, ctx) for child in node.children]}
+        )
     if node.type == "row":
         return _fix_row(node, avail_w_pt, ctx, pass_index=0)
     inner = _inset(node, avail_w_pt)
@@ -338,7 +342,7 @@ def _leaf_min_width_pt(leaf: FlexLeaf, ctx: _WidthContext) -> float:
             return widest + 2 * max(box.padding_pt, _KPI_PAD_PT)
         case "table":
             return max(len(block.header), 1) * _MIN_TABLE_COLUMN_PT
-        case "image" | "chart" | "diagram":
+        case "image" | "chart" | "diagram" | "financial_table" | "waterfall" | "combo_chart":
             return _MIN_VISUAL_WIDTH_PT
 
     return _MIN_LEAF_WIDTH_PT

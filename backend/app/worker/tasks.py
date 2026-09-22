@@ -106,6 +106,7 @@ async def _load_generation_input(
             tone=project.tone,
             page_count=project.page_count,
             content_density=normalize_density(getattr(project, "content_density", None)),
+            topic_mode=any(source.kind == "topic" for source in project.sources),
             sections=sections,
         )
         return payload, project_input_signature(project), project.outline.revision

@@ -142,7 +142,15 @@ class DeepSeekOutlineGenerator:
     def _system_prompt(self) -> str:
         layout_list = ", ".join(sorted(self._layout_ids))
         roles = ", ".join(PAGE_ROLES)
-        evidence_options = ["narrative", "comparison", "composition", "timeline", "flow", "actions"]
+        evidence_options = [
+            "narrative",
+            "comparison",
+            "composition",
+            "timeline",
+            "flow",
+            "actions",
+            "waterfall",
+        ]
         if "kpi" in self._layout_ids:
             evidence_options.append("kpi")
         if "chart" in self._layout_ids:
@@ -179,6 +187,20 @@ class DeepSeekOutlineGenerator:
                 }
             ],
         }
+        visual_options = "auto、line、column、bar、pie、flow、timeline"
+        if "table" in self._layout_ids:
+            visual_options += "、financial_table"
+        if "chart" in self._layout_ids:
+            visual_options += "、waterfall、combo_chart"
+        visual_guidance = (
+            "先判断数据关系再选：时间变化用 line，分类比较用 bar/column，部分占整体用 pie，"
+            "步骤/路径用 flow，阶段/里程碑用 timeline；"
+        )
+        if "table" in self._layout_ids:
+            visual_guidance += "财务明细对照用 financial_table；"
+        if "chart" in self._layout_ids:
+            visual_guidance += "起点加减项到终点用 waterfall，同时指标与率类对比用 combo_chart；"
+        visual_guidance += "没有可靠数据不要硬凑图表。"
         return (
             "你是 PPT 大纲规划助手。必须只输出一个 JSON 对象，不要 Markdown，不要额外说明。\n"
             "JSON 结构必须为：\n"
@@ -199,9 +221,7 @@ class DeepSeekOutlineGenerator:
             "6. narrative_role 表示叙事职责，可选 cover、executive_summary、performance、"
             "driver、risk、action、decision、supporting、summary；"
             f"evidence_kind 表示证据形态，本次可选：{', '.join(evidence_options)}。\n"
-            "7. visual_type 表示具体视觉形式，可选 auto、line、column、bar、pie、flow、timeline。"
-            "先判断数据关系再选：时间变化用 line，分类比较用 bar/column，部分占整体用 pie，"
-            "步骤/路径用 flow，阶段/里程碑用 timeline；没有可靠数据不要硬凑图表。\n"
+            f"7. visual_type 表示具体视觉形式，可选 {visual_options}。{visual_guidance}\n"
             "8. 先规划 blueprint，再安排页面。经营复盘用摘要、表现、原因、风险、行动；"
             "项目汇报突出进度、阻碍、里程碑；提案突出问题、选项、取舍、资源和决策；"
             "战略汇报突出判断、机会、取舍和路径。一般主题按受众组织，不强凑企业业绩。\n"
@@ -238,12 +258,20 @@ class DeepSeekOutlineGenerator:
             "tone": payload.tone,
             "page_count": payload.page_count,
             "content_density": payload.content_density,
+            "topic_mode": payload.topic_mode,
             "report_brief": payload.report_brief.model_dump(),
             "sections": sections_payload,
         }
+        topic_hint = (
+            "当前为主题样稿模式：允许使用模拟素材，但必须尊重 visual_type；"
+            "同一套大纲中不要重复绑定同一组数据。\n"
+            if payload.topic_mode
+            else ""
+        )
         return (
             "请根据以下项目参数与来源小节生成大纲 JSON。\n"
             f"{outline_density_hint(payload.content_density)}\n"
+            f"{topic_hint}"
             f"{json.dumps(body, ensure_ascii=False)}"
         )
 

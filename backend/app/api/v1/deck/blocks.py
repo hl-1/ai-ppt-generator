@@ -12,6 +12,7 @@ from app.api.v1.deck._shared import (
     _require_flex_tree,
 )
 from app.api.v1.projects import OwnedProject
+from app.domain.content import DiagramEdge, DiagramNode
 from app.domain.flex_edit import default_block_dict, default_text_style_for_type
 from app.domain.flex_layout import (
     FlexLeaf,
@@ -21,6 +22,7 @@ from app.domain.flex_layout import (
     remove_leaf_by_block_id,
 )
 from app.domain.flex_normalize import normalize
+from app.domain.mermaid import ensure_mermaid
 from app.images.validate import ImageRejected, validate_image
 from app.models.slide import Slide
 from app.schemas.deck import (
@@ -143,8 +145,11 @@ async def update_slide_block(
         updated["unit"] = body.unit
     elif body.type == "diagram":
         updated["diagram_type"] = body.diagram_type
-        updated["nodes"] = [item.model_dump() for item in body.nodes]
-        updated["edges"] = [item.model_dump() for item in body.edges]
+        nodes = [DiagramNode(**item.model_dump()) for item in body.nodes]
+        edges = [DiagramEdge(**item.model_dump()) for item in body.edges]
+        updated["mermaid"] = ensure_mermaid(body.mermaid, body.diagram_type, nodes, edges)
+        updated["nodes"] = [node.model_dump() for node in nodes]
+        updated["edges"] = [edge.model_dump() for edge in edges]
     elif body.type == "cards":
         updated["items"] = [item.model_dump() for item in body.items]
     elif body.type == "callout":

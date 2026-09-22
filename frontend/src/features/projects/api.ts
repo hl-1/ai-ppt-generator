@@ -120,7 +120,7 @@ export function useCreateDraft() {
             })
           }
         } else {
-          input.onStep?.('正在整理内容…')
+          input.onStep?.(input.mode === 'topic' ? '正在生成主题样稿素材…' : '正在整理内容…')
           await request<ProjectSource>(`/projects/${project.id}/sources`, {
             method: 'POST',
             body: JSON.stringify({ kind: input.mode, content: input.content }),

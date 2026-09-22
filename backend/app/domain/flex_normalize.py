@@ -30,7 +30,7 @@ def _normalize_container(node: FlexContainer, depth: int, *, clamp_title: bool) 
     children = [
         _normalize_child(child, depth + 1, clamp_title=clamp_title) for child in node.children
     ]
-    if depth >= MAX_DEPTH:
+    if node.type != "overlay" and depth >= MAX_DEPTH:
         children = _flatten_container_children(children, clamp_title=clamp_title)
     if node.type == "row":
         children = _enforce_max_row_children(node.id, children)

@@ -136,6 +136,7 @@ class DiagramBlockUpdate(BaseModel):
     type: Literal["diagram"]
     revision: int
     diagram_type: Literal["flow", "timeline", "cycle"]
+    mermaid: str | None = None
     nodes: list[DiagramNodeUpdate]
     edges: list[DiagramEdgeUpdate] = Field(default_factory=list)
 
@@ -183,7 +184,18 @@ class BlockStyleUpdate(BaseModel):
 class BlockCreateRequest(BaseModel):
     revision: int
     type: Literal[
-        "text", "bullets", "image", "chart", "diagram", "table", "kpi", "cards", "callout"
+        "text",
+        "bullets",
+        "image",
+        "chart",
+        "diagram",
+        "table",
+        "kpi",
+        "cards",
+        "callout",
+        "financial_table",
+        "waterfall",
+        "combo_chart",
     ]
     parent_id: str
     index: int = 0

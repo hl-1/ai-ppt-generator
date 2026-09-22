@@ -163,8 +163,10 @@ async def update_outline(
         for i, source in enumerate(project.sources, 1)
         for j, section in enumerate(source.sections, 1)
     }
+    topic_mode = any(source.kind == "topic" for source in project.sources)
     outline.pages = [
-        prepare_page_plan(page, sources).model_dump(mode="json") for page in body.pages
+        prepare_page_plan(page, sources, topic_mode=topic_mode).model_dump(mode="json")
+        for page in body.pages
     ]
     if body.blueprint is not None:
         outline.blueprint = body.blueprint.model_dump(mode="json")
@@ -209,7 +211,11 @@ async def fit_outline_page_evidence(
             )
 
     current = pages[page_index].model_copy(
-        update={"evidence_kind": body.evidence_kind, "planning_notes": []}
+        update={
+            "evidence_kind": body.evidence_kind,
+            "visual_type": body.visual_type,
+            "planning_notes": [],
+        }
     )
     try:
         generator = create_outline_generator()
@@ -226,7 +232,12 @@ async def fit_outline_page_evidence(
         ) from error
 
     prepared = prepare_page_plan(
-        fitted.model_copy(update={"evidence_kind": body.evidence_kind}),
+        fitted.model_copy(
+            update={
+                "evidence_kind": body.evidence_kind,
+                "visual_type": body.visual_type,
+            }
+        ),
         sources,
     )
     if prepared.evidence_kind != body.evidence_kind:

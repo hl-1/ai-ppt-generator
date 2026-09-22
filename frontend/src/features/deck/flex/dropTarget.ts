@@ -52,9 +52,10 @@ export function collectInsertSlots(
 
   const walk = (node: FlexContainer, isRoot: boolean) => {
     const allow =
-      isRoot ||
-      node.children.length >= 2 ||
-      (mode === 'insert' && node.children.length > 0)
+      node.type !== 'overlay' &&
+      (isRoot ||
+        node.children.length >= 2 ||
+        (mode === 'insert' && node.children.length > 0))
     if (allow) {
       const vertical = node.type === 'column'
       const childBounds = node.children.map((child) =>

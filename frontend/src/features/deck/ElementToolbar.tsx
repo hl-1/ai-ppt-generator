@@ -5,9 +5,11 @@ import {
   Bold,
   Italic,
   MoreHorizontal,
+  Plus,
   RotateCcw,
   TableProperties,
   Trash2,
+  Workflow,
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
@@ -20,7 +22,15 @@ import {
 } from '@/render/blockStyle'
 import type { GroupPreset } from '@/render/flexLayout'
 import { resolveColor } from '@/render/style'
-import type { Block, EditableBlockCommit, TableBlock, Theme } from '@/render/types'
+import type {
+  Block,
+  DiagramBlock,
+  DiagramEdge,
+  DiagramNode,
+  EditableBlockCommit,
+  TableBlock,
+  Theme,
+} from '@/render/types'
 
 const PRESET_CHIPS: { value: GroupPreset; label: string }[] = [
   { value: 'solid_boxes', label: '实心' },
@@ -76,7 +86,9 @@ export function ElementToolbar({
   const supported = caps.text || caps.box || caps.borderOnly
   const showPreset = Boolean(onFlexPresetChange)
   const showTableOps = block.type === 'table' && Boolean(onCommitContent)
-  const showBar = supported || Boolean(onDelete) || showPreset || showTableOps
+  const showDiagramOps = block.type === 'diagram' && Boolean(onCommitContent)
+  const showBar =
+    supported || Boolean(onDelete) || showPreset || showTableOps || showDiagramOps
 
   const resolvedSize = style?.size_pt != null ? Math.round(style.size_pt) : null
 
@@ -409,9 +421,20 @@ export function ElementToolbar({
         </>
       )}
 
-      {showPreset && (
+      {showDiagramOps && block.type === 'diagram' && onCommitContent && (
         <>
           {(supported || !isStyleEmpty(style) || showTableOps) && <Sep />}
+          <DiagramStructureOps
+            block={block}
+            disabled={disabled}
+            onCommitContent={onCommitContent}
+          />
+        </>
+      )}
+
+      {showPreset && (
+        <>
+          {(supported || !isStyleEmpty(style) || showTableOps || showDiagramOps) && <Sep />}
           <div
             role="group"
             aria-label="容器皮肤"
@@ -452,6 +475,341 @@ export function ElementToolbar({
             <Trash2 className="size-3.5" />
           </ToolBtn>
         </>
+      )}
+    </div>
+  )
+}
+
+type DiagramDirection = 'LR' | 'TB'
+
+function diagramDirection(block: DiagramBlock): DiagramDirection {
+  const match = block.mermaid?.match(/^\s*flowchart\s+(LR|TB|TD|RL|BT)\b/i)
+  const value = match?.[1]?.toUpperCase()
+  if (value === 'TB' || value === 'TD') return 'TB'
+  if (value === 'LR' || value === 'RL' || value === 'BT') return 'LR'
+  return 'TB'
+}
+
+function mermaidFromDiagram(
+  diagramType: DiagramBlock['diagram_type'],
+  direction: DiagramDirection,
+  nodes: DiagramNode[],
+  edges: DiagramEdge[],
+): string {
+  const safe = (value: string, index: number) => {
+    const id = value.replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_+|_+$/g, '')
+    return `node_${id || index}_${index}`
+  }
+  const clean = (value: string | null | undefined) =>
+    (value ?? '').replace(/["|]/g, "'").replace(/\s+/g, ' ').trim()
+  const ids = new Map<string, string>()
+  const flowDirection = diagramType === 'timeline' ? 'TB' : direction
+  const lines = [`flowchart ${flowDirection}`]
+  nodes.forEach((node, index) => {
+    const id = safe(node.id, index + 1)
+    ids.set(node.id, id)
+    const label = [clean(node.title), clean(node.desc)].filter(Boolean).join('<br/>')
+    lines.push(`    ${id}["${label || `节点${index + 1}`}"]`)
+  })
+  edges.forEach((edge) => {
+    const source = ids.get(edge.source)
+    const target = ids.get(edge.target)
+    if (!source || !target || source === target) return
+    const label = clean(edge.label)
+    lines.push(label ? `    ${source} -->|${label}| ${target}` : `    ${source} --> ${target}`)
+  })
+  return lines.join('\n')
+}
+
+function validEdges(nodes: DiagramNode[], edges: DiagramEdge[]): DiagramEdge[] {
+  const ids = new Set(nodes.map((node) => node.id))
+  return edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target) && edge.source !== edge.target)
+}
+
+function DiagramStructureOps({
+  block,
+  disabled,
+  onCommitContent,
+}: {
+  block: DiagramBlock
+  disabled?: boolean
+  onCommitContent: (change: EditableBlockCommit) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [direction, setDirection] = useState<DiagramDirection>(() => diagramDirection(block))
+  const [nodes, setNodes] = useState<DiagramNode[]>(block.nodes.map((node) => ({ ...node })))
+  const [edges, setEdges] = useState<DiagramEdge[]>(block.edges.map((edge) => ({ ...edge })))
+
+  useEffect(() => {
+    if (!open) {
+      setDirection(diagramDirection(block))
+      setNodes(block.nodes.map((node) => ({ ...node })))
+      setEdges(block.edges.map((edge) => ({ ...edge })))
+    }
+  }, [block, open])
+
+  const commit = (
+    nextNodes = nodes,
+    nextEdges = edges,
+    nextDirection: DiagramDirection = direction,
+  ) => {
+    const cleanedEdges = validEdges(nextNodes, nextEdges)
+    onCommitContent({
+      type: 'diagram',
+      diagram_type: block.diagram_type,
+      mermaid: mermaidFromDiagram(block.diagram_type, nextDirection, nextNodes, cleanedEdges),
+      nodes: nextNodes,
+      edges: cleanedEdges,
+    })
+  }
+
+  const updateNode = (index: number, patch: Partial<DiagramNode>) => {
+    const nextNodes = nodes.map((node, current) =>
+      current === index ? { ...node, ...patch } : node,
+    )
+    setNodes(nextNodes)
+  }
+
+  const commitNode = (index: number, patch: Partial<DiagramNode>) => {
+    const nextNodes = nodes.map((node, current) =>
+      current === index ? { ...node, ...patch } : node,
+    )
+    const nextEdges = validEdges(nextNodes, edges)
+    setNodes(nextNodes)
+    setEdges(nextEdges)
+    commit(nextNodes, nextEdges)
+  }
+
+  const addNode = () => {
+    const nextIndex = nodes.length + 1
+    const nextNodes = [
+      ...nodes,
+      {
+        id: `node-${Date.now().toString(36)}`,
+        title: `节点${nextIndex}`,
+        desc: '',
+        status: 'default' as const,
+      },
+    ]
+    const nextEdges = nodes.length
+      ? [
+          ...edges,
+          {
+            source: nodes[nodes.length - 1].id,
+            target: nextNodes[nextNodes.length - 1].id,
+            label: null,
+          },
+        ]
+      : edges
+    setNodes(nextNodes)
+    setEdges(nextEdges)
+    commit(nextNodes, nextEdges)
+  }
+
+  const removeNode = (index: number) => {
+    if (nodes.length <= 2) return
+    const nextNodes = nodes.filter((_, current) => current !== index)
+    const removed = nodes[index].id
+    const nextEdges = edges.filter((edge) => edge.source !== removed && edge.target !== removed)
+    setNodes(nextNodes)
+    setEdges(nextEdges)
+    commit(nextNodes, nextEdges)
+  }
+
+  const updateEdge = (index: number, patch: Partial<DiagramEdge>, save = false) => {
+    const nextEdges = edges.map((edge, current) =>
+      current === index ? { ...edge, ...patch } : edge,
+    )
+    setEdges(nextEdges)
+    if (save) commit(nodes, nextEdges)
+  }
+
+  const addEdge = () => {
+    if (nodes.length < 2) return
+    const nextEdges = [
+      ...edges,
+      {
+        source: nodes[0].id,
+        target: nodes[1].id,
+        label: null,
+      },
+    ]
+    setEdges(nextEdges)
+    commit(nodes, nextEdges)
+  }
+
+  const removeEdge = (index: number) => {
+    const nextEdges = edges.filter((_, current) => current !== index)
+    setEdges(nextEdges)
+    commit(nodes, nextEdges)
+  }
+
+  return (
+    <div className="relative">
+      <ToolBtn
+        label="编辑节点"
+        pressed={open}
+        disabled={disabled}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Workflow className="size-3.5" />
+      </ToolBtn>
+      {open && (
+        <div className="absolute top-full left-1/2 z-50 mt-1 max-h-[28rem] w-80 -translate-x-1/2 overflow-auto rounded-xl border border-line bg-surface p-3 shadow-pop">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-ink">节点</span>
+            <div className="flex items-center gap-1">
+              <select
+                aria-label="流程方向"
+                value={direction}
+                disabled={disabled || block.diagram_type === 'timeline'}
+                onChange={(event) => {
+                  const nextDirection = event.target.value as DiagramDirection
+                  setDirection(nextDirection)
+                  commit(nodes, edges, nextDirection)
+                }}
+                className="h-7 rounded-md border border-line bg-surface px-1 text-[11px] text-ink-soft outline-none focus:border-accent"
+              >
+                <option value="LR">横向</option>
+                <option value="TB">纵向</option>
+              </select>
+              <button
+                type="button"
+                title="新增节点"
+                aria-label="新增节点"
+                disabled={disabled}
+                onClick={addNode}
+                className="grid size-7 place-items-center rounded-lg text-ink-soft hover:bg-surface-soft hover:text-accent disabled:opacity-40"
+              >
+                <Plus className="size-3.5" />
+              </button>
+            </div>
+          </div>
+          <div className="mt-2 flex flex-col gap-2">
+            {nodes.map((node, index) => (
+              <div key={node.id} className="rounded-lg border border-line bg-surface-soft p-2">
+                <div className="flex items-center gap-1.5">
+                  <input
+                    aria-label={`节点 ${index + 1} 标题`}
+                    value={node.title}
+                    disabled={disabled}
+                    onChange={(event) => updateNode(index, { title: event.target.value })}
+                    onBlur={(event) => commitNode(index, { title: event.currentTarget.value })}
+                    className="min-w-0 flex-1 rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+                  />
+                  <select
+                    aria-label={`节点 ${index + 1} 状态`}
+                    value={node.status}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      const status = event.target.value as DiagramNode['status']
+                      const nextNodes = nodes.map((item, current) =>
+                        current === index ? { ...item, status } : item,
+                      )
+                      const nextEdges = validEdges(nextNodes, edges)
+                      setNodes(nextNodes)
+                      setEdges(nextEdges)
+                      commit(nextNodes, nextEdges)
+                    }}
+                    className="h-7 rounded-md border border-line bg-surface px-1 text-[11px] text-ink-soft outline-none focus:border-accent"
+                  >
+                    <option value="default">默认</option>
+                    <option value="active">当前</option>
+                    <option value="done">完成</option>
+                    <option value="risk">风险</option>
+                  </select>
+                  <button
+                    type="button"
+                    title="删除节点"
+                    aria-label={`删除节点 ${index + 1}`}
+                    disabled={disabled || nodes.length <= 2}
+                    onClick={() => removeNode(index)}
+                    className="grid size-7 place-items-center rounded-md text-ink-muted hover:bg-surface hover:text-negative disabled:opacity-30"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+                <textarea
+                  aria-label={`节点 ${index + 1} 描述`}
+                  value={node.desc}
+                  disabled={disabled}
+                  rows={2}
+                  onChange={(event) => updateNode(index, { desc: event.target.value })}
+                  onBlur={(event) => commitNode(index, { desc: event.currentTarget.value })}
+                  className="mt-1.5 w-full resize-none rounded-md border border-line bg-surface px-2 py-1 text-xs leading-5 text-ink-soft outline-none focus:border-accent"
+                />
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+            <span className="text-xs font-semibold text-ink">连线</span>
+            <button
+              type="button"
+              title="新增连线"
+              aria-label="新增连线"
+              disabled={disabled || nodes.length < 2}
+              onClick={addEdge}
+              className="grid size-7 place-items-center rounded-lg text-ink-soft hover:bg-surface-soft hover:text-accent disabled:opacity-40"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          </div>
+          <div className="mt-2 flex flex-col gap-2">
+            {edges.map((edge, index) => (
+              <div key={`${edge.source}-${edge.target}-${index}`} className="rounded-lg border border-line bg-surface-soft p-2">
+                <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5">
+                  <select
+                    aria-label={`连线 ${index + 1} 起点`}
+                    value={edge.source}
+                    disabled={disabled}
+                    onChange={(event) => updateEdge(index, { source: event.target.value }, true)}
+                    className="min-w-0 rounded-md border border-line bg-surface px-1 py-1 text-[11px] text-ink-soft outline-none focus:border-accent"
+                  >
+                    {nodes.map((node, nodeIndex) => (
+                      <option key={node.id} value={node.id}>
+                        {node.title || `节点${nodeIndex + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label={`连线 ${index + 1} 终点`}
+                    value={edge.target}
+                    disabled={disabled}
+                    onChange={(event) => updateEdge(index, { target: event.target.value }, true)}
+                    className="min-w-0 rounded-md border border-line bg-surface px-1 py-1 text-[11px] text-ink-soft outline-none focus:border-accent"
+                  >
+                    {nodes.map((node, nodeIndex) => (
+                      <option key={node.id} value={node.id}>
+                        {node.title || `节点${nodeIndex + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    title="删除连线"
+                    aria-label={`删除连线 ${index + 1}`}
+                    disabled={disabled}
+                    onClick={() => removeEdge(index)}
+                    className="grid size-7 place-items-center rounded-md text-ink-muted hover:bg-surface hover:text-negative disabled:opacity-30"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+                <input
+                  aria-label={`连线 ${index + 1} 标签`}
+                  value={edge.label ?? ''}
+                  disabled={disabled}
+                  onChange={(event) => updateEdge(index, { label: event.target.value || null })}
+                  onBlur={(event) =>
+                    updateEdge(index, { label: event.currentTarget.value || null }, true)
+                  }
+                  className="mt-1.5 w-full rounded-md border border-line bg-surface px-2 py-1 text-[11px] text-ink-muted outline-none focus:border-accent"
+                  placeholder="连线标签"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )

@@ -30,8 +30,11 @@ _BREATHING = 1.12
 # 没有可度量内容的块给一个偏好高度（pt，相对 540 高画布）
 _PREFERRED_HEIGHT_PT: dict[str, float] = {
     "image": 224.0,
-    "chart": 240.0,
-    "diagram": 220.0,
+    "chart": 280.0,
+    "diagram": 260.0,
+    "financial_table": 260.0,
+    "waterfall": 280.0,
+    "combo_chart": 280.0,
     "kpi": 96.0,
     "callout": 48.0,
 }
@@ -41,7 +44,9 @@ _CARD_LINE_HEIGHT_PT = 22.0
 _MIN_LEAF_HEIGHT_PT = 36.0
 
 # 这些块可以无限吃掉富余高度：拉大反而更好看
-_ABSORBING_TYPES = frozenset({"image", "chart", "diagram"})
+_ABSORBING_TYPES = frozenset(
+    {"image", "chart", "diagram", "financial_table", "waterfall", "combo_chart"}
+)
 
 # 有限吸收：可在偏好高度的这个倍数内吃富余（KPI/表/卡片拉高观感更好）
 _LIMITED_ABSORB_TYPES = frozenset({"kpi", "table", "cards"})
@@ -110,6 +115,13 @@ def _fit_container(
 ) -> FlexContainer:
     if not node.children:
         return node
+
+    if node.type == "overlay":
+        return node.model_copy(
+            update={
+                "children": [_fit_child(child, avail_h_pt, ctx) for child in node.children]
+            }
+        )
 
     if node.type == "row":
         # 同一行的子项共享整行高度，横向比例不在本函数职责内
@@ -294,6 +306,8 @@ def _natural_height_pt(node: FlexNode, ctx: _FitContext) -> float:
         return _MIN_LEAF_HEIGHT_PT
 
     heights = [_natural_height_pt(child, ctx) for child in node.children]
+    if node.type == "overlay":
+        return max(heights)
     if node.type == "row":
         return max(heights)
     return sum(heights) + max(len(heights) - 1, 0) * node.gap_pt
@@ -311,6 +325,14 @@ def _leaf_height_pt(leaf: FlexLeaf, ctx: _FitContext) -> float:
     if block.type == "table":
         rows = 1 + len(block.rows)
         return max(_MIN_LEAF_HEIGHT_PT, rows * _TABLE_ROW_HEIGHT_PT)
+    if block.type == "financial_table":
+        rows = 1 + len(block.rows)
+        return max(_PREFERRED_HEIGHT_PT["financial_table"], rows * 32.0)
+    if block.type == "waterfall":
+        return max(_PREFERRED_HEIGHT_PT["waterfall"], 190.0 + len(block.items) * 18.0)
+    if block.type == "combo_chart":
+        series_count = 1 + len(block.lines)
+        return max(_PREFERRED_HEIGHT_PT["combo_chart"], 220.0 + series_count * 18.0)
     if block.type == "cards":
         # 横排卡片高度取最高一张的标题+描述估算
         tallest = max(
@@ -321,9 +343,32 @@ def _leaf_height_pt(leaf: FlexLeaf, ctx: _FitContext) -> float:
             for item in block.items
         )
         return max(_MIN_LEAF_HEIGHT_PT, tallest)
+    if block.type == "diagram":
+        # 结构图是页面主视觉，需要先拿到可读高度，再由渲染器做
+        # 文本收缩；否则时间线节点会被正文块的自然高度挤成薄片。
+        if block.diagram_type == "timeline":
+            return max(320.0, 58.0 * len(block.nodes) + 32.0)
+        return max(280.0, 44.0 * len(block.nodes) + 96.0)
     if block.type == "callout":
-        return _PREFERRED_HEIGHT_PT["callout"]
+        return _callout_height_pt(block, ctx)
     return _PREFERRED_HEIGHT_PT.get(block.type, _MIN_LEAF_HEIGHT_PT)
+
+
+def _callout_height_pt(block: Block, ctx: _FitContext) -> float:
+    width_pt = ctx.widths_pt.get(block.id, SAFE_AREA_WIDTH_PT)
+    box = resolve_box(ctx.theme, block.style)
+    avail_w, _ = content_rect_pt(width_pt, CANVAS_HEIGHT_PT, padding_pt=box.padding_pt)
+    style_name = "caption" if getattr(block, "variant", None) == "source" else "body"
+    style = merge_text_style(ctx.theme, style_name, block.style)
+    text = getattr(block, "text", "")
+    used = measure_text(
+        text,
+        style=style,
+        width_pt=max(1.0, avail_w - 16.0),
+        height_pt=CANVAS_HEIGHT_PT,
+    ).height_pt
+    chrome = 2 * TEXTBOX_MARGIN_PT + 2 * box.padding_pt
+    return max(_PREFERRED_HEIGHT_PT["callout"], used * _BREATHING + chrome)
 
 
 def _measured_height_pt(

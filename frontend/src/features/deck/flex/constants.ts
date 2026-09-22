@@ -32,5 +32,8 @@ export type FlexBlockType =
   | 'kpi'
   | 'cards'
   | 'callout'
+  | 'financial_table'
+  | 'waterfall'
+  | 'combo_chart'
 
 export type RectLike = { x: number; y: number; w: number; h: number }

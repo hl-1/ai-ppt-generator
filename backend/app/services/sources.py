@@ -2,12 +2,13 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ingest.models import ParsedDocument, SourceSection
+from app.ingest.models import ParsedDocument
 from app.ingest.plain import PlainTextParser
 from app.ingest.registry import parser_for
 from app.ingest.upload import validate_upload
 from app.models.project import Project, ProjectSource
 from app.schemas.project import TextSourceCreate
+from app.services.topic_material import build_topic_sample_document
 from app.storage import get_storage
 
 
@@ -23,8 +24,10 @@ async def add_text_source(
     session: AsyncSession, project: Project, payload: TextSourceCreate
 ) -> ProjectSource:
     if payload.kind == "topic":
-        parsed = ParsedDocument(
-            sections=[SourceSection(level=0, text=payload.content.strip(), locator="主题")]
+        parsed = build_topic_sample_document(
+            topic=payload.content,
+            audience=project.audience,
+            report_brief=project.report_brief,
         )
     else:
         # 长文本与 .txt 文件的切分规则应当一致，直接复用同一个解析器

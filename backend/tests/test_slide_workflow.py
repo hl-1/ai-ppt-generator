@@ -78,6 +78,35 @@ async def test_workflow_skips_repair_for_capacity_overflow() -> None:
 
 
 @pytest.mark.asyncio
+async def test_topic_workflow_repairs_capacity_overflow_once() -> None:
+    too_long = ["主题页过长的要点" * 12] * 9
+    generator = ScriptedGenerator(
+        [
+            _draft(too_long),
+            _draft(
+                [
+                    "交付周期从六周缩短到三周",
+                    "重复建设集中在跨团队接口",
+                    "下一步统一数据契约与评审节奏",
+                ]
+            ),
+        ]
+    )
+    workflow = build_slide_workflow(generator)
+
+    slide, issues = await run_slide_workflow(
+        workflow,
+        _payload(topic_mode=True),
+        uuid.uuid4(),
+    )
+
+    assert len(generator.prompts) == 2
+    assert any("超出" in message or "溢出" in message for message in generator.prompts[1])
+    assert slide.blocks[1].items[0] != too_long[0]
+    assert not any(issue.code == "capacity" for issue in issues)
+
+
+@pytest.mark.asyncio
 async def test_workflow_repairs_thin_content_once() -> None:
     thin = ["短", "也短"]
     rich = [

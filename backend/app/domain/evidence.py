@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
 
 from app.domain.outline import EvidenceItem, OutlinePageDraft
+from app.domain.topic_visuals import evidence_kind_for_visual, normalize_topic_page
 
 NUMBER = re.compile(r"(?<![\w.])-?\d+(?:,\d{3})*(?:\.\d+)?(?:[%％])?(?![\d.])")
 
@@ -77,16 +78,25 @@ def check_evidence_conflicts(items: list[EvidenceItem]) -> list[str]:
     values: dict[tuple, set[Decimal | None]] = defaultdict(set)
     for item in items:
         if item.value and item.metric and item.period:
-            values[(item.metric, item.unit, item.period, item.scope)].add(numeric_value(item.value))
+            values[(item.metric, item.category, item.unit, item.period, item.scope)].add(
+                numeric_value(item.value)
+            )
     return [
-        f"{key[0]}（{key[2]}，{key[1]}）存在不同数值，请核对来源口径"
+        f"{key[0]}（{key[3]}，{key[2]}）存在不同数值，请核对来源口径"
         for key, found in values.items()
         if len(found) > 1
     ]
 
 
-def prepare_page_plan(page: OutlinePageDraft, sources: Mapping[str, str]) -> OutlinePageDraft:
+def prepare_page_plan(
+    page: OutlinePageDraft,
+    sources: Mapping[str, str],
+    *,
+    topic_mode: bool = False,
+) -> OutlinePageDraft:
     """无充分证据时回退到定性表达，把缺口留给大纲编辑端。"""
+    if topic_mode:
+        page = normalize_topic_page(page, sources)
     notes: list[str] = []
     valid: list[EvidenceItem] = []
     for item in page.evidence:
@@ -98,15 +108,44 @@ def prepare_page_plan(page: OutlinePageDraft, sources: Mapping[str, str]) -> Out
     conflicts = check_evidence_conflicts(valid)
     notes.extend(conflicts)
     kind = page.evidence_kind
+    # 流程/时间线是非数值结构表达；高级财务视觉也由显式 visual_type
+    # 驱动，不应被普通 chart/table 规则误降级。
+    if page.visual_type in {
+        "flow",
+        "timeline",
+        "financial_table",
+        "waterfall",
+        "combo_chart",
+    }:
+        kind = evidence_kind_for_visual(page.visual_type) or kind
+    if topic_mode and page.visual_type != "auto":
+        kind = evidence_kind_for_visual(page.visual_type) or kind
     numeric = [e for e in valid if e.value and e.metric and e.unit]
-    if kind in {"trend", "chart"} and (not comparable_series(valid) or conflicts):
+    series = comparable_series(valid)
+    categories = comparable_categories(valid)
+    if kind == "trend" and (not series or conflicts) and not topic_mode:
         notes.append("可比数据不足，已改为定性分析；补齐同指标、单位、时间与范围后可使用趋势图")
         kind = "narrative"
-    if kind in {"composition", "comparison"} and (
-        not comparable_categories(valid) or conflicts
+    if kind == "chart" and conflicts and not topic_mode:
+        notes.append("图表数据存在口径冲突，已改为定性分析；请核对来源数据后再使用图表")
+        kind = "narrative"
+    if kind == "chart" and not series and not categories and not topic_mode:
+        notes.append("可比数据不足，已改为定性分析；补齐时间序列或分类数据后可使用图表")
+        kind = "narrative"
+    if (
+        kind in {"composition", "comparison"}
+        and page.visual_type != "combo_chart"
+        and (not categories or conflicts)
+        and not topic_mode
     ):
         notes.append("缺少可比较的分类数据，已改为定性分析；补齐分类、指标、单位与范围后可使用图表")
         kind = "narrative"
+    if page.visual_type == "combo_chart" and not topic_mode:
+        metrics = {e.metric for e in valid if e.metric and e.period and e.value}
+        periods = {e.period for e in valid if e.metric and e.period and e.value}
+        if len(metrics) < 2 or len(periods) < 2 or conflicts:
+            notes.append("组合图至少需要两个指标和两个共同期间，已改为定性分析")
+            kind = "narrative"
     if kind in {"flow", "timeline"} and len(page.key_points) < 2:
         notes.append("流程或阶段信息不足，已改为定性分析；至少需要两个步骤或阶段")
         kind = "narrative"
@@ -125,6 +164,7 @@ def prepare_page_plan(page: OutlinePageDraft, sources: Mapping[str, str]) -> Out
         "timeline",
         "kpi",
         "table",
+        "waterfall",
         "actions",
     }:
         visual = None
@@ -132,11 +172,15 @@ def prepare_page_plan(page: OutlinePageDraft, sources: Mapping[str, str]) -> Out
     # 避免 fixed 模式回退后仍被必填图表槽位要求制造数据。
     if kind == "narrative" and layout in {"chart", "kpi"}:
         layout = "bullets"
+    visual_type = page.visual_type
+    if kind == "narrative" and not topic_mode:
+        visual_type = "auto"
     return page.model_copy(
         update={
             "evidence": valid,
             "source_refs": refs,
             "evidence_kind": kind,
+            "visual_type": visual_type,
             "visual": visual,
             "layout_id": layout,
             "planning_notes": list(dict.fromkeys(notes))[:16],

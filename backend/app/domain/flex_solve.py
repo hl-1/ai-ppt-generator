@@ -132,6 +132,9 @@ def _split_area(node: FlexContainer, area: Rect) -> list[Rect]:
     if n == 0:
         return []
 
+    if node.type == "overlay":
+        return [area for _ in node.children]
+
     if node.type == "row":
         gap_norm, total_gap = _fit_gaps(node.gap_pt / CANVAS_WIDTH_PT, n, area.w)
         weights = _row_weights(node.ratios, n)

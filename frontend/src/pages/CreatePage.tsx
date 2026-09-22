@@ -14,13 +14,13 @@ import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 const MODES: Array<{ mode: DraftMode; label: string; icon: typeof Type; hint: string }> = [
-  { mode: 'topic', label: '从主题生成', icon: Sparkles, hint: '一句话说清要讲什么' },
+  { mode: 'topic', label: '从主题生成', icon: Sparkles, hint: '自动补模拟数据做样稿' },
   { mode: 'text', label: '粘贴文字', icon: ClipboardType, hint: '已有内容，自动提炼成要点' },
-  { mode: 'document', label: '上传文档', icon: FileUp, hint: '支持 PDF、Word、Markdown、TXT' },
+  { mode: 'document', label: '上传文档', icon: FileUp, hint: '基于真实材料生成汇报' },
 ]
 
 const PLACEHOLDER: Record<DraftMode, string> = {
-  topic: '例如：2026 上半年增长复盘，讲清三条增长曲线与下半年打法',
+  topic: '例如：AI 时代计算机专业的发展趋势',
   text: '把已有的文字粘进来，会自动提炼成每页要点',
   document: '',
 }
@@ -128,18 +128,26 @@ export default function CreatePage() {
           {mode === 'document' ? (
             <FileDrop files={files} disabled={busy} onChange={setFiles} />
           ) : (
-            <textarea
-              value={content}
-              disabled={busy}
-              rows={mode === 'text' ? 9 : 3}
-              maxLength={mode === 'text' ? 20000 : 500}
-              placeholder={PLACEHOLDER[mode]}
-              onChange={(event) => setContent(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit()
-              }}
-              className="w-full resize-none bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-ink placeholder:text-ink-muted/70 focus:outline-none"
-            />
+            <>
+              <textarea
+                value={content}
+                disabled={busy}
+                rows={mode === 'text' ? 9 : 3}
+                maxLength={mode === 'text' ? 20000 : 500}
+                placeholder={PLACEHOLDER[mode]}
+                onChange={(event) => setContent(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit()
+                }}
+                className="w-full resize-none bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-ink placeholder:text-ink-muted/70 focus:outline-none"
+              />
+              {mode === 'topic' && (
+                <p className="px-2 pb-1 text-xs leading-relaxed text-ink-muted">
+                  将按主题自动生成模拟背景、示例指标、图表数据、流程与路线图；
+                  正式汇报请上传真实材料。
+                </p>
+              )}
+            </>
           )}
 
           <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line/80 pt-3">

@@ -54,6 +54,7 @@ export function contentBodyFromBlock(block: Block): BlockUpdateBody | null {
       return {
         type: 'diagram',
         diagram_type: block.diagram_type,
+        mermaid: block.mermaid ?? null,
         nodes: block.nodes.map((node) => ({ ...node })),
         edges: block.edges.map((edge) => ({ ...edge })),
       }
@@ -109,6 +110,7 @@ export function applyContentBody(block: Block, body: BlockUpdateBody): Block {
     return {
       ...block,
       diagram_type: body.diagram_type,
+      mermaid: body.mermaid ?? null,
       nodes: body.nodes,
       edges: body.edges,
     }

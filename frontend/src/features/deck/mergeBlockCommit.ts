@@ -149,6 +149,7 @@ export function mergeBlockCommit(
     return {
       type: 'diagram',
       diagram_type: commit.diagram_type,
+      mermaid: commit.mermaid ?? null,
       nodes: commit.nodes,
       edges: commit.edges,
     }

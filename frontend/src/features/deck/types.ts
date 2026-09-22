@@ -63,6 +63,7 @@ export type DiagramBlockUpdate = {
   type: 'diagram'
   revision: number
   diagram_type: 'flow' | 'timeline' | 'cycle'
+  mermaid?: string | null
   nodes: Array<{
     id: string
     title: string

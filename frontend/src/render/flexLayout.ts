@@ -8,7 +8,7 @@ export type GroupPreset =
   | 'timeline'
 
 export type FlexContainer = {
-  type: 'row' | 'column'
+  type: 'row' | 'column' | 'overlay'
   id: string
   children: FlexNode[]
   gap_pt?: number
@@ -196,6 +196,10 @@ function splitArea(node: FlexContainer, area: Rect): Rect[] {
   if (n === 0) return []
 
   const gapPt = node.gap_pt ?? DEFAULT_GAP_PT
+
+  if (node.type === 'overlay') {
+    return Array.from({ length: n }, () => area)
+  }
 
   if (node.type === 'row') {
     const [gapNorm, totalGap] = fitGaps(gapPt / CANVAS_WIDTH_PT, n, area.w)

@@ -1,15 +1,20 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "[1/2] 关闭旧进程..."
-taskkill /F /IM python.exe /T 2>/dev/null
-taskkill /F /IM node.exe /T 2>/dev/null
-sleep 2
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+WINDOWS_SCRIPT="$(wslpath -w "$SCRIPT_DIR/restart.ps1" 2>/dev/null || printf '%s' "$SCRIPT_DIR/restart.ps1")"
 
-echo "[2/2] 启动全部服务..."
+if command -v pwsh.exe >/dev/null 2>&1; then
+    POWERSHELL="pwsh.exe"
+elif command -v powershell.exe >/dev/null 2>&1; then
+    POWERSHELL="powershell.exe"
+elif [[ -x "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe" ]]; then
+    POWERSHELL="/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+elif [[ -x "/mnt/c/Program Files/PowerShell/7/pwsh.exe" ]]; then
+    POWERSHELL="/mnt/c/Program Files/PowerShell/7/pwsh.exe"
+else
+    echo "找不到 Windows PowerShell。" >&2
+    exit 1
+fi
 
-# 直接在新窗口中执行，不带窗口标题
-start bash -c "make dev-api"
-start bash -c "make dev-worker"
-start bash -c "make dev-web"
-
-echo "✅ 全部服务已启动"
+exec "$POWERSHELL" -NoProfile -ExecutionPolicy Bypass -File "$WINDOWS_SCRIPT" "$@"

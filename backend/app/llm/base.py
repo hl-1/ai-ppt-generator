@@ -44,6 +44,7 @@ class OutlineGenerationInput(BaseModel):
     # 上限跟着编辑器边界走：页面可以逐页手工增删，重新生成大纲时不该被旧上限卡住
     page_count: int = Field(ge=1, le=MAX_DECK_PAGE_COUNT)
     content_density: ContentDensity = DEFAULT_CONTENT_DENSITY
+    topic_mode: bool = False
     sections: list[OutlineSourceSection] = Field(default_factory=list)
 
 
@@ -82,7 +83,19 @@ class SlideGenerationInput(BaseModel):
     page_role: PageRole = DEFAULT_PAGE_ROLE
     narrative_role: NarrativeRole = "supporting"
     evidence_kind: EvidenceKind = "narrative"
-    visual_type: Literal["auto", "line", "column", "bar", "pie", "flow", "timeline"] = "auto"
+    visual_type: Literal[
+        "auto",
+        "line",
+        "column",
+        "bar",
+        "pie",
+        "flow",
+        "timeline",
+        "financial_table",
+        "waterfall",
+        "combo_chart",
+    ] = "auto"
+    topic_mode: bool = False
     key_message: str = ""
     evidence: list[EvidenceItem] = Field(default_factory=list)
     blueprint: DeckBlueprint = Field(default_factory=DeckBlueprint)

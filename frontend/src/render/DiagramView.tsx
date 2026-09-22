@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { EditableText } from '@/render/EditableText'
 import { resolveColor, pt } from '@/render/style'
 import {
@@ -18,7 +18,7 @@ function nodeRects(block: DiagramBlock, width: number, height: number): Map<stri
   const result = new Map<string, NodeRect>()
   const gap = block.diagram_type === 'timeline' ? 16 : 18
   if (block.diagram_type === 'timeline') {
-    const nodeHeight = Math.max((height - gap * (block.nodes.length - 1)) / block.nodes.length, 70)
+    const nodeHeight = Math.max((height - gap * (block.nodes.length - 1)) / block.nodes.length, 1)
     block.nodes.forEach((node, index) => {
       result.set(node.id, {
         x: width * 0.12,
@@ -65,6 +65,46 @@ function nodeFill(theme: Theme, status: DiagramNode['status']) {
   return resolveColor(theme, 'surface')
 }
 
+function generatedMermaid(block: DiagramBlock): string {
+  const direction = 'TB'
+  const ids = new Map<string, string>()
+  const safe = (value: string) =>
+    value
+      .replace(/[^a-zA-Z0-9_]/g, '_')
+      .replace(/^_+|_+$/g, '') || 'node'
+  const label = (title: string, desc: string) =>
+    [title, desc]
+      .filter(Boolean)
+      .map((value) => value.replace(/["|]/g, "'").replace(/\s+/g, ' ').trim())
+      .join('<br/>')
+
+  const lines = [`flowchart ${direction}`]
+  block.nodes.forEach((node, index) => {
+    const id = `node_${safe(node.id)}_${index + 1}`
+    ids.set(node.id, id)
+    lines.push(`    ${id}["${label(node.title, node.desc)}"]`)
+  })
+  block.edges.forEach((edge) => {
+    const source = ids.get(edge.source)
+    const target = ids.get(edge.target)
+    if (!source || !target) return
+    const edgeLabel = edge.label?.replace(/[|]/g, '/').replace(/\s+/g, ' ').trim()
+    lines.push(edgeLabel ? `    ${source} -->|${edgeLabel}| ${target}` : `    ${source} --> ${target}`)
+  })
+  return lines.join('\n')
+}
+
+function responsiveMermaidSvg(svg: string): string {
+  return svg.replace(/<svg\b([^>]*)>/i, (_match, attrs: string) => {
+    const cleaned = attrs
+      .replace(/\sstyle="[^"]*"/i, '')
+      .replace(/\swidth="[^"]*"/i, '')
+      .replace(/\sheight="[^"]*"/i, '')
+      .replace(/\spreserveAspectRatio="[^"]*"/i, '')
+    return `<svg${cleaned} width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="display:block;width:100%;height:100%;max-width:none;">`
+  })
+}
+
 function commitNodes(
   block: DiagramBlock,
   nodes: DiagramNode[],
@@ -73,6 +113,7 @@ function commitNodes(
   onCommit?.(block.id, {
     type: 'diagram',
     diagram_type: block.diagram_type,
+    mermaid: null,
     nodes,
     edges: block.edges,
   })
@@ -95,8 +136,68 @@ export function DiagramView({
 }) {
   const width = slot.rect.w * CANVAS_WIDTH_PT
   const height = slot.rect.h * CANVAS_HEIGHT_PT
+  const reactId = useId()
+  const mermaidId = `mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, '')}`
+  const [mermaidSvg, setMermaidSvg] = useState<string | null>(null)
+  const [mermaidError, setMermaidError] = useState(false)
+  const mermaidSource = block.mermaid?.trim() || generatedMermaid(block)
   const rects = useMemo(() => nodeRects(block, width, height), [block, width, height])
   const byId = new Map(block.nodes.map((node) => [node.id, node]))
+
+  useEffect(() => {
+    let cancelled = false
+    setMermaidSvg(null)
+    setMermaidError(false)
+    void import('mermaid')
+      .then(({ default: mermaid }) => {
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: 'base',
+          flowchart: { htmlLabels: true, useMaxWidth: true, curve: 'basis' },
+          themeVariables: {
+            primaryColor: resolveColor(theme, 'accent_soft'),
+            primaryBorderColor: resolveColor(theme, 'accent'),
+            primaryTextColor: resolveColor(theme, 'ink'),
+            lineColor: resolveColor(theme, 'accent'),
+            secondaryColor: resolveColor(theme, 'surface'),
+            tertiaryColor: resolveColor(theme, 'background'),
+            fontFamily: theme.fonts.body.web,
+          },
+        })
+        return mermaid.render(mermaidId, mermaidSource)
+      })
+      .then(({ svg }) => {
+        if (!cancelled) setMermaidSvg(responsiveMermaidSvg(svg))
+      })
+      .catch(() => {
+        if (!cancelled) setMermaidError(true)
+      })
+
+    return () => {
+      cancelled = true
+      document.getElementById(mermaidId)?.remove()
+    }
+  }, [mermaidId, mermaidSource, theme])
+
+  if (!mermaidError) {
+    return (
+      <div
+        className="mermaid-diagram"
+        role="img"
+        aria-label="Mermaid 流程图"
+        onClick={() => onSelect?.(block.id)}
+        style={{
+          width: '100%',
+          height: '100%',
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'hidden',
+        }}
+        dangerouslySetInnerHTML={mermaidSvg ? { __html: mermaidSvg } : undefined}
+      />
+    )
+  }
 
   return (
     <div
@@ -186,6 +287,9 @@ export function DiagramView({
                 fontWeight: theme.text_styles.subtitle.weight,
                 lineHeight: theme.text_styles.subtitle.line_height,
                 overflowWrap: 'break-word',
+                minHeight: 0,
+                overflow: 'hidden',
+                flexShrink: 1,
               }}
             >
               {editable && onCommit ? (
@@ -208,6 +312,9 @@ export function DiagramView({
                   lineHeight: theme.text_styles.body.line_height,
                   color: resolveColor(theme, 'ink_soft'),
                   overflowWrap: 'break-word',
+                  minHeight: 0,
+                  overflow: 'hidden',
+                  flexShrink: 1,
                 }}
               >
                 {editable && onCommit ? (

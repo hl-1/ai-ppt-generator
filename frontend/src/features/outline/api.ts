@@ -55,12 +55,24 @@ export function useRefitOutlinePage(projectId: string) {
       pageId: string
       revision: number
       evidenceKind: 'trend' | 'chart'
+      visualType?:
+        | 'auto'
+        | 'line'
+        | 'column'
+        | 'bar'
+        | 'pie'
+        | 'flow'
+        | 'timeline'
+        | 'financial_table'
+        | 'waterfall'
+        | 'combo_chart'
     }) =>
       request<Outline>(`/projects/${projectId}/outline/pages/${input.pageId}/fit-evidence`, {
         method: 'POST',
         body: JSON.stringify({
           revision: input.revision,
           evidence_kind: input.evidenceKind,
+          visual_type: input.visualType,
         }),
       }),
     onSuccess: (outline) => queryClient.setQueryData(outlineKey(projectId), outline),

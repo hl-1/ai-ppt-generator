@@ -6,6 +6,7 @@ from langgraph.graph import END, START, StateGraph
 
 from app.domain.evidence import prepare_page_plan
 from app.domain.outline import OutlineDraft
+from app.domain.topic_visuals import normalize_topic_pages
 from app.llm.base import OutlineGenerationInput, OutlineGenerator, OutlineSourceSection
 
 # 总预算压住 prompt 体积，单节上限避免某一节吞掉全部配额；
@@ -84,10 +85,20 @@ def build_outline_workflow(generator: OutlineGenerator):
     async def generate(state: OutlineWorkflowState) -> dict[str, OutlineDraft]:
         draft = await generator.generate(state["prepared"])
         sources = {s.ref: s.text for s in state["prepared"].sections}
+        pages = draft.pages
+        if state["prepared"].topic_mode:
+            pages = normalize_topic_pages(pages, sources)
         return {
             "draft": draft.model_copy(
                 update={
-                    "pages": [prepare_page_plan(page, sources) for page in draft.pages],
+                    "pages": [
+                        prepare_page_plan(
+                            page,
+                            sources,
+                            topic_mode=state["prepared"].topic_mode,
+                        )
+                        for page in pages
+                    ],
                 }
             )
         }

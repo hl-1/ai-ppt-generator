@@ -105,9 +105,18 @@ async def test_update_and_delete_project(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_topic_source_becomes_one_section(client: AsyncClient) -> None:
+async def test_topic_source_expands_to_mock_presentation_material(client: AsyncClient) -> None:
     headers = await _sign_up(client)
-    project = await _create_project(client, headers)
+    project = await _create_project(
+        client,
+        headers,
+        audience="管理层",
+        report_brief={
+            "scenario": "strategy",
+            "goal": "展示主题样稿",
+            "decision_request": "确认推进方向",
+        },
+    )
 
     response = await client.post(
         f"/api/v1/projects/{project['id']}/sources",
@@ -117,9 +126,15 @@ async def test_topic_source_becomes_one_section(client: AsyncClient) -> None:
 
     assert response.status_code == 201
     source = response.json()
-    assert len(source["sections"]) == 1
-    assert source["sections"][0]["locator"] == "主题"
-    assert source["char_count"] == len("如何把内部工具做成平台")
+    headings = [section["heading"] for section in source["sections"]]
+    assert len(source["sections"]) >= 6
+    assert "核心指标趋势" in headings
+    assert "结构构成" in headings
+    assert "推进流程" in headings
+    assert source["char_count"] > len("如何把内部工具做成平台")
+    assert source["warnings"] == [
+        "从主题自动生成的模拟素材，仅用于样稿；正式汇报请替换为真实数据。"
+    ]
 
 
 @pytest.mark.asyncio

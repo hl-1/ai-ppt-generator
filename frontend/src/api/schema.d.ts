@@ -81,10 +81,10 @@ export interface paths {
         };
         /**
          * List Layouts
-         * @description 下发布局定义。
+         * @description �·����ֶ��塣
          *
-         *     前端本可直接读 shared/ 下的同一批文件，这个接口的作用是让两端
-         *     在运行时校验读到的是同一份数据，也让 OpenAPI 里带上布局的类型定义。
+         *     ǰ�˱���ֱ�Ӷ� shared/ �µ�ͬһ���ļ�������ӿڵ�������������
+         *     ������ʱУ���������ͬһ�����ݣ�Ҳ�� OpenAPI ����ϲ��ֵ����Ͷ��塣
          */
         get: operations["list_layouts_api_v1_design_layouts_get"];
         put?: never;
@@ -215,7 +215,7 @@ export interface paths {
         head?: never;
         /**
          * Update Project Theme
-         * @description 更新主题预设或细粒度覆盖；大纲确认后仍可用。
+         * @description ��������Ԥ���ϸ���ȸ��ǣ����ȷ�Ϻ��Կ��á�
          */
         patch: operations["update_project_theme_api_v1_projects__project_id__theme_patch"];
         trace?: never;
@@ -306,6 +306,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/outline/pages/{page_id}/fit-evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fit Outline Page Evidence
+         * @description ���û�ѡ���ͼ�����ͣ�����Դ�����ع�һҳ��١�
+         */
+        post: operations["fit_outline_page_evidence_api_v1_projects__project_id__outline_pages__page_id__fit_evidence_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/outline/confirm": {
         parameters: {
             query?: never;
@@ -383,7 +403,7 @@ export interface paths {
         };
         /**
          * Get Deck Quality
-         * @description 导出前质量报告：分级 issues 与是否允许导出。检查逻辑见 build_quality_report。
+         * @description ����ǰ�������棺�ּ� issues ���Ƿ���������������߼��� build_quality_report��
          */
         get: operations["get_deck_quality_api_v1_projects__project_id__deck_quality_get"];
         put?: never;
@@ -403,7 +423,7 @@ export interface paths {
         };
         /**
          * Export Deck
-         * @description 同步导出项目 PPTX：检查 → 渲染 → 回读验证 → 返回文件流。
+         * @description ͬ��������Ŀ PPTX����� �� ��Ⱦ �� �ض���֤ �� �����ļ�����
          */
         get: operations["export_deck_api_v1_projects__project_id__deck_export_get"];
         put?: never;
@@ -550,7 +570,7 @@ export interface paths {
         head?: never;
         /**
          * Update Slide Block Style
-         * @description 更新元素级样式覆盖。不置 locked：改颜色不该挡住 AI 改写文字。
+         * @description ����Ԫ�ؼ���ʽ���ǡ����� locked������ɫ���õ�ס AI ��д���֡�
          */
         patch: operations["update_slide_block_style_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__style_patch"];
         trace?: never;
@@ -599,7 +619,7 @@ export interface paths {
         get?: never;
         /**
          * Update Flex State
-         * @description 原子写回 blocks + layout_tree，供撤销/重做恢复整页结构。
+         * @description ԭ��д�� blocks + layout_tree��������/�����ָ���ҳ�ṹ��
          */
         put: operations["update_flex_state_api_v1_projects__project_id__deck_slides__slide_id__flex_state_put"];
         post?: never;
@@ -688,7 +708,7 @@ export interface paths {
         put?: never;
         /**
          * Insert Slide
-         * @description 插入一张空白页，内容在本地生成，无需再跑一遍 AI。
+         * @description ����һ�ſհ�ҳ�������ڱ������ɣ���������һ�� AI��
          */
         post: operations["insert_slide_api_v1_projects__project_id__deck_slides_post"];
         delete?: never;
@@ -924,7 +944,7 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "text" | "bullets" | "image" | "chart" | "table" | "kpi" | "cards" | "callout";
+            type: "text" | "bullets" | "image" | "chart" | "diagram" | "table" | "kpi" | "cards" | "callout" | "financial_table" | "waterfall" | "combo_chart";
             /** Parent Id */
             parent_id: string;
             /**
@@ -940,7 +960,7 @@ export interface components {
         };
         /**
          * BlockStyle
-         * @description 单个元素相对主题的样式覆盖。
+         * @description ����Ԫ������������ʽ���ǡ�
          */
         BlockStyle: {
             /** Size Pt */
@@ -966,7 +986,7 @@ export interface components {
         };
         /**
          * BlockStyleUpdate
-         * @description 元素级样式覆盖；style 为 null 表示清除该元素的全部微调。
+         * @description Ԫ�ؼ���ʽ���ǣ�style Ϊ null ��ʾ�����Ԫ�ص�ȫ��΢����
          */
         BlockStyleUpdate: {
             /** Revision */
@@ -1232,9 +1252,39 @@ export interface components {
             /** Values */
             values: number[];
         };
+        /** ComboChartBlock */
+        ComboChartBlock: {
+            /** Id */
+            id: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Locked
+             * @default false
+             */
+            locked: boolean;
+            style?: components["schemas"]["BlockStyle"] | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "combo_chart";
+            /** Categories */
+            categories: string[];
+            /** Bars */
+            bars: components["schemas"]["ChartSeries"][];
+            /** Lines */
+            lines?: components["schemas"]["ChartSeries"][];
+            /** Unit */
+            unit?: string | null;
+            /** Line Unit */
+            line_unit?: string | null;
+            /** Annotations */
+            annotations?: string[];
+        };
         /**
          * CornerBracket
-         * @description 角部 L 形几何，由两条细矩形拼成。
+         * @description �ǲ� L �μ��Σ�������ϸ����ƴ�ɡ�
          */
         CornerBracket: {
             /** Scope */
@@ -1283,10 +1333,10 @@ export interface components {
         };
         /**
          * Deck
-         * @description PPT 的统一内容模型。
+         * @description PPT ��ͳһ����ģ�͡�
          *
-         *     内容、布局、主题三者分离：这里描述页面块内容；
-         *     fixed 页几何来自布局槽位，flex 页几何来自 layout_tree，视觉表现来自主题。
+         *     ���ݡ����֡��������߷��룺��������ҳ������ݣ�
+         *     fixed ҳ�������Բ��ֲ�λ��flex ҳ�������� layout_tree���Ӿ������������⡣
          */
         Deck: {
             /** Id */
@@ -1338,10 +1388,10 @@ export interface components {
         };
         /**
          * DeckPageResult
-         * @description 整页增删复制的结果。
+         * @description ��ҳ��ɾ���ƵĽ����
          *
-         *     增删都会改动多页 position，返回整份 deck 让前端一次换掉缓存；slide_id 是
-         *     操作后应当选中的页（新页，或删除后的邻页）。
+         *     ��ɾ����Ķ���ҳ position���������� deck ��ǰ��һ�λ������棻slide_id ��
+         *     ������Ӧ��ѡ�е�ҳ����ҳ����ɾ�������ҳ����
          */
         DeckPageResult: {
             deck: components["schemas"]["DeckPublic"];
@@ -1375,7 +1425,7 @@ export interface components {
         };
         /**
          * Decoration
-         * @description 纯装饰图形，不承载内容，两端渲染器按同一份声明绘制
+         * @description ��װ��ͼ�Σ����������ݣ�������Ⱦ����ͬһ����������
          */
         Decoration: {
             /**
@@ -1387,6 +1437,110 @@ export interface components {
             /** Color */
             color: string;
         };
+        /** DiagramBlock */
+        DiagramBlock: {
+            /** Id */
+            id: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Locked
+             * @default false
+             */
+            locked: boolean;
+            style?: components["schemas"]["BlockStyle"] | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "diagram";
+            /**
+             * Diagram Type
+             * @enum {string}
+             */
+            diagram_type: "flow" | "timeline" | "cycle";
+            /** Mermaid */
+            mermaid?: string | null;
+            /** Nodes */
+            nodes: components["schemas"]["DiagramNode"][];
+            /** Edges */
+            edges?: components["schemas"]["DiagramEdge"][];
+        };
+        /** DiagramBlockUpdate */
+        DiagramBlockUpdate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "diagram";
+            /** Revision */
+            revision: number;
+            /**
+             * Diagram Type
+             * @enum {string}
+             */
+            diagram_type: "flow" | "timeline" | "cycle";
+            /** Mermaid */
+            mermaid?: string | null;
+            /** Nodes */
+            nodes: components["schemas"]["DiagramNodeUpdate"][];
+            /** Edges */
+            edges?: components["schemas"]["DiagramEdgeUpdate"][];
+        };
+        /** DiagramEdge */
+        DiagramEdge: {
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            /** Label */
+            label?: string | null;
+        };
+        /** DiagramEdgeUpdate */
+        DiagramEdgeUpdate: {
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            /** Label */
+            label?: string | null;
+        };
+        /** DiagramNode */
+        DiagramNode: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /**
+             * Desc
+             * @default
+             */
+            desc: string;
+            /**
+             * Status
+             * @default default
+             * @enum {string}
+             */
+            status: "default" | "active" | "done" | "risk";
+        };
+        /** DiagramNodeUpdate */
+        DiagramNodeUpdate: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /**
+             * Desc
+             * @default
+             */
+            desc: string;
+            /**
+             * Status
+             * @default default
+             * @enum {string}
+             */
+            status: "default" | "active" | "done" | "risk";
+        };
         /** DiscardedOperationPublic */
         DiscardedOperationPublic: {
             /** Block Id */
@@ -1396,7 +1550,7 @@ export interface components {
         };
         /**
          * EdgeBand
-         * @description 贴着画布某条边的细色带。
+         * @description ���Ż���ĳ���ߵ�ϸɫ����
          */
         EdgeBand: {
             /** Scope */
@@ -1445,7 +1599,7 @@ export interface components {
         };
         /**
          * EvidenceItem
-         * @description 来源原句与数据口径；仅表示可追溯性，不代表来源已获独立核实。
+         * @description ��Դԭ�������ݿھ�������ʾ��׷���ԣ���������Դ�ѻ������ʵ��
          */
         EvidenceItem: {
             /** Source Ref */
@@ -1457,6 +1611,11 @@ export interface components {
              * @default
              */
             metric: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
             /**
              * Value
              * @default
@@ -1480,7 +1639,7 @@ export interface components {
         };
         /**
          * ExportCheckReport
-         * @description 导出前分级报告。
+         * @description ����ǰ�ּ����档
          */
         ExportCheckReport: {
             /** Issues */
@@ -1493,13 +1652,56 @@ export interface components {
              */
             fonts_precise: boolean;
         };
+        /** FinancialTableBlock */
+        FinancialTableBlock: {
+            /** Id */
+            id: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Locked
+             * @default false
+             */
+            locked: boolean;
+            style?: components["schemas"]["BlockStyle"] | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "financial_table";
+            /** Unit */
+            unit?: string | null;
+            /** Columns */
+            columns: string[];
+            /** Rows */
+            rows: components["schemas"]["FinancialTableRow"][];
+            /** Highlight Columns */
+            highlight_columns?: number[];
+        };
+        /** FinancialTableRow */
+        FinancialTableRow: {
+            /** Label */
+            label: string;
+            /** Values */
+            values: string[];
+            /**
+             * Emphasis
+             * @default false
+             */
+            emphasis: boolean;
+            /**
+             * Spacer
+             * @default false
+             */
+            spacer: boolean;
+        };
         /** FlexContainer */
         "FlexContainer-Input": {
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            type: "column" | "row";
+            type: "column" | "row" | "overlay";
             /** Id */
             id: string;
             /** Children */
@@ -1525,7 +1727,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            type: "column" | "row";
+            type: "column" | "row" | "overlay";
             /** Id */
             id: string;
             /** Children */
@@ -1587,21 +1789,21 @@ export interface components {
         };
         /**
          * FlexStateUpdateRequest
-         * @description 整页恢复灵活布局状态（撤销/重做增删块与换排布用）。
+         * @description ��ҳ�ָ�����״̬������/������ɾ���뻻�Ų��ã���
          */
         FlexStateUpdateRequest: {
             /** Revision */
             revision: number;
             /** Blocks */
-            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"] | components["schemas"]["CardsBlock"] | components["schemas"]["CalloutBlock"])[];
+            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["FinancialTableBlock"] | components["schemas"]["WaterfallBlock"] | components["schemas"]["ComboChartBlock"] | components["schemas"]["DiagramBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"] | components["schemas"]["CardsBlock"] | components["schemas"]["CalloutBlock"])[];
             layout_tree: components["schemas"]["FlexContainer-Input"];
         };
         /**
          * FontFamily
-         * @description Web 与 PPTX 分别声明字体名。
+         * @description Web �� PPTX �ֱ�������������
          *
-         *     浏览器可用 webfont，而 PPTX 只能引用观众机器上已安装的字体，
-         *     两者无法统一，因此显式分开声明，而不是让某一端将就另一端。
+         *     ��������� webfont���� PPTX ֻ�����ù��ڻ������Ѱ�װ�����壬
+         *     �����޷�ͳһ�������ʽ�ֿ���������������ĳһ�˽�����һ�ˡ�
          */
         FontFamily: {
             /** Web */
@@ -1626,7 +1828,7 @@ export interface components {
         };
         /**
          * Glow
-         * @description 光晕：同心椭圆逐层加深，越靠中心越浓，用实色台阶逼近径向渐变。
+         * @description ���Σ�ͬ����Բ�����Խ������ԽŨ����ʵɫ̨�ױƽ����򽥱䡣
          */
         Glow: {
             /** Scope */
@@ -1679,7 +1881,7 @@ export interface components {
         };
         /**
          * HairlineGrid
-         * @description 细网格：区域内等分的竖线与横线，只画内部分隔线。
+         * @description ϸ���������ڵȷֵ���������ߣ�ֻ���ڲ��ָ��ߡ�
          */
         HairlineGrid: {
             /** Scope */
@@ -1723,8 +1925,8 @@ export interface components {
         };
         /**
          * HealthResponse
-         * @description 显式声明响应模型，让 OpenAPI 产出带字段的 schema。
-         *     前端类型由 OpenAPI 生成，接口若只返回裸 dict，生成结果会退化为 object。
+         * @description ��ʽ������Ӧģ�ͣ��� OpenAPI �������ֶε� schema��
+         *     ǰ�������� OpenAPI ���ɣ��ӿ���ֻ������ dict�����ɽ�����˻�Ϊ object��
          */
         HealthResponse: {
             /**
@@ -1919,7 +2121,13 @@ export interface components {
              * @default narrative
              * @enum {string}
              */
-            evidence_kind: "narrative" | "kpi" | "trend" | "comparison" | "timeline" | "actions" | "table" | "chart";
+            evidence_kind: "narrative" | "kpi" | "trend" | "comparison" | "composition" | "timeline" | "flow" | "actions" | "table" | "chart" | "waterfall";
+            /**
+             * Visual Type
+             * @default auto
+             * @enum {string}
+             */
+            visual_type: "auto" | "line" | "column" | "bar" | "pie" | "flow" | "timeline" | "financial_table" | "waterfall" | "combo_chart";
             /**
              * Key Message
              * @default
@@ -1936,6 +2144,22 @@ export interface components {
              * Format: uuid
              */
             id?: string;
+        };
+        /** OutlinePageEvidenceFitRequest */
+        OutlinePageEvidenceFitRequest: {
+            /** Revision */
+            revision: number;
+            /**
+             * Evidence Kind
+             * @enum {string}
+             */
+            evidence_kind: "trend" | "chart";
+            /**
+             * Visual Type
+             * @default auto
+             * @enum {string}
+             */
+            visual_type: "auto" | "line" | "column" | "bar" | "pie" | "flow" | "timeline" | "financial_table" | "waterfall" | "combo_chart";
         };
         /** OutlinePublic */
         OutlinePublic: {
@@ -2177,7 +2401,7 @@ export interface components {
         };
         /**
          * ProjectThemeUpdate
-         * @description 样式专用更新：不受大纲 confirmed 锁定。
+         * @description ��ʽר�ø��£����ܴ�� confirmed ������
          */
         ProjectThemeUpdate: {
             /** Theme Id */
@@ -2204,10 +2428,10 @@ export interface components {
         };
         /**
          * Rect
-         * @description 归一化矩形，取值 0–1，相对基准画布。
+         * @description ��һ�����Σ�ȡֵ 0�C1����Ի�׼������
          *
-         *     用归一化而非绝对坐标，是为了让缩略图、全屏预览和导出三者
-         *     共用同一份几何定义，换算只发生在各自的渲染边界上。
+         *     �ù�һ�����Ǿ������꣬��Ϊ��������ͼ��ȫ��Ԥ���͵�������
+         *     ����ͬһ�ݼ��ζ��壬����ֻ�����ڸ��Ե���Ⱦ�߽��ϡ�
          */
         Rect: {
             /** X */
@@ -2298,7 +2522,7 @@ export interface components {
             /** Layout Id */
             layout_id: string;
             /** Blocks */
-            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"] | components["schemas"]["CardsBlock"] | components["schemas"]["CalloutBlock"])[];
+            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["FinancialTableBlock"] | components["schemas"]["WaterfallBlock"] | components["schemas"]["ComboChartBlock"] | components["schemas"]["DiagramBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"] | components["schemas"]["CardsBlock"] | components["schemas"]["CalloutBlock"])[];
             /** Speaker Notes */
             speaker_notes?: string | null;
             /**
@@ -2316,7 +2540,7 @@ export interface components {
         };
         /**
          * SlideInsertRequest
-         * @description 在指定页之后插入空白页；null 表示追加到末尾。
+         * @description ��ָ��ҳ֮�����հ�ҳ��null ��ʾ׷�ӵ�ĩβ��
          */
         SlideInsertRequest: {
             /** After Slide Id */
@@ -2358,7 +2582,7 @@ export interface components {
              */
             status: "pending" | "generating" | "ready" | "failed";
             /** Blocks */
-            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"] | components["schemas"]["CardsBlock"] | components["schemas"]["CalloutBlock"])[];
+            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["FinancialTableBlock"] | components["schemas"]["WaterfallBlock"] | components["schemas"]["ComboChartBlock"] | components["schemas"]["DiagramBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"] | components["schemas"]["CardsBlock"] | components["schemas"]["CalloutBlock"])[];
             /** Speaker Notes */
             speaker_notes: string | null;
             /** Issues */
@@ -2378,7 +2602,7 @@ export interface components {
             /** Id */
             id: string;
             /** Accepts */
-            accepts: ("text" | "bullets" | "image" | "chart" | "table" | "kpi" | "cards" | "callout")[];
+            accepts: ("text" | "bullets" | "image" | "chart" | "diagram" | "table" | "kpi" | "cards" | "callout" | "financial_table" | "waterfall" | "combo_chart")[];
             rect: components["schemas"]["Rect"];
             /**
              * Required
@@ -2392,11 +2616,11 @@ export interface components {
         };
         /**
          * SlotCapacity
-         * @description 布局对内容长度的声明式约束。
+         * @description ���ֶ����ݳ��ȵ�����ʽԼ����
          *
-         *     它有两个用途：作为提示词里的硬指标约束模型生成长度，
-         *     以及在字体度量之前做一次廉价的快速筛查。
-         *     最终是否溢出仍以真实字体度量为准。
+         *     ����������;����Ϊ��ʾ�����Ӳָ��Լ��ģ�����ɳ��ȣ�
+         *     �Լ����������֮ǰ��һ�����۵Ŀ���ɸ�顣
+         *     �����Ƿ����������ʵ�������Ϊ׼��
          */
         SlotCapacity: {
             /** Max Lines */
@@ -2450,10 +2674,10 @@ export interface components {
         };
         /**
          * SourceSection
-         * @description 输入材料的一个章节。
+         * @description ������ϵ�һ���½ڡ�
          *
-         *     保留标题层级而非拍平成纯文本，是因为大纲规划本质上是结构提炼：
-         *     原文档已有的结构信息如果丢掉，等于让模型再猜一遍。
+         *     ��������㼶������ƽ�ɴ��ı�������Ϊ��ٹ滮�������ǽṹ������
+         *     ԭ�ĵ����еĽṹ��Ϣ���������������ģ���ٲ�һ�顣
          */
         SourceSection: {
             /** Level */
@@ -2467,11 +2691,11 @@ export interface components {
         };
         /**
          * StructureIssue
-         * @description 结构问题。
+         * @description �ṹ���⡣
          *
-         *     error 表示内容与布局的契约被破坏，必须阻断导出；
-         *     warning 表示内容偏长可能观感不佳，允许继续。
-         *     code 用于生成 repair 分流：overflow/capacity 不触发砍块重写。
+         *     error ��ʾ�����벼�ֵ���Լ���ƻ���������ϵ�����
+         *     warning ��ʾ����ƫ�����ܹ۸в��ѣ�����������
+         *     code �������� repair ������overflow/capacity ������������д��
          */
         StructureIssue: {
             /**
@@ -2643,7 +2867,7 @@ export interface components {
         };
         /**
          * ThemeOverrides
-         * @description 相对预设主题的安全子集覆盖。
+         * @description ���Ԥ������İ�ȫ�Ӽ����ǡ�
          */
         ThemeOverrides: {
             palette?: components["schemas"]["PaletteOverride"] | null;
@@ -2701,9 +2925,59 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** WaterfallBlock */
+        WaterfallBlock: {
+            /** Id */
+            id: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Locked
+             * @default false
+             */
+            locked: boolean;
+            style?: components["schemas"]["BlockStyle"] | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "waterfall";
+            /** Unit */
+            unit?: string | null;
+            /** Items */
+            items: components["schemas"]["WaterfallItem"][];
+            /** Callouts */
+            callouts?: components["schemas"]["WaterfallCallout"][];
+            /** End Badge */
+            end_badge?: string | null;
+        };
+        /** WaterfallCallout */
+        WaterfallCallout: {
+            /** Item Index */
+            item_index: number;
+            /** Title */
+            title?: string | null;
+            /** Lines */
+            lines?: string[];
+        };
+        /** WaterfallItem */
+        WaterfallItem: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: number;
+            /**
+             * Kind
+             * @default increase
+             * @enum {string}
+             */
+            kind: "start" | "increase" | "decrease" | "total";
+            /** Note */
+            note?: string | null;
+        };
         /**
          * Watermark
-         * @description 巨字水印。text 留空时用页码（01、02……）。
+         * @description ����ˮӡ��text ����ʱ��ҳ�루01��02��������
          */
         Watermark: {
             /** Scope */
@@ -3376,6 +3650,42 @@ export interface operations {
             };
         };
     };
+    fit_outline_page_evidence_api_v1_projects__project_id__outline_pages__page_id__fit_evidence_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutlinePageEvidenceFitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutlinePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     confirm_outline_api_v1_projects__project_id__outline_confirm_post: {
         parameters: {
             query?: never;
@@ -3854,7 +4164,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["TextBlockUpdate"] | components["schemas"]["BulletsBlockUpdate"] | components["schemas"]["KpiBlockUpdate"] | components["schemas"]["TableBlockUpdate"] | components["schemas"]["ChartBlockUpdate"] | components["schemas"]["CardsBlockUpdate"] | components["schemas"]["CalloutBlockUpdate"];
+                "application/json": components["schemas"]["TextBlockUpdate"] | components["schemas"]["BulletsBlockUpdate"] | components["schemas"]["KpiBlockUpdate"] | components["schemas"]["TableBlockUpdate"] | components["schemas"]["ChartBlockUpdate"] | components["schemas"]["DiagramBlockUpdate"] | components["schemas"]["CardsBlockUpdate"] | components["schemas"]["CalloutBlockUpdate"];
             };
         };
         responses: {

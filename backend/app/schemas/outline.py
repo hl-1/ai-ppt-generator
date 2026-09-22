@@ -38,6 +38,18 @@ class OutlineUpdate(BaseModel):
 class OutlinePageEvidenceFitRequest(BaseModel):
     revision: int = Field(ge=1)
     evidence_kind: Literal["trend", "chart"]
+    visual_type: Literal[
+        "auto",
+        "line",
+        "column",
+        "bar",
+        "pie",
+        "flow",
+        "timeline",
+        "financial_table",
+        "waterfall",
+        "combo_chart",
+    ] = "auto"
 
 
 class OutlineRevisionRequest(BaseModel):

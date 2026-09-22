@@ -111,6 +111,7 @@ class DeepSeekSlideGenerator:
             '- chart: {"slot_id":"visual","type":"chart","chart_type":"bar",'
             '"categories":["..."],"series":[{"name":"...","values":[1,2]}],"unit":"%"}\n'
             '- diagram: {"slot_id":"visual","type":"diagram","diagram_type":"flow",'
+            '"mermaid":"flowchart TB\\n  A[\\"起点\\"] --> B[\\"分流\\"]\\n  B --> C[\\"路径一\\"]\\n  B --> D[\\"路径二\\"]\\n  C --> E[\\"汇聚处理\\"]\\n  D --> E",'
             '"nodes":[{"id":"n1","title":"步骤一","desc":"...","status":"default"}],'
             '"edges":[{"source":"n1","target":"n2","label":"下一步"}]}\n'
             '- cards: {"slot_id":"body","type":"cards",'
@@ -248,9 +249,23 @@ _FLEX_SYSTEM_PROMPT = (
     '- image: {"id":"visual","type":"image","alt":"这张图应该表达什么"}\n'
     '- kpi: {"id":"kpi_1","type":"kpi","value":"37%","label":"...","note":"..."}\n'
     '- table: {"id":"table","type":"table","header":["..."],"rows":[["..."]]}\n'
-            '- chart: {"id":"chart","type":"chart","chart_type":"bar",'
+    '- chart: {"id":"chart","type":"chart","chart_type":"bar",'
             '"categories":["..."],"series":[{"name":"...","values":[1,2]}],"unit":"%"}\n'
+    '- financial_table: {"id":"financial_table","type":"financial_table","unit":"RMB Mil",'
+            '"columns":["1H2025","1H2026"],"rows":[{"label":"Operating revenue",'
+            '"values":["543,769","538,035"],"emphasis":true}],"highlight_columns":[1]}\n'
+    '- waterfall: {"id":"waterfall","type":"waterfall","unit":"€bn",'
+            '"items":[{"label":"Net debt Q2","value":44.1,"kind":"start"},'
+            '{"label":"Operating cash flow","value":4.5,"kind":"increase"},'
+            '{"label":"Net debt Q3","value":37.5,"kind":"total"}],'
+            '"callouts":[{"item_index":1,"title":"Therein:","lines":["Inventories -0.2"]}],'
+            '"end_badge":"Cash & cash equiv. €12.0bn"}\n'
+    '- combo_chart: {"id":"combo","type":"combo_chart","categories":["1H2025","1H2026"],'
+            '"bars":[{"name":"Net profit","values":[84235,78934]}],'
+            '"lines":[{"name":"Margin","values":[34.2,32.3]}],"unit":"RMB Mil",'
+            '"line_unit":"%","annotations":["-6.3%"]}\n'
             '- diagram: {"id":"diagram","type":"diagram","diagram_type":"flow",'
+            '"mermaid":"flowchart TB\\n  A[\\"起点\\"] --> B[\\"分流\\"]\\n  B --> C[\\"路径一\\"]\\n  B --> D[\\"路径二\\"]\\n  C --> E[\\"汇聚处理\\"]\\n  D --> E",'
             '"nodes":[{"id":"n1","title":"步骤一","desc":"...","status":"default"}],'
             '"edges":[{"source":"n1","target":"n2","label":"下一步"}]}\n'
     '- cards: {"id":"cards","type":"cards",'
@@ -274,7 +289,9 @@ _FLEX_SYSTEM_PROMPT = (
     "5. 正文使用中文，写具体结论与事实；数字须来自给定来源。\n"
     "6. speaker_notes 用 2–3 句话给出讲稿提示。\n"
     "7. 按证据形态组织标题与主体：图表、流程、指标、对比或定性说明，"
-    "不强制添加要点列表、KPI 或装饰性图片；让核心证据占据主要空间。"
+    "不强制添加要点列表、KPI 或装饰性图片；让核心证据占据主要空间。\n"
+    "8. 财务对比优先使用 financial_table、waterfall 或 combo_chart；"
+    "这些高级块必须绑定来源中的真实数字，不能编造数据。"
 )
 
 
@@ -296,6 +313,27 @@ def _page_directives(payload: SlideGenerationInput) -> str:
         f"本页叙事职责是 {payload.narrative_role}，证据形态是 {payload.evidence_kind}；"
         "标题应优先写结论，避免只写主题名。"
     )
+    if payload.visual_type != "auto":
+        visual_rules = {
+            "line": "围绕同一指标的时间变化写趋势解读，不要逐点复述全部数值。",
+            "pie": "解释占比最高项、最低项和结构偏向，不要写成时间趋势。",
+            "bar": "写最高项、最低项和差距，不要把分类比较写成时间趋势。",
+            "column": "写分类项之间的高低差异，不要把分类比较写成时间趋势。",
+            "flow": "使用短节点标题和短节点描述表达先后关系，不要塞长段落。",
+            "timeline": "使用阶段、时间和交付物表达推进节奏，不要改成普通要点列表。",
+            "financial_table": "使用财务明细表表达同一指标在多个期间的对照，突出最新期间和重点行。",
+            "waterfall": "使用起点、增减项和终点表达桥接变化；增减项必须来自 evidence。",
+            "combo_chart": "使用柱形表达主指标、折线表达率或辅助指标，两个系列必须保持相同期间。",
+        }
+        rules.append(
+            f"用户指定视觉类型为 {payload.visual_type}，必须按该类型生成内容："
+            f"{visual_rules.get(payload.visual_type, '')}"
+        )
+    if payload.topic_mode:
+        rules.append(
+            "当前为主题样稿模式，数据是模拟素材；数字必须来自本页 evidence，"
+            "不要跨页重复同一组数据。"
+        )
     if not payload.allow_callout:
         rules.append(
             "本页不得出现 variant=note 的强调框；variant=source 的来源说明始终允许，"
@@ -316,7 +354,9 @@ def _enterprise_writing_rules(payload: SlideGenerationInput) -> str:
         "事实、推断、建议、预测须明确区分。行动页缺负责人或日期时注明尚未确定。"
         "正文用短句，cards 不使用装饰性 emoji，图表图例和来源保持可读。"
         "主标题块 id=title，来源说明 id=source，主体图表 id=chart；"
-        "图表只使用已支持的 line/column/bar/pie 类型；流程或阶段关系使用 diagram，"
+        "图表只使用已支持的 line/column/bar/pie 类型；财务对照可使用 financial_table、"
+        "waterfall 或 combo_chart；流程或阶段关系使用 diagram，"
+        "flow diagram 必须使用 TB 分层或分支汇聚结构，不要生成 LR 横向线性流程，"
         "不要用 cards 假装有箭头的流程图。"
         "修复时参考 previous_draft 保留证据和核心结论，优先重排、精简重复措辞，"
         "不要通过添加无依据内容或不断缩小字号满足检查。"

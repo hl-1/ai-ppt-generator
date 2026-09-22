@@ -6,7 +6,18 @@ from app.domain.block_style import BlockStyle
 from app.domain.flex_layout import FlexContainer
 
 BlockType = Literal[
-    "text", "bullets", "image", "chart", "diagram", "table", "kpi", "cards", "callout"
+    "text",
+    "bullets",
+    "image",
+    "chart",
+    "diagram",
+    "table",
+    "kpi",
+    "cards",
+    "callout",
+    "financial_table",
+    "waterfall",
+    "combo_chart",
 ]
 ImageSource = Literal["generated", "stock", "upload", "placeholder"]
 ChartKind = Literal["bar", "column", "line", "pie"]
@@ -58,6 +69,52 @@ class ChartBlock(BlockBase):
     unit: str | None = None
 
 
+class FinancialTableRow(BaseModel):
+    label: str
+    values: list[str]
+    emphasis: bool = False
+    spacer: bool = False
+
+
+class FinancialTableBlock(BlockBase):
+    type: Literal["financial_table"] = "financial_table"
+    unit: str | None = None
+    columns: list[str]
+    rows: list[FinancialTableRow]
+    highlight_columns: list[int] = Field(default_factory=list)
+
+
+class WaterfallItem(BaseModel):
+    label: str
+    value: float
+    kind: Literal["start", "increase", "decrease", "total"] = "increase"
+    note: str | None = None
+
+
+class WaterfallCallout(BaseModel):
+    item_index: int
+    title: str | None = None
+    lines: list[str] = Field(default_factory=list)
+
+
+class WaterfallBlock(BlockBase):
+    type: Literal["waterfall"] = "waterfall"
+    unit: str | None = None
+    items: list[WaterfallItem] = Field(min_length=2)
+    callouts: list[WaterfallCallout] = Field(default_factory=list)
+    end_badge: str | None = None
+
+
+class ComboChartBlock(BlockBase):
+    type: Literal["combo_chart"] = "combo_chart"
+    categories: list[str]
+    bars: list[ChartSeries] = Field(min_length=1)
+    lines: list[ChartSeries] = Field(default_factory=list)
+    unit: str | None = None
+    line_unit: str | None = None
+    annotations: list[str] = Field(default_factory=list)
+
+
 class DiagramNode(BaseModel):
     id: str
     title: str
@@ -74,6 +131,9 @@ class DiagramEdge(BaseModel):
 class DiagramBlock(BlockBase):
     type: Literal["diagram"] = "diagram"
     diagram_type: DiagramKind
+    # Mermaid is the source of truth for visual rendering; nodes/edges remain
+    # as a structured editing and validation fallback.
+    mermaid: str | None = None
     nodes: list[DiagramNode] = Field(min_length=1)
     edges: list[DiagramEdge] = Field(default_factory=list)
 
@@ -114,6 +174,9 @@ Block = Annotated[
     | BulletsBlock
     | ImageBlock
     | ChartBlock
+    | FinancialTableBlock
+    | WaterfallBlock
+    | ComboChartBlock
     | DiagramBlock
     | TableBlock
     | KpiBlock

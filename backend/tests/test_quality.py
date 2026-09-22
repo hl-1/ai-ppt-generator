@@ -15,10 +15,14 @@ from sqlalchemy.orm import selectinload
 from app.core.db import async_session_factory
 from app.domain.content import (
     BulletsBlock,
+    CalloutBlock,
     CardsBlock,
     Deck,
+    DiagramBlock,
     ImageBlock,
+    KpiBlock,
     Slide,
+    TableBlock,
     TextBlock,
 )
 from app.domain.export_check import (
@@ -27,6 +31,7 @@ from app.domain.export_check import (
     check_slot_bounds,
     run_export_check,
 )
+from app.domain.flex_layout import FlexContainer, FlexLeaf
 from app.domain.quality import (
     check_duplicate_pages,
     check_evidence_alignment,
@@ -143,6 +148,73 @@ def test_capacity_check_still_present_alongside_overflow() -> None:
     text = "字" * 40  # bullets 标题上限 24
     issues = validate_slide(_overflow_title_slide(text=text), theme_id="ivory")
     assert any("超出建议上限" in i.message for i in issues)
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        CardsBlock(
+            id="cards",
+            slot_id="cards",
+            items=[{"title": "card", "desc": "x" * 4000}],
+        ),
+        TableBlock(
+            id="table",
+            slot_id="table",
+            header=["column"],
+            rows=[["x" * 4000]],
+        ),
+        DiagramBlock(
+            id="diagram",
+            slot_id="diagram",
+            diagram_type="flow",
+            nodes=[{"id": "n1", "title": "node", "desc": "x" * 4000}],
+        ),
+        CalloutBlock(
+            id="callout",
+            slot_id="callout",
+            text="x" * 4000,
+        ),
+        KpiBlock(
+            id="kpi",
+            slot_id="kpi",
+            value="x" * 4000,
+            label="metric",
+        ),
+    ],
+)
+def test_structured_blocks_are_measured_for_overflow(block) -> None:
+    slide = Slide(
+        id=f"overflow-{block.id}",
+        layout_id="bullets",
+        layout_mode="flex",
+        blocks=[block],
+        layout_tree=FlexContainer(
+            type="column",
+            id="root",
+            children=[FlexLeaf(id=f"leaf-{block.id}", block_id=block.id, grow=1.0)],
+        ),
+    )
+
+    issues = validate_slide(slide, theme_id="ivory")
+
+    assert any(issue.code == "overflow" and issue.slot_id == block.slot_id for issue in issues)
+
+
+def test_flex_block_collision_is_blocking_issue() -> None:
+    slide = Slide(
+        id="collision",
+        layout_id="bullets",
+        layout_mode="fixed",
+        blocks=[
+            TextBlock(id="a", slot_id="title", text="左"),
+            TextBlock(id="b", slot_id="title", text="右"),
+        ],
+    )
+
+    issues = validate_slide(slide, theme_id="ivory")
+
+    assert any(issue.code == "block_overlap" and issue.severity == "error" for issue in issues)
 
 
 def test_measure_bullets_empty() -> None:

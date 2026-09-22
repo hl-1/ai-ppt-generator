@@ -1,5 +1,10 @@
 import { useRef, useState, type CSSProperties } from 'react'
 import { boxCss, mergeTextCss } from '@/render/blockStyle'
+import {
+  ComboChartView,
+  FinancialTableView,
+  WaterfallView,
+} from '@/render/BusinessViews'
 import { ChartView } from '@/render/ChartView'
 import { DiagramView } from '@/render/DiagramView'
 import { EditableText } from '@/render/EditableText'
@@ -9,8 +14,10 @@ import type {
   BulletsBlock,
   CalloutBlock,
   CardsBlock,
+  ComboChartBlock,
   EditableBlockCommit,
   DiagramBlock,
+  FinancialTableBlock,
   ImageBlock,
   KpiBlock,
   Slot,
@@ -18,6 +25,7 @@ import type {
   TextBlock,
   TextStyleName,
   Theme,
+  WaterfallBlock,
 } from '@/render/types'
 
 /** 标题类与单元格按单行约束；正文允许换行 */
@@ -36,23 +44,29 @@ function TextView({ block, slot, theme, editable, onCommit, onSelect }: BlockPro
   const styleName = slot.text_style ?? 'body'
   const style = mergeTextCss(theme, styleName, block.style)
   const chrome = boxCss(theme, block.style)
+  const shell: CSSProperties = {
+    ...chrome,
+    minWidth: 0,
+    minHeight: 0,
+    overflow: 'hidden',
+  }
 
   if (!editable || !onCommit) {
     return (
-      <div style={chrome}>
-        <p style={{ ...style, margin: 0 }}>{block.text}</p>
+      <div style={shell}>
+        <p style={{ ...style, margin: 0, minWidth: 0, overflow: 'hidden' }}>{block.text}</p>
       </div>
     )
   }
 
   return (
-    <div style={chrome}>
-      <p style={{ ...style, margin: 0 }}>
+    <div style={shell}>
+      <p style={{ ...style, margin: 0, minWidth: 0, overflow: 'hidden' }}>
         <EditableText
           value={block.text}
           ariaLabel="编辑文字"
           multiline={MULTILINE_STYLES.has(styleName)}
-          style={style}
+          style={{ ...style, minWidth: 0, overflow: 'hidden' }}
           onFocus={() => onSelect?.(block.id)}
           onCommit={(text) => onCommit(block.id, { type: 'text', text })}
         />
@@ -130,7 +144,7 @@ function BulletsView({
   }
 
   return (
-    <div style={chrome}>
+    <div style={{ ...chrome, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
       <ul
         style={{
           ...textStyle,
@@ -140,16 +154,22 @@ function BulletsView({
           display: 'flex',
           flexDirection: 'column',
           gap: pt(12),
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'hidden',
         }}
       >
         {block.items.map((item, index) => (
-          <li key={`${block.id}-${index}`} style={{ display: 'flex', alignItems: 'flex-start' }}>
+          <li
+            key={`${block.id}-${index}`}
+            style={{ display: 'flex', alignItems: 'flex-start', minWidth: 0, overflow: 'hidden' }}
+          >
             <BulletMarker theme={theme} index={index} />
             {editable && onCommit ? (
               <EditableText
                 value={item}
                 ariaLabel={`编辑要点 ${index + 1}`}
-                style={{ ...textStyle, flex: 1 }}
+                style={{ ...textStyle, flex: 1, minWidth: 0, overflow: 'hidden' }}
                 focusToken={focus?.index === index ? focus.token : null}
                 focusCaret={focus?.index === index ? focus.caret : 'start'}
                 onFocus={() => onSelect?.(block.id)}
@@ -165,7 +185,9 @@ function BulletsView({
                 }}
               />
             ) : (
-              <span>{item}</span>
+              <span style={{ minWidth: 0, overflow: 'hidden', overflowWrap: 'break-word' }}>
+                {item}
+              </span>
             )}
           </li>
         ))}
@@ -240,7 +262,8 @@ function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ta
   }
 
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+    <div style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
       <thead>
         <tr>
           {block.header.map((cell, index) => (
@@ -250,6 +273,8 @@ function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ta
                 ...headerStyle,
                 ...cellPadding,
                 borderBottom: `${pt(1.5)} solid ${resolveColor(theme, 'accent')}`,
+                overflow: 'hidden',
+                overflowWrap: 'break-word',
               }}
             >
               {editable && onCommit ? (
@@ -276,7 +301,13 @@ function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ta
             {row.map((cell, cellIndex) => (
               <td
                 key={`c-${rowIndex}-${cellIndex}`}
-                style={{ ...cellStyle, ...cellPadding, borderBottom: border }}
+                style={{
+                  ...cellStyle,
+                  ...cellPadding,
+                  borderBottom: border,
+                  overflow: 'hidden',
+                  overflowWrap: 'break-word',
+                }}
               >
                 {editable && onCommit ? (
                   <EditableText
@@ -303,7 +334,8 @@ function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ta
           </tr>
         ))}
       </tbody>
-    </table>
+      </table>
+    </div>
   )
 }
 
@@ -322,15 +354,17 @@ function KpiView({ block, theme, editable, onCommit, onSelect }: BlockProps<KpiB
     width: '100%',
     height: '100%',
     minWidth: 0,
+    minHeight: 0,
     padding: undefined,
     paddingInline: pt(14),
     paddingBlock: pt(8),
-    overflow: 'visible',
+    overflow: 'hidden',
   }
   const valueCss = {
     ...valueStyle,
     whiteSpace: 'nowrap' as const,
-    overflow: 'visible' as const,
+    overflow: 'hidden' as const,
+    textOverflow: 'clip' as const,
     // 再给首字一点光学边距，避免 Instrument Serif「5」贴边
     paddingInlineStart: '0.12em',
   }
@@ -393,6 +427,9 @@ function CardsView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ca
         width: '100%',
         height: '100%',
         boxSizing: 'border-box',
+        minWidth: 0,
+        minHeight: 0,
+        overflow: 'hidden',
       }}
     >
       {block.items.map((item, index) => (
@@ -408,9 +445,18 @@ function CardsView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ca
             background: surface,
             borderRadius: pt(radius),
             boxSizing: 'border-box',
+            overflow: 'hidden',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: pt(6) }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: pt(6),
+              minWidth: 0,
+              overflow: 'hidden',
+            }}
+          >
             {item.icon ? (
               <span style={{ ...titleStyle, flexShrink: 0 }} aria-hidden>
                 {item.icon}
@@ -425,6 +471,7 @@ function CardsView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ca
                   flex: 1,
                   minWidth: 0,
                   overflowWrap: 'break-word',
+                  overflow: 'hidden',
                 }}
                 onFocus={() => onSelect?.(block.id)}
                 onCommit={(text) =>
@@ -432,7 +479,14 @@ function CardsView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ca
                 }
               />
             ) : (
-              <span style={{ ...titleStyle, minWidth: 0, overflowWrap: 'break-word' }}>
+              <span
+                style={{
+                  ...titleStyle,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  overflowWrap: 'break-word',
+                }}
+              >
                 {item.title}
               </span>
             )}
@@ -442,14 +496,28 @@ function CardsView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ca
               value={item.desc}
               ariaLabel={`编辑卡片描述 ${index + 1}`}
               multiline
-              style={{ ...descStyle, minWidth: 0, overflowWrap: 'break-word' }}
+              style={{
+                ...descStyle,
+                minWidth: 0,
+                minHeight: 0,
+                overflow: 'hidden',
+                overflowWrap: 'break-word',
+              }}
               onFocus={() => onSelect?.(block.id)}
               onCommit={(text) =>
                 onCommit(block.id, { type: 'cards', index, field: 'desc', text })
               }
             />
           ) : (
-            <span style={{ ...descStyle, minWidth: 0, overflowWrap: 'break-word' }}>
+            <span
+              style={{
+                ...descStyle,
+                minWidth: 0,
+                minHeight: 0,
+                overflow: 'hidden',
+                overflowWrap: 'break-word',
+              }}
+            >
               {item.desc}
             </span>
           )}
@@ -489,6 +557,9 @@ function CalloutView({
         background: chrome.background ?? fill,
         borderRadius: pt(theme.shape.radius_pt),
         boxSizing: 'border-box',
+        minWidth: 0,
+        minHeight: 0,
+        overflow: 'hidden',
       }}
     >
       {block.icon ? (
@@ -501,12 +572,23 @@ function CalloutView({
           value={block.text}
           ariaLabel="编辑提示文字"
           multiline
-          style={{ ...textStyle, flex: 1 }}
+          style={{ ...textStyle, flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}
           onFocus={() => onSelect?.(block.id)}
           onCommit={(text) => onCommit(block.id, { type: 'callout', text })}
         />
       ) : (
-        <span style={{ ...textStyle, flex: 1 }}>{block.text}</span>
+        <span
+          style={{
+            ...textStyle,
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            overflow: 'hidden',
+            overflowWrap: 'break-word',
+          }}
+        >
+          {block.text}
+        </span>
       )}
     </div>
   )
@@ -547,6 +629,12 @@ export function BlockView({
       return <ImageView block={block} slot={slot} theme={theme} />
     case 'chart':
       return <ChartView block={block} slot={slot} theme={theme} />
+    case 'financial_table':
+      return <FinancialTableView block={block as FinancialTableBlock} slot={slot} theme={theme} />
+    case 'waterfall':
+      return <WaterfallView block={block as WaterfallBlock} slot={slot} theme={theme} />
+    case 'combo_chart':
+      return <ComboChartView block={block as ComboChartBlock} slot={slot} theme={theme} />
     case 'diagram':
       return (
         <DiagramView

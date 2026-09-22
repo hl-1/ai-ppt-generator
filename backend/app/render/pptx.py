@@ -20,13 +20,16 @@ from app.domain.content import (
     CalloutBlock,
     CardsBlock,
     ChartBlock,
+    ComboChartBlock,
     Deck,
     DiagramBlock,
+    FinancialTableBlock,
     ImageBlock,
     KpiBlock,
     Slide,
     TableBlock,
     TextBlock,
+    WaterfallBlock,
 )
 from app.domain.flex_skin import BOX_RADIUS_PT, SkinDecoration, iter_skin_decorations
 from app.domain.geometry import (
@@ -427,6 +430,12 @@ class PptxRenderer:
                 self._render_image(pptx_slide, block, rect=rect)
             case ChartBlock():
                 self._render_chart(pptx_slide, block, rect=rect)
+            case FinancialTableBlock():
+                self._render_financial_table(pptx_slide, block, rect=rect)
+            case WaterfallBlock():
+                self._render_waterfall(pptx_slide, block, rect=rect)
+            case ComboChartBlock():
+                self._render_combo_chart(pptx_slide, block, rect=rect)
             case DiagramBlock():
                 self._render_diagram(pptx_slide, block, rect=rect)
             case CardsBlock():
@@ -782,6 +791,320 @@ class PptxRenderer:
     def _render_chart(self, pptx_slide: PptxSlide, block: ChartBlock, *, rect: Rect) -> None:
         render_chart(pptx_slide, rect, block, self.theme)
 
+    def _render_financial_table(
+        self, pptx_slide: PptxSlide, block: FinancialTableBlock, *, rect: Rect
+    ) -> None:
+        """财报表格：强调期间列、重点行和底部规则线，接近上市公司附录页观感。"""
+        if not block.columns or not block.rows:
+            return
+        cols = 1 + len(block.columns)
+        rows = 1 + len(block.rows)
+        left, top, width, height = (Emu(value) for value in rect.to_emu())
+        graphic_frame = pptx_slide.shapes.add_table(rows, cols, left, top, width, height)
+        table = graphic_frame.table
+        use_plain_style(table)
+
+        first_col = 0.52
+        remaining = max(0.48, 1.0 - first_col)
+        table.columns[0].width = Emu(round(width * first_col))
+        for index in range(1, cols):
+            table.columns[index].width = Emu(round(width * remaining / max(1, cols - 1)))
+
+        header_style = merge_text_style(self.theme, "table_header", block.style)
+        cell_style = merge_text_style(self.theme, "table_cell", block.style)
+        accent = self.theme.palette.accent
+        accent_soft = self.theme.palette.accent_soft
+        background = self.theme.palette.background
+        line = self.theme.palette.line
+
+        def write(cell, text: str, style: TextStyle, *, fill: str, bold: bool = False) -> None:
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = to_rgb(fill)
+            cell.margin_left = Pt(12)
+            cell.margin_right = Pt(12)
+            cell.margin_top = Pt(6)
+            cell.margin_bottom = Pt(6)
+            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+            set_cell_borders(cell, (0.75, line))
+            paragraph = cell.text_frame.paragraphs[0]
+            paragraph.clear()
+            run = paragraph.add_run()
+            run.text = text
+            apply_text_style(run, self.theme, style)
+            run.font.bold = bold or style.weight >= 600
+
+        write(table.cell(0, 0), block.unit or "", header_style, fill=accent, bold=True)
+        table.cell(0, 0).text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
+        for col_index, column in enumerate(block.columns, start=1):
+            write(table.cell(0, col_index), column, header_style, fill=accent, bold=True)
+            table.cell(0, col_index).text_frame.paragraphs[0].alignment = PP_ALIGN.RIGHT
+
+        highlights = {index + 1 for index in block.highlight_columns}
+        for row_index, row in enumerate(block.rows, start=1):
+            fill = background
+            if row.spacer:
+                fill = mix(self.theme.palette.surface, background, 0.5)
+            write(table.cell(row_index, 0), row.label, cell_style, fill=fill, bold=row.emphasis)
+            table.cell(row_index, 0).text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
+            for col_index in range(1, cols):
+                value = row.values[col_index - 1] if col_index - 1 < len(row.values) else ""
+                cell_fill = accent_soft if col_index in highlights else fill
+                write(
+                    table.cell(row_index, col_index),
+                    value,
+                    cell_style,
+                    fill=cell_fill,
+                    bold=row.emphasis,
+                )
+                table.cell(row_index, col_index).text_frame.paragraphs[0].alignment = PP_ALIGN.RIGHT
+
+        rule = Rect(x=rect.x, y=rect.y + rect.h - 0.006, w=rect.w, h=0.006)
+        self._add_filled_rect(pptx_slide, rule, accent)
+
+    def _render_waterfall(
+        self, pptx_slide: PptxSlide, block: WaterfallBlock, *, rect: Rect
+    ) -> None:
+        if len(block.items) < 2:
+            return
+        values: list[tuple[float, float, float]] = []
+        running = 0.0
+        for item in block.items:
+            if item.kind in {"start", "total"}:
+                start = 0.0
+                end = item.value
+                running = item.value
+            else:
+                start = running
+                end = running + item.value
+                running = end
+            values.append((start, end, end - start))
+
+        min_v = min(0.0, *(min(start, end) for start, end, _delta in values))
+        max_v = max(0.0, *(max(start, end) for start, end, _delta in values))
+        if max_v - min_v <= 0:
+            max_v += 1
+        plot = Rect(x=rect.x + rect.w * 0.03, y=rect.y + rect.h * 0.18, w=rect.w * 0.94, h=rect.h * 0.58)
+        label_y = rect.y + rect.h * 0.78
+        n = len(block.items)
+        gap = plot.w / max(n, 1)
+        bar_w = gap * 0.58
+        accent = self.theme.palette.accent
+        good = self.theme.palette.chart_series[1 % len(self.theme.palette.chart_series)]
+        soft = self.theme.palette.line_strong
+        negative = self.theme.palette.chart_series[3 % len(self.theme.palette.chart_series)]
+
+        def y_of(value: float) -> float:
+            return plot.y + plot.h * (1.0 - (value - min_v) / (max_v - min_v))
+
+        zero_y = y_of(0)
+        self._add_filled_rect(
+            pptx_slide, Rect(x=plot.x, y=zero_y, w=plot.w, h=0.0025), self.theme.palette.line_strong
+        )
+        if block.unit:
+            self._add_small_text(pptx_slide, Rect(x=rect.x, y=rect.y, w=0.12, h=0.06), block.unit)
+
+        centers: list[tuple[float, float]] = []
+        for index, (item, (start, end, delta)) in enumerate(zip(block.items, values, strict=True)):
+            x = plot.x + gap * index + (gap - bar_w) / 2
+            top = min(y_of(start), y_of(end))
+            bottom = max(y_of(start), y_of(end))
+            color = accent if item.kind in {"start", "total"} else good if delta >= 0 else negative
+            if item.kind == "decrease":
+                color = negative
+            if item.kind not in {"start", "total"} and abs(delta) < 1e-9:
+                color = soft
+            bar = Rect(x=x, y=top, w=bar_w, h=max(bottom - top, 0.006))
+            self._add_filled_rect(pptx_slide, bar, color)
+            centers.append((x + bar_w / 2, top))
+            value = item.value if item.kind in {"start", "total"} else delta
+            self._add_small_text(
+                pptx_slide,
+                Rect(x=x - gap * 0.1, y=max(top - 0.055, rect.y), w=gap * 1.2, h=0.045),
+                _format_number(value),
+                bold=True,
+                align="center",
+            )
+            self._add_small_text(
+                pptx_slide,
+                Rect(x=x - gap * 0.22, y=label_y, w=gap * 1.45, h=0.11),
+                item.label,
+                align="center",
+            )
+            if index < len(values) - 1:
+                connector_y = y_of(end)
+                next_x = plot.x + gap * (index + 1) + (gap - bar_w) / 2
+                self._add_filled_rect(
+                    pptx_slide,
+                    Rect(x=x + bar_w, y=connector_y, w=max(next_x - (x + bar_w), 0.001), h=0.0018),
+                    self.theme.palette.line_strong,
+                )
+
+        for callout in block.callouts[:4]:
+            if callout.item_index < 0 or callout.item_index >= len(centers):
+                continue
+            cx, cy = centers[callout.item_index]
+            box = Rect(
+                x=min(max(cx - rect.w * 0.11, rect.x), rect.x + rect.w - rect.w * 0.24),
+                y=max(rect.y + 0.02, cy - rect.h * 0.18),
+                w=rect.w * 0.24,
+                h=rect.h * 0.16,
+            )
+            self._add_filled_rect(
+                pptx_slide,
+                box,
+                mix(self.theme.palette.surface, self.theme.palette.background, 0.72),
+                MSO_SHAPE.RECTANGLE,
+            )
+            text = "\n".join([item for item in [callout.title, *callout.lines] if item])
+            self._add_small_text(pptx_slide, self._padded_rect(box, 8), text, bold=bool(callout.title))
+
+        if block.end_badge:
+            badge = Rect(x=rect.x + rect.w * 0.78, y=rect.y + rect.h * 0.02, w=rect.w * 0.19, h=rect.h * 0.14)
+            self._add_filled_rect(
+                pptx_slide,
+                badge,
+                mix(self.theme.palette.accent, self.theme.palette.background, 0.22),
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                radius_pt=10,
+            )
+            self._add_small_text(pptx_slide, self._padded_rect(badge, 8), block.end_badge, bold=True, align="center")
+
+    def _render_combo_chart(
+        self, pptx_slide: PptxSlide, block: ComboChartBlock, *, rect: Rect
+    ) -> None:
+        if not block.categories or not block.bars:
+            return
+        bar_series = block.bars[0]
+        line_series = block.lines[:2]
+        count = min(len(block.categories), len(bar_series.values))
+        if count == 0:
+            return
+        values = bar_series.values[:count]
+        line_values = [series.values[:count] for series in line_series]
+        numeric = [*values, *(value for series in line_values for value in series)]
+        min_v = min(0.0, *numeric)
+        max_v = max(1.0, *numeric)
+        if max_v - min_v <= 0:
+            max_v += 1
+
+        plot = Rect(x=rect.x + rect.w * 0.08, y=rect.y + rect.h * 0.13, w=rect.w * 0.84, h=rect.h * 0.64)
+        base_y = plot.y + plot.h
+        step = plot.w / count
+        bar_w = step * 0.42
+        colors = self.theme.palette.chart_series
+
+        def y_of(value: float) -> float:
+            return plot.y + plot.h * (1 - (value - min_v) / (max_v - min_v))
+
+        self._add_filled_rect(pptx_slide, Rect(x=plot.x, y=base_y, w=plot.w, h=0.002), self.theme.palette.line_strong)
+        points_by_line: list[list[tuple[float, float]]] = []
+        for index, value in enumerate(values):
+            x = plot.x + step * index + (step - bar_w) / 2
+            y = y_of(value)
+            color = colors[index % 2] if count <= 2 else colors[0]
+            self._add_filled_rect(pptx_slide, Rect(x=x, y=y, w=bar_w, h=max(base_y - y, 0.006)), color)
+            self._add_small_text(
+                pptx_slide,
+                Rect(x=x - step * 0.12, y=max(y - 0.055, rect.y), w=step * 1.24, h=0.045),
+                _format_number(value),
+                bold=True,
+                align="center",
+            )
+            self._add_small_text(
+                pptx_slide,
+                Rect(x=plot.x + step * index, y=rect.y + rect.h * 0.80, w=step, h=0.06),
+                block.categories[index],
+                align="center",
+            )
+
+        for line_index, series in enumerate(line_values):
+            points: list[tuple[float, float]] = []
+            color = colors[(line_index + 2) % len(colors)]
+            for index, value in enumerate(series):
+                x = plot.x + step * index + step / 2
+                y = y_of(value)
+                points.append((x, y))
+                self._add_filled_rect(
+                    pptx_slide,
+                    Rect(x=x - 0.006, y=y - 0.006, w=0.012, h=0.012),
+                    color,
+                    MSO_SHAPE.OVAL,
+                )
+                self._add_small_text(
+                    pptx_slide,
+                    Rect(x=x - step * 0.35, y=y + 0.012, w=step * 0.7, h=0.04),
+                    _format_number(value) + (block.line_unit or ""),
+                    align="center",
+                )
+            points_by_line.append(points)
+            for left, right in zip(points, points[1:], strict=False):
+                self._add_connector_line(pptx_slide, left, right, color, width_pt=1.6)
+
+        for index, note in enumerate(block.annotations[:2]):
+            self._add_small_text(
+                pptx_slide,
+                Rect(x=rect.x + rect.w * (0.35 + index * 0.32), y=rect.y + rect.h * 0.02, w=rect.w * 0.26, h=rect.h * 0.08),
+                note,
+                bold=True,
+                align="center",
+                color=self.theme.palette.accent,
+            )
+
+        legend_items = [bar_series.name, *(series.name for series in line_series)]
+        legend = "   ".join(legend_items)
+        self._add_small_text(
+            pptx_slide,
+            Rect(x=rect.x + rect.w * 0.22, y=rect.y + rect.h * 0.90, w=rect.w * 0.56, h=0.05),
+            legend,
+            align="center",
+        )
+
+    def _add_small_text(
+        self,
+        pptx_slide: PptxSlide,
+        rect: Rect,
+        text: str,
+        *,
+        bold: bool = False,
+        align: str = "left",
+        color: str | None = None,
+    ) -> None:
+        frame = self._add_textbox(pptx_slide, rect)
+        frame.word_wrap = True
+        paragraph = frame.paragraphs[0]
+        paragraph.alignment = _ALIGN.get(align, PP_ALIGN.LEFT)
+        paragraph.line_spacing = 1.0
+        lines = text.split("\n") if text else [""]
+        for index, line in enumerate(lines):
+            target = paragraph if index == 0 else frame.add_paragraph()
+            target.alignment = paragraph.alignment
+            run = target.add_run()
+            run.text = line
+            style = self.theme.text_style("caption")
+            apply_text_style(run, self.theme, style)
+            run.font.bold = bold or style.weight >= 600
+            if color is not None:
+                run.font.color.rgb = to_rgb(color)
+
+    def _add_connector_line(
+        self,
+        pptx_slide: PptxSlide,
+        start: tuple[float, float],
+        end: tuple[float, float],
+        color: str,
+        *,
+        width_pt: float = 1.0,
+    ) -> None:
+        connector = pptx_slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT,
+            Emu(round(start[0] * CANVAS_WIDTH_PT * EMU_PER_POINT)),
+            Emu(round(start[1] * CANVAS_HEIGHT_PT * EMU_PER_POINT)),
+            Emu(round(end[0] * CANVAS_WIDTH_PT * EMU_PER_POINT)),
+            Emu(round(end[1] * CANVAS_HEIGHT_PT * EMU_PER_POINT)),
+        )
+        connector.line.color.rgb = to_rgb(color)
+        connector.line.width = Pt(width_pt)
+
     def _render_diagram(
         self, pptx_slide: PptxSlide, block: DiagramBlock, *, rect: Rect
     ) -> None:
@@ -845,7 +1168,7 @@ class PptxRenderer:
         gap_x = 18.0 / CANVAS_WIDTH_PT
         gap_y = 16.0 / CANVAS_HEIGHT_PT
         if block.diagram_type == "timeline":
-            node_h = max((rect.h - gap_y * (count - 1)) / count, 0.08)
+            node_h = max((rect.h - gap_y * (count - 1)) / count, 1e-6)
             return {
                 node.id: Rect(
                     x=rect.x + 0.12 * rect.w,
@@ -899,3 +1222,11 @@ def render_deck_to_pptx(
 ) -> BytesIO:
     resolved = theme or get_theme(theme_id or deck.theme_id)
     return PptxRenderer(resolved).render(deck)
+
+
+def _format_number(value: float) -> str:
+    if abs(value) >= 100:
+        return f"{value:,.0f}"
+    if abs(value) >= 10:
+        return f"{value:,.1f}".rstrip("0").rstrip(".")
+    return f"{value:,.2f}".rstrip("0").rstrip(".")

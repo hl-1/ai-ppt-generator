@@ -272,7 +272,8 @@ def test_system_prompt_only_names_existing_layouts() -> None:
 
     assert "two-column" in prompt
     for absent in ("image-text", "kpi", "chart", "table", "image-left"):
-        assert absent not in prompt
+        assert f"layout_id={absent}" not in prompt
+        assert f"layout_id 为 {absent}" not in prompt
 
 
 def test_system_prompt_without_multi_slot_layouts() -> None:

@@ -113,6 +113,15 @@ def _block_payload(block: Block) -> tuple:
                 tuple((item.name, tuple(item.values)) for item in block.series),
                 block.unit,
             )
+        case "diagram":
+            return (
+                block.diagram_type,
+                tuple(
+                    (node.id, node.title, node.desc, node.status)
+                    for node in block.nodes
+                ),
+                tuple((edge.source, edge.target, edge.label) for edge in block.edges),
+            )
         case "image":
             return (block.source, block.alt, block.url, block.credit)
         case _:

@@ -90,6 +90,19 @@
   animation: present-slide-in 160ms ease-out;
 }
 
+.mermaid-diagram {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mermaid-diagram svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+}
+
 /* 参数胶囊菜单入场：轻量缩放 + 淡入 */
 @keyframes pill-menu-in {
   from {

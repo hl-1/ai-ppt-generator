@@ -18,7 +18,7 @@ from app.domain.validation import StructureIssue, validate_slide
 from app.llm.base import SlideGenerationInput, SlideGenerator
 from app.llm.errors import InvalidSlideOutputError
 
-# 只修一轮：结构 error 或过瘦/空话；溢出/容量 warning 不触发砍块重写。
+# 只修一轮：结构 error 或过瘦/空话；主题模式额外修复溢出/容量 warning。
 # generate 节点内部是 LCEL json_mode；校验与条件修复留在 Graph。
 MAX_REPAIR_ROUNDS = 1
 
@@ -94,7 +94,17 @@ def build_slide_workflow(generator: SlideGenerator):
             slide = draft_to_slide(slide_id, state["input"].layout_id, draft)
         theme = resolve_theme(state.get("theme_id") or "ivory", state.get("theme_overrides"))
         payload = state["input"]
-        enterprise = bool(payload.key_message or payload.blueprint.core_message or payload.evidence)
+        # 主题页以及显式指定流程/时间线的页面即使没有数值证据，也必须
+        # 经过服务端的结构绑定与编排；否则它们会绕过 DiagramBlock 生成，
+        # 退化成普通文本或保留表格的默认布局。
+        enterprise = bool(
+            payload.topic_mode
+            or payload.key_message
+            or payload.blueprint.core_message
+            or payload.evidence
+            or payload.evidence_kind in {"flow", "timeline"}
+            or payload.visual_type in {"flow", "timeline"}
+        )
         if enterprise:
             plan = OutlinePageDraft(
                 title=payload.page_title,
@@ -113,7 +123,10 @@ def build_slide_workflow(generator: SlideGenerator):
                     s.ref: " · ".join(filter(None, [s.heading, s.locator, s.ref]))
                     for s in payload.sections
                 }
-                slide = compose_report_slide(bind_planned_evidence(slide, plan, labels), plan)
+                slide = compose_report_slide(
+                    bind_planned_evidence(slide, plan, labels, topic_mode=payload.topic_mode),
+                    plan,
+                )
         # 生成期先定列宽再定行高：宽度决定折行，折行决定自然高度。
         # 两步都放在校验之前，让溢出/容量告警反映的是最终版面。
         if slide.layout_mode == "flex" and slide.layout_tree is not None:
@@ -146,7 +159,12 @@ def build_slide_workflow(generator: SlideGenerator):
         }
 
     async def repair(state: SlideWorkflowState) -> dict:
-        repairable = [issue for issue in state["issues"] if is_repair_worthy(issue)]
+        topic_mode = state["input"].topic_mode
+        repairable = [
+            issue
+            for issue in state["issues"]
+            if is_repair_worthy(issue, topic_mode=topic_mode)
+        ]
         messages = [_describe(issue) for issue in repairable]
         repaired = state["input"].model_copy(
             update={
@@ -159,7 +177,10 @@ def build_slide_workflow(generator: SlideGenerator):
     def route(state: SlideWorkflowState) -> str:
         if state.get("repairs", 0) >= MAX_REPAIR_ROUNDS:
             return END
-        if any(is_repair_worthy(issue) for issue in state["issues"]):
+        if any(
+            is_repair_worthy(issue, topic_mode=state["input"].topic_mode)
+            for issue in state["issues"]
+        ):
             return "repair"
         return END
 

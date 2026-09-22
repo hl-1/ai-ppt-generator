@@ -89,7 +89,11 @@ async def _generate_one(
 
     from app.domain.content_density import normalize_page_role
 
-    plan = prepare_page_plan(page.page, {ref: s.text for ref, s in context.sections.items()})
+    plan = prepare_page_plan(
+        page.page,
+        {ref: s.text for ref, s in context.sections.items()},
+        topic_mode=context.topic_mode,
+    )
     page = SlideTarget(page.position, plan)
     page_role = normalize_page_role(getattr(page.page, "page_role", None))
     visual_hint = getattr(page.page, "visual", None)
@@ -109,6 +113,7 @@ async def _generate_one(
         narrative_role=getattr(page.page, "narrative_role", None) or "supporting",
         evidence_kind=getattr(page.page, "evidence_kind", None) or "narrative",
         visual_type=getattr(page.page, "visual_type", None) or "auto",
+        topic_mode=context.topic_mode,
         key_message=page.page.key_message,
         evidence=page.page.evidence,
         blueprint=context.blueprint,
@@ -171,6 +176,7 @@ class DeckContext:
         pages: dict[uuid.UUID, "SlideTarget"],
         ordered_titles: list[str],
         blueprint: DeckBlueprint | None = None,
+        topic_mode: bool = False,
     ) -> None:
         from app.domain.content_density import normalize_density
 
@@ -187,6 +193,7 @@ class DeckContext:
         self.total = len(ordered_titles)
         self._ordered_titles = ordered_titles
         self.blueprint = blueprint or DeckBlueprint()
+        self.topic_mode = topic_mode
 
     def neighbor_titles(self, position: int) -> list[str]:
         start = max(0, position - 2)
@@ -245,6 +252,7 @@ async def _load_context(project_id: uuid.UUID) -> DeckContext | None:
             pages=targets,
             ordered_titles=[page.title for page in pages],
             blueprint=DeckBlueprint.model_validate(project.outline.blueprint or {}),
+            topic_mode=any(source.kind == "topic" for source in project.sources),
         )
 
 

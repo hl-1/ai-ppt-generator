@@ -473,16 +473,17 @@ def check_deck_content_quality(
     return issues
 
 
-def is_repair_worthy(issue: StructureIssue) -> bool:
+def is_repair_worthy(issue: StructureIssue, *, topic_mode: bool = False) -> bool:
     """生成回路是否应因该问题触发充实/结构修复。
 
-    溢出与容量超限只提示，不触发整页重写砍块。
+    普通文档保留只提示的行为；主题生成没有可追溯的人工排版约束，
+    因此允许针对溢出/容量问题做一轮定向修复。
     """
     if issue.severity == "error":
         return True
     if issue.code in {"thin_content", "empty_phrase"}:
         return True
     if issue.code in {"overflow", "capacity"}:
-        return False
+        return topic_mode
     # 未标注 code 的 warning 默认不修（避免容量类旧路径）
     return False

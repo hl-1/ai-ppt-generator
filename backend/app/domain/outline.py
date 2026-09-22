@@ -55,8 +55,20 @@ EvidenceKind = Literal[
     "actions",
     "table",
     "chart",
+    "waterfall",
 ]
-VisualType = Literal["auto", "line", "column", "bar", "pie", "flow", "timeline"]
+VisualType = Literal[
+    "auto",
+    "line",
+    "column",
+    "bar",
+    "pie",
+    "flow",
+    "timeline",
+    "financial_table",
+    "waterfall",
+    "combo_chart",
+]
 
 
 class OutlinePageDraft(BaseModel):

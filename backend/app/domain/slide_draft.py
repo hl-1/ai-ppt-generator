@@ -12,15 +12,21 @@ from app.domain.content import (
     ChartBlock,
     ChartKind,
     ChartSeries,
+    ComboChartBlock,
     DiagramBlock,
     DiagramEdge,
     DiagramKind,
     DiagramNode,
+    FinancialTableBlock,
+    FinancialTableRow,
     ImageBlock,
     KpiBlock,
     Slide,
     TableBlock,
     TextBlock,
+    WaterfallBlock,
+    WaterfallCallout,
+    WaterfallItem,
 )
 from app.domain.flex_layout import (
     FlexContainer,
@@ -31,12 +37,15 @@ from app.domain.flex_layout import (
 )
 from app.domain.flex_normalize import normalize
 from app.domain.flex_presets import BlockRef, seed_layout_for_blocks
+from app.domain.mermaid import ensure_mermaid
 
 # 模型只负责"往哪个槽位放什么内容"。块 id、锁定标记、图片来源这些
 # 由服务端掌握的字段不进入模型契约：让模型编造它们只会带来无谓的校验负担。
 
 # 只有整幅视觉块允许出血到画布边缘
-BLEEDABLE_TYPES = frozenset({"image", "chart"})
+BLEEDABLE_TYPES = frozenset(
+    {"image", "chart", "diagram", "financial_table", "waterfall", "combo_chart"}
+)
 
 
 class SlotContentBase(BaseModel):
@@ -72,6 +81,52 @@ class ChartContent(SlotContentBase):
     unit: str | None = None
 
 
+class FinancialTableRowContent(BaseModel):
+    label: str
+    values: list[str] = Field(min_length=1)
+    emphasis: bool = False
+    spacer: bool = False
+
+
+class FinancialTableContent(SlotContentBase):
+    type: Literal["financial_table"] = "financial_table"
+    unit: str | None = None
+    columns: list[str] = Field(min_length=1)
+    rows: list[FinancialTableRowContent] = Field(min_length=1)
+    highlight_columns: list[int] = Field(default_factory=list)
+
+
+class WaterfallItemContent(BaseModel):
+    label: str
+    value: float
+    kind: Literal["start", "increase", "decrease", "total"] = "increase"
+    note: str | None = None
+
+
+class WaterfallCalloutContent(BaseModel):
+    item_index: int
+    title: str | None = None
+    lines: list[str] = Field(default_factory=list)
+
+
+class WaterfallContent(SlotContentBase):
+    type: Literal["waterfall"] = "waterfall"
+    unit: str | None = None
+    items: list[WaterfallItemContent] = Field(min_length=2)
+    callouts: list[WaterfallCalloutContent] = Field(default_factory=list)
+    end_badge: str | None = None
+
+
+class ComboChartContent(SlotContentBase):
+    type: Literal["combo_chart"] = "combo_chart"
+    categories: list[str] = Field(min_length=1)
+    bars: list[ChartSeriesContent] = Field(min_length=1)
+    lines: list[ChartSeriesContent] = Field(default_factory=list)
+    unit: str | None = None
+    line_unit: str | None = None
+    annotations: list[str] = Field(default_factory=list)
+
+
 class DiagramNodeContent(BaseModel):
     id: str
     title: str
@@ -88,6 +143,7 @@ class DiagramEdgeContent(BaseModel):
 class DiagramContent(SlotContentBase):
     type: Literal["diagram"] = "diagram"
     diagram_type: DiagramKind
+    mermaid: str | None = None
     nodes: list[DiagramNodeContent] = Field(min_length=1)
     edges: list[DiagramEdgeContent] = Field(default_factory=list)
 
@@ -128,6 +184,9 @@ SlotContent = Annotated[
     | BulletsContent
     | ImageContent
     | ChartContent
+    | FinancialTableContent
+    | WaterfallContent
+    | ComboChartContent
     | DiagramContent
     | TableContent
     | KpiContent
@@ -169,9 +228,36 @@ class FlexChartContent(FlexBlockBase):
     unit: str | None = None
 
 
+class FlexFinancialTableContent(FlexBlockBase):
+    type: Literal["financial_table"] = "financial_table"
+    unit: str | None = None
+    columns: list[str] = Field(min_length=1)
+    rows: list[FinancialTableRowContent] = Field(min_length=1)
+    highlight_columns: list[int] = Field(default_factory=list)
+
+
+class FlexWaterfallContent(FlexBlockBase):
+    type: Literal["waterfall"] = "waterfall"
+    unit: str | None = None
+    items: list[WaterfallItemContent] = Field(min_length=2)
+    callouts: list[WaterfallCalloutContent] = Field(default_factory=list)
+    end_badge: str | None = None
+
+
+class FlexComboChartContent(FlexBlockBase):
+    type: Literal["combo_chart"] = "combo_chart"
+    categories: list[str] = Field(min_length=1)
+    bars: list[ChartSeriesContent] = Field(min_length=1)
+    lines: list[ChartSeriesContent] = Field(default_factory=list)
+    unit: str | None = None
+    line_unit: str | None = None
+    annotations: list[str] = Field(default_factory=list)
+
+
 class FlexDiagramContent(FlexBlockBase):
     type: Literal["diagram"] = "diagram"
     diagram_type: DiagramKind
+    mermaid: str | None = None
     nodes: list[DiagramNodeContent] = Field(min_length=1)
     edges: list[DiagramEdgeContent] = Field(default_factory=list)
 
@@ -206,6 +292,9 @@ FlexBlockContent = Annotated[
     | FlexBulletsContent
     | FlexImageContent
     | FlexChartContent
+    | FlexFinancialTableContent
+    | FlexWaterfallContent
+    | FlexComboChartContent
     | FlexDiagramContent
     | FlexTableContent
     | FlexKpiContent
@@ -299,23 +388,75 @@ def _to_block(block_id: str, content: SlotContent):  # noqa: ANN202
                 series=[ChartSeries(name=s.name, values=s.values) for s in content.series],
                 unit=content.unit,
             )
+        case FinancialTableContent():
+            return FinancialTableBlock(
+                **common,
+                unit=content.unit,
+                columns=content.columns,
+                rows=[
+                    FinancialTableRow(
+                        label=row.label,
+                        values=row.values,
+                        emphasis=row.emphasis,
+                        spacer=row.spacer,
+                    )
+                    for row in content.rows
+                ],
+                highlight_columns=content.highlight_columns,
+            )
+        case WaterfallContent():
+            return WaterfallBlock(
+                **common,
+                unit=content.unit,
+                items=[
+                    WaterfallItem(
+                        label=item.label,
+                        value=item.value,
+                        kind=item.kind,
+                        note=item.note,
+                    )
+                    for item in content.items
+                ],
+                callouts=[
+                    WaterfallCallout(
+                        item_index=callout.item_index,
+                        title=callout.title,
+                        lines=callout.lines,
+                    )
+                    for callout in content.callouts
+                ],
+                end_badge=content.end_badge,
+            )
+        case ComboChartContent():
+            return ComboChartBlock(
+                **common,
+                categories=content.categories,
+                bars=[ChartSeries(name=s.name, values=s.values) for s in content.bars],
+                lines=[ChartSeries(name=s.name, values=s.values) for s in content.lines],
+                unit=content.unit,
+                line_unit=content.line_unit,
+                annotations=content.annotations,
+            )
         case DiagramContent():
+            nodes = [
+                DiagramNode(
+                    id=node.id,
+                    title=node.title,
+                    desc=node.desc,
+                    status=node.status,
+                )
+                for node in content.nodes
+            ]
+            edges = [
+                DiagramEdge(source=edge.source, target=edge.target, label=edge.label)
+                for edge in content.edges
+            ]
             return DiagramBlock(
                 **common,
                 diagram_type=content.diagram_type,
-                nodes=[
-                    DiagramNode(
-                        id=node.id,
-                        title=node.title,
-                        desc=node.desc,
-                        status=node.status,
-                    )
-                    for node in content.nodes
-                ],
-                edges=[
-                    DiagramEdge(source=edge.source, target=edge.target, label=edge.label)
-                    for edge in content.edges
-                ],
+                mermaid=ensure_mermaid(content.mermaid, content.diagram_type, nodes, edges),
+                nodes=nodes,
+                edges=edges,
             )
         case TableContent():
             return TableBlock(**common, header=content.header, rows=content.rows)
@@ -356,23 +497,75 @@ def _to_flex_block(block_id: str, content: FlexBlockContent):  # noqa: ANN202
                 series=[ChartSeries(name=s.name, values=s.values) for s in content.series],
                 unit=content.unit,
             )
+        case FlexFinancialTableContent():
+            return FinancialTableBlock(
+                **common,
+                unit=content.unit,
+                columns=content.columns,
+                rows=[
+                    FinancialTableRow(
+                        label=row.label,
+                        values=row.values,
+                        emphasis=row.emphasis,
+                        spacer=row.spacer,
+                    )
+                    for row in content.rows
+                ],
+                highlight_columns=content.highlight_columns,
+            )
+        case FlexWaterfallContent():
+            return WaterfallBlock(
+                **common,
+                unit=content.unit,
+                items=[
+                    WaterfallItem(
+                        label=item.label,
+                        value=item.value,
+                        kind=item.kind,
+                        note=item.note,
+                    )
+                    for item in content.items
+                ],
+                callouts=[
+                    WaterfallCallout(
+                        item_index=callout.item_index,
+                        title=callout.title,
+                        lines=callout.lines,
+                    )
+                    for callout in content.callouts
+                ],
+                end_badge=content.end_badge,
+            )
+        case FlexComboChartContent():
+            return ComboChartBlock(
+                **common,
+                categories=content.categories,
+                bars=[ChartSeries(name=s.name, values=s.values) for s in content.bars],
+                lines=[ChartSeries(name=s.name, values=s.values) for s in content.lines],
+                unit=content.unit,
+                line_unit=content.line_unit,
+                annotations=content.annotations,
+            )
         case FlexDiagramContent():
+            nodes = [
+                DiagramNode(
+                    id=node.id,
+                    title=node.title,
+                    desc=node.desc,
+                    status=node.status,
+                )
+                for node in content.nodes
+            ]
+            edges = [
+                DiagramEdge(source=edge.source, target=edge.target, label=edge.label)
+                for edge in content.edges
+            ]
             return DiagramBlock(
                 **common,
                 diagram_type=content.diagram_type,
-                nodes=[
-                    DiagramNode(
-                        id=node.id,
-                        title=node.title,
-                        desc=node.desc,
-                        status=node.status,
-                    )
-                    for node in content.nodes
-                ],
-                edges=[
-                    DiagramEdge(source=edge.source, target=edge.target, label=edge.label)
-                    for edge in content.edges
-                ],
+                mermaid=ensure_mermaid(content.mermaid, content.diagram_type, nodes, edges),
+                nodes=nodes,
+                edges=edges,
             )
         case FlexTableContent():
             return TableBlock(**common, header=content.header, rows=content.rows)

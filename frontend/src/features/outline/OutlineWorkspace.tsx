@@ -25,10 +25,41 @@ const NARRATIVE_LABELS = {
   cover: '封面', executive_summary: '执行摘要', performance: '表现与现状', driver: '原因分析',
   risk: '风险与挑战', action: '行动计划', decision: '决策建议', supporting: '支撑说明', summary: '总结',
 }
-const EVIDENCE_LABELS = {
-  narrative: '定性分析', kpi: '关键指标', trend: '趋势图', comparison: '对比', timeline: '时间轴',
-  actions: '行动计划表', table: '表格', chart: '图表',
+const NON_VISUAL_LABELS = {
+  narrative: '定性分析',
+  kpi: '关键指标',
+  table: '表格',
+  actions: '行动计划表',
 }
+const VISUAL_LABELS = {
+  auto: '默认图表',
+  line: '折线图',
+  pie: '饼图',
+  bar: '条形图',
+  column: '柱状图',
+  timeline: '时间线',
+  flow: '流程图',
+  financial_table: '财务表',
+  waterfall: '瀑布图',
+  combo_chart: '组合图',
+}
+type VisualType = keyof typeof VISUAL_LABELS
+type NonVisualKind = keyof typeof NON_VISUAL_LABELS
+type OutlineModeValue = `visual:${VisualType}` | `evidence:${NonVisualKind}`
+
+const VISUAL_TO_EVIDENCE: Record<VisualType, OutlinePage['evidence_kind']> = {
+  auto: 'chart',
+  line: 'trend',
+  pie: 'composition',
+  bar: 'comparison',
+  column: 'comparison',
+  timeline: 'timeline',
+  flow: 'flow',
+  financial_table: 'chart',
+  waterfall: 'chart',
+  combo_chart: 'chart',
+}
+const REFIT_VISUAL_TYPES = new Set<VisualType>(['auto', 'line', 'pie', 'bar', 'column'])
 
 export function OutlineWorkspace({ project }: { project: ProjectDetail }) {
   const outlineQuery = useOutline(project.id)
@@ -99,6 +130,7 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
   const [blueprint, setBlueprint] = useState(outline.blueprint)
   const [themeId, setThemeId] = useState(project.theme_id)
   const target = project.page_count
+  const isTopicProject = project.sources.some((source) => source.kind === 'topic')
 
   const save = useUpdateOutline(project.id)
   const refit = useRefitOutlinePage(project.id)
@@ -151,7 +183,12 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
   const changePage = (index: number, next: OutlinePage) =>
     setPages((current) => current.map((page, i) => (i === index ? next : page)))
 
-  const refitPage = (index: number, evidenceKind: 'trend' | 'chart') => {
+  const refitPage = (
+    index: number,
+    evidenceKind: 'trend' | 'chart',
+    visualType: VisualType,
+    optimisticPage: OutlinePage,
+  ) => {
     const current = pages[index]
     if (!current?.id) return
     const previous = current
@@ -164,8 +201,7 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
       currentPages.map((page, i) =>
         i === index
           ? {
-              ...page,
-              evidence_kind: evidenceKind,
+              ...optimisticPage,
               planning_notes: ['正在根据来源材料重构图表页面…'],
             }
           : page,
@@ -177,6 +213,7 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
         pageId: current.id,
         revision: outline.revision,
         evidenceKind,
+        visualType,
       },
       {
         onSuccess: () => setRefitPageId(null),
@@ -192,6 +229,23 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
         },
       },
     )
+  }
+
+  const changePageMode = (index: number, value: OutlineModeValue) => {
+    const page = pages[index]
+    if (!page) return
+    const next = applyModeChoice(page, value)
+    const visualType = value.startsWith('visual:') ? value.slice('visual:'.length) as VisualType : null
+    if (
+      visualType != null &&
+      !isTopicProject &&
+      REFIT_VISUAL_TYPES.has(visualType) &&
+      (page.evidence?.length ?? 0) === 0
+    ) {
+      refitPage(index, visualType === 'line' ? 'trend' : 'chart', visualType, next)
+      return
+    }
+    changePage(index, next)
   }
 
   const startGeneration = async () => {
@@ -295,11 +349,7 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
                 dragging={drag.draggingIndex === index}
                 canRemove={pages.length > PAGE_COUNT_RANGE.min}
                 onChange={(next) => changePage(index, next)}
-                onEvidenceKindChange={(kind) =>
-                  kind === 'trend' || kind === 'chart'
-                    ? refitPage(index, kind)
-                    : changePage(index, { ...page, evidence_kind: kind })
-                }
+                onModeChange={(value) => changePageMode(index, value)}
                 refitting={refitPageId === page.id}
                 refitError={page.id ? refitError[page.id] : undefined}
                 onRemove={() => setPages((current) => current.filter((_, i) => i !== index))}
@@ -378,7 +428,7 @@ function PageCard({
   dragging,
   canRemove,
   onChange,
-  onEvidenceKindChange,
+  onModeChange,
   refitting,
   refitError,
   onRemove,
@@ -390,7 +440,7 @@ function PageCard({
   dragging: boolean
   canRemove: boolean
   onChange: (page: OutlinePage) => void
-  onEvidenceKindChange: (kind: OutlinePage['evidence_kind']) => void
+  onModeChange: (value: OutlineModeValue) => void
   refitting: boolean
   refitError?: string
   onRemove: () => void
@@ -442,11 +492,22 @@ function PageCard({
               className="rounded-lg border border-line bg-surface p-2">
               {Object.entries(NARRATIVE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
-            <select aria-label={`第 ${index + 1} 页表达方式`} value={page.evidence_kind ?? 'narrative'}
+            <select
+              aria-label={`第 ${index + 1} 页表达方式或图表类型`}
+              value={modeValue(page)}
               disabled={refitting}
-              onChange={(event) => onEvidenceKindChange(event.target.value as OutlinePage['evidence_kind'])}
+              onChange={(event) => onModeChange(event.target.value as OutlineModeValue)}
               className="rounded-lg border border-line bg-surface p-2">
-              {Object.entries(EVIDENCE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              <optgroup label="图表与图示">
+                {Object.entries(VISUAL_LABELS).map(([value, label]) => (
+                  <option key={value} value={`visual:${value}`}>{label}</option>
+                ))}
+              </optgroup>
+              <optgroup label="其他表达">
+                {Object.entries(NON_VISUAL_LABELS).map(([value, label]) => (
+                  <option key={value} value={`evidence:${value}`}>{label}</option>
+                ))}
+              </optgroup>
             </select>
           </div>
           {refitting && (
@@ -607,6 +668,71 @@ function CenterCard({ children }: { children: ReactNode }) {
   )
 }
 
+function modeValue(page: OutlinePage): OutlineModeValue {
+  const visualType = page.visual_type ?? 'auto'
+  if (visualType !== 'auto') return `visual:${visualType}`
+
+  switch (page.evidence_kind) {
+    case 'trend':
+      return 'visual:line'
+    case 'composition':
+      return 'visual:pie'
+    case 'timeline':
+      return 'visual:timeline'
+    case 'flow':
+      return 'visual:flow'
+    case 'comparison':
+      return `visual:${inferAutoChartType(page) ?? 'auto'}`
+    case 'chart':
+      return `visual:${inferAutoChartType(page) ?? 'auto'}`
+    case 'kpi':
+    case 'table':
+    case 'actions':
+      return `evidence:${page.evidence_kind}`
+    default:
+      return 'evidence:narrative'
+  }
+}
+
+function inferAutoChartType(page: OutlinePage): VisualType | null {
+  const evidence = page.evidence ?? []
+  const categories = uniqueFilled(evidence.map((item) => evidenceCategory(item)))
+  if (categories.length >= 2) {
+    return categories.some((category) => category.length > 8) ? 'bar' : 'column'
+  }
+  const periods = uniqueFilled(evidence.map((item) => item.period))
+  if (periods.length >= 2) return 'line'
+  return null
+}
+
+function evidenceCategory(item: NonNullable<OutlinePage['evidence']>[number]): string {
+  return String((item as { category?: string }).category ?? '')
+}
+
+function uniqueFilled(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)))
+}
+
+function applyModeChoice(page: OutlinePage, value: OutlineModeValue): OutlinePage {
+  if (value.startsWith('visual:')) {
+    const visualType = value.slice('visual:'.length) as VisualType
+    return {
+      ...page,
+      visual_type: visualType,
+      evidence_kind: VISUAL_TO_EVIDENCE[visualType],
+      planning_notes: [],
+    }
+  }
+
+  const evidenceKind = value.slice('evidence:'.length) as NonVisualKind
+  return {
+    ...page,
+    visual_type: 'auto',
+    evidence_kind: evidenceKind,
+    planning_notes: [],
+  }
+}
+
 /** 新页给可用的占位内容而不是空白：空标题、空目标在服务端是非法的 */
 function blankPage(index: number): OutlinePage {
   return {
@@ -619,6 +745,7 @@ function blankPage(index: number): OutlinePage {
     page_role: 'content',
     narrative_role: 'supporting',
     evidence_kind: 'narrative',
+    visual_type: 'auto',
     key_message: '',
     evidence: [],
     planning_notes: [],

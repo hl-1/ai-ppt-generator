@@ -26,8 +26,8 @@ _ROLE_TYPE_HINTS: dict[str, tuple[str, ...]] = {
     "callout": ("callout",),
     "note": ("callout",),
     "source": ("callout",),
-    "image": ("image", "chart", "diagram"),
-    "visual": ("image", "chart", "diagram"),
+    "image": ("image", "chart", "diagram", "financial_table", "waterfall", "combo_chart"),
+    "visual": ("image", "chart", "diagram", "financial_table", "waterfall", "combo_chart"),
     "kpi_1": ("kpi",),
     "kpi_2": ("kpi",),
     "kpi_3": ("kpi",),
@@ -40,6 +40,9 @@ _TYPE_TEXT_STYLE: dict[str, str | None] = {
     "kpi": None,
     "image": None,
     "chart": None,
+    "financial_table": None,
+    "waterfall": None,
+    "combo_chart": None,
     "table": None,
     "cards": None,
     "callout": None,
@@ -191,7 +194,13 @@ def _score_preset(
     score = 0
     if "image" in types and any(role in ("image", "visual") for role in leaf_roles):
         score += 3
-    if ("chart" in types or "diagram" in types) and any(
+    if (
+        "chart" in types
+        or "diagram" in types
+        or "financial_table" in types
+        or "waterfall" in types
+        or "combo_chart" in types
+    ) and any(
         role in ("image", "visual") for role in leaf_roles
     ):
         score += 2

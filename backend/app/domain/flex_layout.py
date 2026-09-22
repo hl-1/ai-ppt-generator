@@ -50,7 +50,7 @@ class FlexLeaf(BaseModel):
 
 
 class FlexContainer(BaseModel):
-    type: Literal["row", "column"]
+    type: Literal["row", "column", "overlay"]
     id: str
     children: list[FlexNode]
     gap_pt: float = 16.0

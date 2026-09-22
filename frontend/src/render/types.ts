@@ -20,6 +20,58 @@ export type TextBlock = Schemas['TextBlock']
 export type BulletsBlock = Schemas['BulletsBlock']
 export type ImageBlock = Schemas['ImageBlock']
 export type ChartBlock = Schemas['ChartBlock']
+export type FinancialTableRow = {
+  label: string
+  values: string[]
+  emphasis?: boolean
+  spacer?: boolean
+}
+export type FinancialTableBlock = {
+  id: string
+  slot_id: string
+  locked: boolean
+  style?: Schemas['BlockStyle'] | null
+  type: 'financial_table'
+  unit?: string | null
+  columns: string[]
+  rows: FinancialTableRow[]
+  highlight_columns?: number[]
+}
+export type WaterfallItem = {
+  label: string
+  value: number
+  kind?: 'start' | 'increase' | 'decrease' | 'total'
+  note?: string | null
+}
+export type WaterfallCallout = {
+  item_index: number
+  title?: string | null
+  lines?: string[]
+}
+export type WaterfallBlock = {
+  id: string
+  slot_id: string
+  locked: boolean
+  style?: Schemas['BlockStyle'] | null
+  type: 'waterfall'
+  unit?: string | null
+  items: WaterfallItem[]
+  callouts?: WaterfallCallout[]
+  end_badge?: string | null
+}
+export type ComboChartBlock = {
+  id: string
+  slot_id: string
+  locked: boolean
+  style?: Schemas['BlockStyle'] | null
+  type: 'combo_chart'
+  categories: string[]
+  bars: ChartBlock['series']
+  lines?: ChartBlock['series']
+  unit?: string | null
+  line_unit?: string | null
+  annotations?: string[]
+}
 export type DiagramNode = {
   id: string
   title: string
@@ -38,6 +90,7 @@ export type DiagramBlock = {
   style?: Schemas['BlockStyle'] | null
   type: 'diagram'
   diagram_type: 'flow' | 'timeline' | 'cycle'
+  mermaid?: string | null
   nodes: DiagramNode[]
   edges: DiagramEdge[]
 }
@@ -76,6 +129,9 @@ export type Block =
   | BulletsBlock
   | ImageBlock
   | ChartBlock
+  | FinancialTableBlock
+  | WaterfallBlock
+  | ComboChartBlock
   | DiagramBlock
   | TableBlock
   | KpiBlock
@@ -141,6 +197,7 @@ export type EditableBlockCommit =
   | {
       type: 'diagram'
       diagram_type: DiagramBlock['diagram_type']
+      mermaid?: string | null
       nodes: DiagramNode[]
       edges: DiagramEdge[]
     }

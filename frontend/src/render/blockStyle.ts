@@ -47,13 +47,13 @@ export function mergeTextCss(
 }
 
 export function boxCss(theme: Theme, style?: BlockStyle | null): CSSProperties {
-  if (!style) return {}
-
   const css: CSSProperties = {
     boxSizing: 'border-box',
     width: '100%',
     height: '100%',
   }
+
+  if (!style) return css
 
   if (style.fill != null && style.fill !== 'none') {
     css.background = resolveColorValue(theme, style.fill)
@@ -87,9 +87,29 @@ export type StyleCapability = {
 }
 
 export function styleCapability(
-  type: 'text' | 'bullets' | 'image' | 'chart' | 'table' | 'kpi' | 'cards' | 'callout',
+  type:
+    | 'text'
+    | 'bullets'
+    | 'image'
+    | 'chart'
+    | 'diagram'
+    | 'table'
+    | 'kpi'
+    | 'cards'
+    | 'callout'
+    | 'financial_table'
+    | 'waterfall'
+    | 'combo_chart',
 ): StyleCapability {
-  if (type === 'chart') return { text: false, box: false, borderOnly: false }
+  if (
+    type === 'chart' ||
+    type === 'diagram' ||
+    type === 'financial_table' ||
+    type === 'waterfall' ||
+    type === 'combo_chart'
+  ) {
+    return { text: false, box: false, borderOnly: false }
+  }
   if (type === 'image') return { text: false, box: false, borderOnly: true }
   if (type === 'table') return { text: true, box: false, borderOnly: false }
   return { text: true, box: true, borderOnly: false }
