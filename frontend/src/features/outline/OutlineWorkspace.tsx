@@ -8,7 +8,8 @@ import {
   useRefitOutlinePage,
   useUpdateOutline,
 } from '@/features/outline/api'
-import type { Outline, OutlinePage } from '@/features/outline/types'
+import { outlineErrorMessage, outlineRequestErrorMessage } from '@/features/outline/errors'
+import type { Outline, OutlinePage, OutlineProgressEvent } from '@/features/outline/types'
 import { useConfirmAndGenerate } from '@/features/outline/useConfirmAndGenerate'
 import { useOutlineProgress } from '@/features/outline/useOutlineProgress'
 import { useUpdateProject } from '@/features/projects/api'
@@ -66,6 +67,25 @@ export function OutlineWorkspace({ project }: { project: ProjectDetail }) {
   const generate = useGenerateOutline(project.id)
   const outline = outlineQuery.data ?? null
   const progress = useOutlineProgress(project.id, outline?.status === 'generating')
+  const currentStage = progress.event?.stage
+  const stageRunning = progress.event?.stage_status === 'started'
+  const [stageElapsedSeconds, setStageElapsedSeconds] = useState(0)
+  const progressMessage =
+    progress.event?.stage_status === 'failed'
+      ? `${outlineErrorMessage(progress.event.error_code)}，正在重试…`
+      : progress.event?.message ?? '正在规划每一页…'
+
+  useEffect(() => {
+    if (!stageRunning) {
+      setStageElapsedSeconds(0)
+      return
+    }
+    const startedAt = Date.now()
+    const update = () => setStageElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000))
+    update()
+    const timer = window.setInterval(update, 1000)
+    return () => window.clearInterval(timer)
+  }, [currentStage, stageRunning])
 
   if (outlineQuery.isPending) {
     return (
@@ -82,7 +102,17 @@ export function OutlineWorkspace({ project }: { project: ProjectDetail }) {
     return (
       <Shell title={project.title}>
         <CenterCard>
-          <p className="text-sm font-medium">{progress.event?.message ?? '正在规划每一页…'}</p>
+          <p className="text-sm font-medium">{progressMessage}</p>
+          {currentStage && (
+            <p className="mt-1.5 text-xs text-ink-muted">
+              当前阶段：{outlineStageLabel(currentStage)}
+            </p>
+          )}
+          {stageRunning && !progress.connectionError && (
+            <p className="mt-1 text-xs text-ink-muted">
+              已运行 {stageElapsedSeconds} 秒，正在实时处理
+            </p>
+          )}
           <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-line">
             <div
               className="h-full rounded-full bg-accent transition-[width] duration-500"
@@ -102,7 +132,9 @@ export function OutlineWorkspace({ project }: { project: ProjectDetail }) {
       <Shell title={project.title}>
         <CenterCard>
           <p className="text-sm text-ink-soft">
-            {outline?.error ?? (outline ? '大纲生成失败。' : '还没有大纲。')}
+            {outline
+              ? outlineErrorMessage(outline.error_code, '大纲生成失败，请稍后重试。')
+              : '还没有大纲。'}
           </p>
           <Button
             className="mt-5"
@@ -114,7 +146,7 @@ export function OutlineWorkspace({ project }: { project: ProjectDetail }) {
           </Button>
           {generate.isError && (
             <p role="alert" className="mt-3 text-xs text-negative">
-              {errorMessage(generate.error)}
+              {outlineRequestErrorMessage(generate.error)}
             </p>
           )}
         </CenterCard>
@@ -263,6 +295,9 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
   }
 
   const actionError = launch.error ?? save.error ?? updateProject.error ?? regenerate.error
+  const actionErrorMessage = regenerate.error
+    ? outlineRequestErrorMessage(regenerate.error)
+    : errorMessage(actionError)
 
   return (
     <Shell
@@ -316,7 +351,7 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
 
           {actionError && (
             <p role="alert" className="mb-4 rounded-xl bg-negative/8 px-4 py-3 text-sm text-negative">
-              {errorMessage(actionError)}
+              {actionErrorMessage}
             </p>
           )}
 
@@ -666,6 +701,21 @@ function CenterCard({ children }: { children: ReactNode }) {
       </div>
     </div>
   )
+}
+
+function outlineStageLabel(stage: NonNullable<OutlineProgressEvent['stage']>): string {
+  switch (stage) {
+    case 'queue':
+      return '进入生成队列'
+    case 'load_input':
+      return '读取输入材料'
+    case 'plan_structure':
+      return '规划大纲结构'
+    case 'validate':
+      return '校验大纲结构'
+    case 'save':
+      return '保存大纲'
+  }
 }
 
 function modeValue(page: OutlinePage): OutlineModeValue {

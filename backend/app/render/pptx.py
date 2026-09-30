@@ -23,6 +23,8 @@ from app.domain.content import (
     ComboChartBlock,
     Deck,
     DiagramBlock,
+    DiagramEdge,
+    DiagramNode,
     FinancialTableBlock,
     ImageBlock,
     KpiBlock,
@@ -32,6 +34,7 @@ from app.domain.content import (
     WaterfallBlock,
 )
 from app.domain.flex_skin import BOX_RADIUS_PT, SkinDecoration, iter_skin_decorations
+from app.domain.flow_policy import card_items_from_flow_nodes, should_keep_flow_diagram
 from app.domain.geometry import (
     CANVAS_HEIGHT_PT,
     CANVAS_WIDTH_PT,
@@ -40,6 +43,7 @@ from app.domain.geometry import (
     Rect,
 )
 from app.domain.layout import get_layout
+from app.domain.mermaid import normalize_flow_edges
 from app.domain.slide_geometry import placed_by_block_id
 from app.domain.text_metrics import measure_bullets, measure_text
 from app.domain.theme import TextStyle, Theme, get_theme
@@ -1112,15 +1116,29 @@ class PptxRenderer:
         if not block.nodes:
             return
 
-        node_rects = self._diagram_node_rects(block, rect)
+        edges = normalize_flow_edges(block.diagram_type, block.nodes, block.edges)
+        if block.diagram_type == "flow" and not should_keep_flow_diagram(block.nodes, edges):
+            self._render_cards(
+                pptx_slide,
+                CardsBlock(
+                    id=block.id,
+                    slot_id=block.slot_id,
+                    style=block.style,
+                    items=card_items_from_flow_nodes(block.nodes),
+                ),
+                rect=rect,
+            )
+            return
+        node_rects = self._diagram_node_rects(block, rect, edges)
         by_id = {node.id: node for node in block.nodes}
 
-        for edge in block.edges:
-            source = node_rects.get(edge.source)
-            target = node_rects.get(edge.target)
-            if source is None or target is None:
-                continue
-            self._add_diagram_connector(pptx_slide, source, target)
+        if block.diagram_type != "timeline":
+            for edge in edges:
+                source = node_rects.get(edge.source)
+                target = node_rects.get(edge.target)
+                if source is None or target is None:
+                    continue
+                self._add_diagram_connector(pptx_slide, source, target)
 
         for node in block.nodes:
             node_rect = node_rects[node.id]
@@ -1163,21 +1181,36 @@ class PptxRenderer:
         # 避免图边界处残留虚构节点被误以为是数据，变量只用于明确校验边引用。
         _ = by_id
 
-    def _diagram_node_rects(self, block: DiagramBlock, rect: Rect) -> dict[str, Rect]:
+    def _diagram_node_rects(
+        self,
+        block: DiagramBlock,
+        rect: Rect,
+        edges: list[DiagramEdge],
+    ) -> dict[str, Rect]:
         count = len(block.nodes)
         gap_x = 18.0 / CANVAS_WIDTH_PT
         gap_y = 16.0 / CANVAS_HEIGHT_PT
         if block.diagram_type == "timeline":
-            node_h = max((rect.h - gap_y * (count - 1)) / count, 1e-6)
-            return {
-                node.id: Rect(
-                    x=rect.x + 0.12 * rect.w,
-                    y=rect.y + index * (node_h + gap_y),
-                    w=0.82 * rect.w,
+            columns = count if count <= 3 else 2 if count <= 4 else 3
+            rows = (count + columns - 1) // columns
+            node_w = max((rect.w - gap_x * (columns - 1)) / columns, 1e-6)
+            node_h = max((rect.h - gap_y * (rows - 1)) / rows, 1e-6)
+            result: dict[str, Rect] = {}
+            for index, node in enumerate(block.nodes):
+                row = index // columns
+                row_start = row * columns
+                row_count = min(columns, count - row_start)
+                row_width = row_count * node_w + (row_count - 1) * gap_x
+                start_x = (rect.w - row_width) / 2
+                result[node.id] = Rect(
+                    x=rect.x + start_x + (index - row_start) * (node_w + gap_x),
+                    y=rect.y + row * (node_h + gap_y),
+                    w=node_w,
                     h=node_h,
                 )
-                for index, node in enumerate(block.nodes)
-            }
+            return result
+        if block.diagram_type == "flow" and _has_branching_edges(block.nodes, edges):
+            return self._branch_flow_node_rects(block.nodes, rect, edges)
         node_w = max((rect.w - gap_x * (count - 1)) / count, 0.12)
         return {
             node.id: Rect(
@@ -1189,10 +1222,42 @@ class PptxRenderer:
             for index, node in enumerate(block.nodes)
         }
 
+    def _branch_flow_node_rects(
+        self,
+        nodes: list[DiagramNode],
+        rect: Rect,
+        edges: list[DiagramEdge],
+    ) -> dict[str, Rect]:
+        levels = _flow_levels(nodes, edges)
+        rows: dict[int, list[DiagramNode]] = {}
+        for node in nodes:
+            rows.setdefault(levels.get(node.id, 0), []).append(node)
+        row_count = max(rows, default=0) + 1
+        gap_x = 18.0 / CANVAS_WIDTH_PT
+        gap_y = 24.0 / CANVAS_HEIGHT_PT
+        row_h = max((rect.h - gap_y * (row_count - 1)) / row_count, 0.12)
+        result: dict[str, Rect] = {}
+        for level, row in rows.items():
+            node_w = max((rect.w - gap_x * (len(row) - 1)) / len(row), 0.16)
+            total_w = node_w * len(row) + gap_x * (len(row) - 1)
+            start_x = rect.x + (rect.w - total_w) / 2
+            y = rect.y + level * (row_h + gap_y)
+            for index, node in enumerate(row):
+                result[node.id] = Rect(
+                    x=start_x + index * (node_w + gap_x),
+                    y=y,
+                    w=node_w,
+                    h=row_h,
+                )
+        return result
+
     def _add_diagram_connector(
         self, pptx_slide: PptxSlide, source: Rect, target: Rect
     ) -> None:
-        if target.x >= source.x + source.w:
+        if target.y >= source.y + source.h:
+            start = (source.x + source.w / 2, source.y + source.h)
+            end = (target.x + target.w / 2, target.y)
+        elif target.x >= source.x + source.w:
             start = (source.x + source.w, source.y + source.h / 2)
             end = (target.x, target.y + target.h / 2)
         else:
@@ -1212,6 +1277,38 @@ class PptxRenderer:
         except AttributeError:
             # 某些 python-pptx 版本没有公开箭头属性，连接线本身仍保留流程方向。
             pass
+
+
+def _has_branching_edges(nodes: list[DiagramNode], edges: list[DiagramEdge]) -> bool:
+    outgoing = {node.id: 0 for node in nodes}
+    incoming = {node.id: 0 for node in nodes}
+    for edge in edges:
+        outgoing[edge.source] = outgoing.get(edge.source, 0) + 1
+        incoming[edge.target] = incoming.get(edge.target, 0) + 1
+    return any(value > 1 for value in outgoing.values()) or any(
+        value > 1 for value in incoming.values()
+    )
+
+
+def _flow_levels(nodes: list[DiagramNode], edges: list[DiagramEdge]) -> dict[str, int]:
+    incoming = {node.id: 0 for node in nodes}
+    outgoing: dict[str, list[str]] = {node.id: [] for node in nodes}
+    for edge in edges:
+        if edge.source not in outgoing or edge.target not in incoming:
+            continue
+        outgoing[edge.source].append(edge.target)
+        incoming[edge.target] += 1
+
+    levels = {node.id: 0 for node in nodes if incoming[node.id] == 0}
+    queue = list(levels)
+    while queue:
+        current = queue.pop(0)
+        for target in outgoing[current]:
+            levels[target] = max(levels.get(target, 0), levels[current] + 1)
+            incoming[target] -= 1
+            if incoming[target] == 0:
+                queue.append(target)
+    return levels
 
 
 def render_deck_to_pptx(

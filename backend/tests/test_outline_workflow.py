@@ -101,6 +101,17 @@ class FakeChat:
         return schema.model_validate_json(self.payload)
 
 
+class SequenceChat:
+    def __init__(self, payloads: list[str]) -> None:
+        self.payloads = payloads
+        self.system_prompts: list[str] = []
+
+    async def complete(self, schema: Any, *, system: str, user: str, purpose: str) -> Any:
+        self.system_prompts.append(system)
+        payload = self.payloads[min(len(self.system_prompts) - 1, len(self.payloads) - 1)]
+        return schema.model_validate_json(payload)
+
+
 def test_prepare_trims_long_section_without_breaking_ref() -> None:
     long_text = "甲" * (MAX_SECTION_CHARS + 500)
     payload = _input(sections=[_section("S1:1", long_text, heading="长节", level=2)])
@@ -193,6 +204,14 @@ def _valid_outline_json(
     return draft.model_dump_json()
 
 
+def _valid_outline_page_json() -> str:
+    response = json.loads(_valid_outline_json(page_count=1))
+    response["pages"][0]["title"] = "补充说明"
+    response["pages"][0]["layout_id"] = "unknown-layout"
+    response["pages"][0]["source_refs"] = ["S9:9"]
+    return json.dumps(response["pages"][0], ensure_ascii=False)
+
+
 @pytest.mark.asyncio
 async def test_deepseek_parses_valid_outline() -> None:
     chat = FakeChat(_valid_outline_json())
@@ -206,25 +225,50 @@ async def test_deepseek_parses_valid_outline() -> None:
     assert chat.called
 
 
-def test_create_chat_model_omits_thinking_by_default() -> None:
+@pytest.mark.asyncio
+async def test_deepseek_normalizes_evidence_kinds_mistaken_for_narrative_roles() -> None:
+    response = json.loads(_valid_outline_json(page_count=2))
+    response["pages"][0]["narrative_role"] = "composition"
+    response["pages"][0]["evidence_kind"] = "composition"
+    response["pages"][1]["narrative_role"] = "comparison"
+    response["pages"][1]["evidence_kind"] = "comparison"
+    chat = FakeChat(json.dumps(response, ensure_ascii=False))
+    generator = DeepSeekOutlineGenerator(
+        chat=chat,
+        layout_ids=frozenset({"bullets"}),
+    )
+
+    draft = await generator.generate(_input(page_count=2))
+
+    assert [page.narrative_role for page in draft.pages] == ["performance", "performance"]
+    assert "严禁把 trend、comparison、composition" in (chat.last_system or "")
+
+
+@pytest.mark.asyncio
+async def test_deepseek_retries_once_when_model_returns_wrong_page_count() -> None:
+    chat = SequenceChat([_valid_outline_json(page_count=1), _valid_outline_page_json()])
+    generator = DeepSeekOutlineGenerator(
+        chat=chat,
+        layout_ids=frozenset({"bullets"}),
+    )
+
+    draft = await generator.generate(_input(page_count=2))
+
+    assert len(draft.pages) == 2
+    assert len(chat.system_prompts) == 2
+    assert draft.pages[-1].title == "补充说明"
+    assert draft.pages[-1].layout_id == "bullets"
+    assert draft.pages[-1].source_refs == []
+
+
+def test_create_chat_model_disables_thinking_by_default() -> None:
     model = create_chat_model(Settings(llm_api_key="k", llm_thinking_enabled=False))
-    assert not getattr(model, "extra_body", None)
+    assert model.extra_body == {"thinking": {"type": "disabled"}}
 
 
 def test_create_chat_model_enables_thinking() -> None:
     model = create_chat_model(Settings(llm_api_key="k", llm_thinking_enabled=True))
     assert model.extra_body == {"thinking": {"type": "enabled"}}
-
-
-@pytest.mark.asyncio
-async def test_deepseek_rejects_wrong_page_count() -> None:
-    generator = DeepSeekOutlineGenerator(
-        chat=FakeChat(_valid_outline_json(page_count=1)),
-        layout_ids=frozenset({"bullets"}),
-    )
-
-    with pytest.raises(InvalidOutlineOutputError, match="页数不符"):
-        await generator.generate(_input(page_count=2))
 
 
 @pytest.mark.asyncio

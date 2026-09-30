@@ -105,6 +105,7 @@ class SlideGenerationInput(BaseModel):
     # 大纲给的配图意图，非空时本页必须产出一个 image 块并以它作 alt
     visual_hint: str | None = Field(default=None, max_length=120)
     # 版式骨架与 callout 配额由编排层按页序分配，见 domain/page_rhythm
+    layout_template: str | None = Field(default=None, max_length=40)
     skeleton_hint: str | None = Field(default=None, max_length=200)
     allow_callout: bool = True
     # 修复轮次带上上一轮的结构问题，让模型定向改而不是从头重来

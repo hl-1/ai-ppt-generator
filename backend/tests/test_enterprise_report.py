@@ -5,8 +5,10 @@ from io import BytesIO
 
 import pytest
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 from app.domain.content import (
+    CalloutBlock,
     CardsBlock,
     ChartBlock,
     Deck,
@@ -21,6 +23,17 @@ from app.domain.evidence import comparable_series, evidence_problem, prepare_pag
 from app.domain.flex_layout import FlexContainer, FlexLeaf, iter_leaf_block_ids
 from app.domain.mermaid import ensure_mermaid, mermaid_for_diagram
 from app.domain.outline import DeckBlueprint, EvidenceItem, OutlinePage, ReportBrief
+from app.domain.slide_draft import (
+    CalloutContent,
+    CardsContent,
+    FlexCalloutContent,
+    FlexCardsContent,
+    FlexDiagramContent,
+    FlexSlideDraft,
+    SlideDraft,
+    draft_to_slide,
+    flex_draft_to_slide,
+)
 from app.domain.theme import get_theme
 from app.render.pptx import render_deck_to_pptx
 from app.render.verify import verify_pptx
@@ -137,7 +150,7 @@ def test_flow_without_numeric_evidence_keeps_diagram_intent():
     assert result.visual_type == "flow"
 
 
-def test_diagram_blocks_have_mermaid_source_for_rendering():
+def test_simple_flow_is_downgraded_to_cards():
     page = plan(
         evidence_kind="flow",
         visual_type="flow",
@@ -145,11 +158,10 @@ def test_diagram_blocks_have_mermaid_source_for_rendering():
         evidence=[],
     )
     result = bind_planned_evidence(slide(), page)
-    diagram = next(block for block in result.blocks if block.type == "diagram")
+    cards = next(block for block in result.blocks if block.type == "cards")
 
-    assert diagram.mermaid is not None
-    assert diagram.mermaid.startswith("flowchart TB")
-    assert "-->" in diagram.mermaid
+    assert not any(block.type == "diagram" for block in result.blocks)
+    assert [item.title for item in cards.items] == ["输入", "处理", "输出"]
 
 
 def test_incident_flow_generates_branch_and_merge_mermaid():
@@ -218,6 +230,66 @@ def test_authored_mermaid_is_preserved():
     )
 
 
+def test_generated_linear_flex_flow_is_downgraded_to_cards():
+    nodes = [
+        {"id": f"n{index}", "title": f"步骤{index}"}
+        for index in range(1, 6)
+    ]
+    edges = [
+        {"source": f"n{index}", "target": f"n{index + 1}"}
+        for index in range(1, 5)
+    ]
+    draft = FlexSlideDraft(
+        blocks=[
+            FlexDiagramContent(
+                id="diagram",
+                diagram_type="flow",
+                nodes=nodes,
+                edges=edges,
+            )
+        ],
+        layout_tree=FlexContainer(
+            type="column",
+            id="root",
+            children=[FlexLeaf(id="leaf-diagram", block_id="diagram")],
+        ),
+    )
+
+    result = flex_draft_to_slide(uuid.uuid4(), draft)
+    cards = next(block for block in result.blocks if block.type == "cards")
+
+    assert not any(block.type == "diagram" for block in result.blocks)
+    assert [item.title for item in cards.items] == ["步骤1", "步骤2", "步骤3", "步骤4", "步骤5"]
+
+
+def test_fixed_and_flex_cards_are_compacted():
+    long_title = "经营改善路径与协同机制" * 3
+    long_desc = "持续跟踪关键指标并推动跨团队行动落地。" * 5
+    card_data = [{"title": long_title, "desc": long_desc, "icon": "✓"}]
+    fixed = draft_to_slide(
+        uuid.uuid4(),
+        "bullets",
+        SlideDraft(blocks=[CardsContent(slot_id="cards", items=card_data)]),
+    )
+    flex = flex_draft_to_slide(
+        uuid.uuid4(),
+        FlexSlideDraft(
+            blocks=[FlexCardsContent(id="cards", items=card_data)],
+            layout_tree=FlexContainer(
+                type="column",
+                id="root",
+                children=[FlexLeaf(id="leaf-cards", block_id="cards")],
+            ),
+        ),
+    )
+
+    for result in (fixed, flex):
+        cards = next(block for block in result.blocks if block.type == "cards")
+        assert len(cards.items[0].title) <= 18
+        assert len(cards.items[0].desc) <= 56
+        assert cards.items[0].icon == "✓"
+
+
 def test_composition_keeps_each_block_once_and_title_style():
     result = compose_report_slide(bind_planned_evidence(slide(), plan()), plan())
     assert result.layout_tree.children[0].block_id == "heading-xyz"
@@ -228,6 +300,83 @@ def test_composition_keeps_each_block_once_and_title_style():
     chart = next(b for b in result.blocks if b.type == "chart")
     chart.series[0].values[1] = 999
     assert check_planned_data(result, plan())[0].severity == "error"
+
+
+def test_generated_evidence_does_not_create_visible_source_footer():
+    result = bind_planned_evidence(slide(), plan())
+
+    assert not any(block.type == "callout" and block.variant == "source" for block in result.blocks)
+    assert result.speaker_notes is not None
+    assert "证据原句" in result.speaker_notes
+    assert "[S1:1]" in result.speaker_notes
+
+
+def test_generated_fixed_and_flex_drafts_drop_source_callouts():
+    fixed = draft_to_slide(
+        uuid.uuid4(),
+        "bullets",
+        SlideDraft(
+            blocks=[
+                {"slot_id": "title", "type": "text", "text": "标题"},
+                CalloutContent(slot_id="note", text="来源：S1:1", variant="source"),
+            ]
+        ),
+    )
+    flex = flex_draft_to_slide(
+        uuid.uuid4(),
+        FlexSlideDraft(
+            blocks=[
+                {"id": "title", "type": "text", "text": "标题"},
+                FlexCalloutContent(id="source", text="来源：S1:1", variant="source"),
+            ],
+            layout_tree=FlexContainer(
+                type="column",
+                id="root",
+                children=[
+                    FlexLeaf(id="leaf-title", block_id="title"),
+                    FlexLeaf(id="leaf-source", block_id="source"),
+                ],
+            ),
+        ),
+    )
+
+    assert all(
+        not (block.type == "callout" and block.variant == "source")
+        for block in fixed.blocks
+    )
+    assert all(
+        not (block.type == "callout" and block.variant == "source")
+        for block in flex.blocks
+    )
+
+
+def test_composition_drops_model_source_callout():
+    source = slide().model_copy(
+        update={
+            "blocks": [
+                *slide().blocks,
+                CalloutBlock(
+                    id="source",
+                    slot_id="source",
+                    text="来源：样稿说明 · 主题样稿：说明 · S1:1",
+                    variant="source",
+                ),
+            ],
+            "layout_tree": FlexContainer(
+                type="column",
+                id="root",
+                children=[
+                    *slide().layout_tree.children,
+                    FlexLeaf(id="leaf-source", block_id="source"),
+                ],
+            ),
+        }
+    )
+
+    result = compose_report_slide(source, plan())
+
+    assert not any(block.type == "callout" and block.variant == "source" for block in result.blocks)
+    assert "source" not in iter_leaf_block_ids(result.layout_tree)
 
 
 def test_composition_evidence_defaults_to_pie_chart():
@@ -257,7 +406,7 @@ def test_comparison_evidence_defaults_to_bar_chart():
     assert chart.categories == ["A方案", "B方案"]
 
 
-def test_flow_plan_binds_native_diagram_block():
+def test_simple_flow_plan_binds_numbered_cards():
     page = plan(
         evidence_kind="flow",
         visual_type="flow",
@@ -265,15 +414,10 @@ def test_flow_plan_binds_native_diagram_block():
         evidence=[],
     )
     result = bind_planned_evidence(slide(), page)
-    diagram = next(b for b in result.blocks if b.type == "diagram")
+    cards = next(b for b in result.blocks if b.type == "cards")
 
-    assert isinstance(diagram, DiagramBlock)
-    assert diagram.diagram_type == "flow"
-    assert [node.title for node in diagram.nodes] == ["采集", "校验", "输出"]
-    assert [(edge.source, edge.target) for edge in diagram.edges] == [
-        ("step-1", "step-2"),
-        ("step-2", "step-3"),
-    ]
+    assert isinstance(cards, CardsBlock)
+    assert [item.title for item in cards.items] == ["采集", "校验", "输出"]
 
 
 def test_flow_visual_type_overrides_narrative_evidence_kind():
@@ -285,10 +429,10 @@ def test_flow_visual_type_overrides_narrative_evidence_kind():
     )
 
     result = bind_planned_evidence(slide(), page)
-    diagram = next(block for block in result.blocks if block.type == "diagram")
+    cards = next(block for block in result.blocks if block.type == "cards")
 
-    assert isinstance(diagram, DiagramBlock)
-    assert diagram.diagram_type == "flow"
+    assert isinstance(cards, CardsBlock)
+    assert not any(block.type == "diagram" for block in result.blocks)
 
 
 def test_timeline_reuses_table_rows_as_diagram_nodes():
@@ -333,10 +477,10 @@ def test_qualitative_driver_page_gets_semantic_diagram_fallback():
         evidence=[],
     )
     result = bind_planned_evidence(slide(), page)
-    diagram = next(b for b in result.blocks if b.type == "diagram")
+    cards = next(b for b in result.blocks if b.type == "cards")
 
-    assert diagram.diagram_type == "flow"
-    assert [node.title for node in diagram.nodes] == ["工具普及", "需求变化", "协作升级"]
+    assert not any(block.type == "diagram" for block in result.blocks)
+    assert [item.title for item in cards.items] == ["工具普及", "需求变化", "协作升级"]
 
 
 def test_flow_page_is_full_width_and_drops_competing_structures():
@@ -380,18 +524,8 @@ def test_flow_page_is_full_width_and_drops_competing_structures():
 
     result = compose_report_slide(source, page)
 
-    assert [block.type for block in result.blocks] == ["text", "diagram"]
-    stage = result.layout_tree.children[1]
-    assert isinstance(stage, FlexContainer)
-    assert stage.type == "overlay"
-    visual = stage.children[0]
-    assert isinstance(visual, FlexLeaf)
-    assert visual.block_id == "diagram"
-    assert visual.bleed
-    assert all(
-        not (hasattr(child, "id") and child.id == "evidence-and-insight")
-        for child in result.layout_tree.children
-    )
+    assert [block.type for block in result.blocks] == ["text", "cards"]
+    assert not any(block.type == "diagram" for block in result.blocks)
 
 
 def test_flow_page_keeps_one_compact_support_text_without_squeezing():
@@ -448,13 +582,8 @@ def test_flow_page_keeps_one_compact_support_text_without_squeezing():
     result = compose_report_slide(source, page)
 
     assert [block.id for block in result.blocks] == ["title", "diagram", "support"]
-    stage = result.layout_tree.children[1]
-    assert isinstance(stage, FlexContainer)
-    assert stage.type == "overlay"
-    assert iter_leaf_block_ids(stage) == ["diagram", "support"]
-    overlay = stage.children[1]
-    assert isinstance(overlay, FlexContainer)
-    assert overlay.children[0].id.startswith("spacer-")
+    assert [block.type for block in result.blocks] == ["text", "cards", "text"]
+    assert not any(block.type == "diagram" for block in result.blocks)
 
 
 def test_chart_page_drops_table_and_cards():
@@ -655,6 +784,45 @@ def test_pptx_roundtrip_checks_actual_numeric_values():
     chart.series[0].values[0] = 999
     assert not verify_pptx(payload, deck).passed
     assert any(shape.has_chart for shape in Presentation(BytesIO(payload)).slides[0].shapes)
+
+
+def test_legacy_linear_flow_exports_as_cards_without_connectors():
+    flow = DiagramBlock(
+        id="legacy-flow",
+        slot_id="legacy-flow",
+        diagram_type="flow",
+        mermaid='flowchart LR\n  A["输入"] --> B["处理"] --> C["输出"]',
+        nodes=[
+            {"id": "a", "title": "输入"},
+            {"id": "b", "title": "处理"},
+            {"id": "c", "title": "输出"},
+        ],
+        edges=[
+            {"source": "a", "target": "b"},
+            {"source": "b", "target": "c"},
+        ],
+    )
+    source = Slide(
+        id="legacy-slide",
+        layout_id="bullets",
+        layout_mode="flex",
+        blocks=[flow],
+        layout_tree=FlexContainer(
+            type="column",
+            id="root",
+            children=[FlexLeaf(id="leaf-flow", block_id="legacy-flow")],
+        ),
+    )
+    deck = Deck(id="legacy-deck", title="旧流程", theme_id="enterprise", slides=[source])
+
+    shapes = Presentation(BytesIO(render_deck_to_pptx(deck).getvalue())).slides[0].shapes
+
+    assert not any(shape.shape_type == MSO_SHAPE_TYPE.LINE for shape in shapes)
+    assert {shape.text.strip() for shape in shapes if shape.has_text_frame} >= {
+        "输入",
+        "处理",
+        "输出",
+    }
 
 
 def test_deck_missing_summary_and_decision_are_visible():

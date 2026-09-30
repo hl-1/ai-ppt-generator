@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { EditableText } from '@/render/EditableText'
 import { resolveColor, pt } from '@/render/style'
+import { flowLevels, hasBranchingEdges, normalizeFlowEdges } from '@/render/diagramTopology'
 import {
   CANVAS_HEIGHT_PT,
   CANVAS_WIDTH_PT,
@@ -14,17 +15,58 @@ import {
 
 type NodeRect = { x: number; y: number; w: number; h: number }
 
-function nodeRects(block: DiagramBlock, width: number, height: number): Map<string, NodeRect> {
+function nodeRects(
+  block: DiagramBlock,
+  width: number,
+  height: number,
+  edges: DiagramEdge[],
+): Map<string, NodeRect> {
   const result = new Map<string, NodeRect>()
   const gap = block.diagram_type === 'timeline' ? 16 : 18
   if (block.diagram_type === 'timeline') {
-    const nodeHeight = Math.max((height - gap * (block.nodes.length - 1)) / block.nodes.length, 1)
+    const count = block.nodes.length
+    const columns = count <= 3 ? count : count <= 4 ? 2 : 3
+    const rows = Math.ceil(count / columns)
+    const rowGap = gap
+    const nodeWidth = Math.max((width - gap * (columns - 1)) / columns, 1)
+    const nodeHeight = Math.max((height - rowGap * (rows - 1)) / rows, 1)
     block.nodes.forEach((node, index) => {
+      const row = Math.floor(index / columns)
+      const rowStart = row * columns
+      const rowCount = Math.min(columns, count - rowStart)
+      const rowWidth = rowCount * nodeWidth + (rowCount - 1) * gap
+      const startX = (width - rowWidth) / 2
       result.set(node.id, {
-        x: width * 0.12,
-        y: index * (nodeHeight + gap),
-        w: width * 0.82,
+        x: startX + (index - rowStart) * (nodeWidth + gap),
+        y: row * (nodeHeight + rowGap),
+        w: nodeWidth,
         h: nodeHeight,
+      })
+    })
+    return result
+  }
+
+  if (block.diagram_type === 'flow' && hasBranchingEdges(block.nodes, edges)) {
+    const levels = flowLevels(block.nodes, edges)
+    const rows = new Map<number, DiagramNode[]>()
+    block.nodes.forEach((node) => {
+      const level = levels.get(node.id) ?? 0
+      rows.set(level, [...(rows.get(level) ?? []), node])
+    })
+    const rowCount = Math.max(...rows.keys()) + 1
+    const rowGap = 24
+    const rowHeight = Math.max((height - rowGap * (rowCount - 1)) / rowCount, 72)
+    rows.forEach((row, level) => {
+      const nodeWidth = Math.max((width - gap * (row.length - 1)) / row.length, 120)
+      const totalWidth = nodeWidth * row.length + gap * (row.length - 1)
+      const startX = (width - totalWidth) / 2
+      row.forEach((node, index) => {
+        result.set(node.id, {
+          x: startX + index * (nodeWidth + gap),
+          y: level * (rowHeight + rowGap),
+          w: nodeWidth,
+          h: rowHeight,
+        })
       })
     })
     return result
@@ -43,6 +85,14 @@ function nodeRects(block: DiagramBlock, width: number, height: number): Map<stri
 }
 
 function connectorPoints(source: NodeRect, target: NodeRect) {
+  if (target.y >= source.y + source.h) {
+    return {
+      x1: source.x + source.w / 2,
+      y1: source.y + source.h,
+      x2: target.x + target.w / 2,
+      y2: target.y,
+    }
+  }
   if (target.x >= source.x + source.w) {
     return {
       x1: source.x + source.w,
@@ -65,7 +115,7 @@ function nodeFill(theme: Theme, status: DiagramNode['status']) {
   return resolveColor(theme, 'surface')
 }
 
-function generatedMermaid(block: DiagramBlock): string {
+function generatedMermaid(block: DiagramBlock, edges = normalizeFlowEdges(block.diagram_type, block.nodes, block.edges)): string {
   const direction = 'TB'
   const ids = new Map<string, string>()
   const safe = (value: string) =>
@@ -84,7 +134,7 @@ function generatedMermaid(block: DiagramBlock): string {
     ids.set(node.id, id)
     lines.push(`    ${id}["${label(node.title, node.desc)}"]`)
   })
-  block.edges.forEach((edge) => {
+  edges.forEach((edge) => {
     const source = ids.get(edge.source)
     const target = ids.get(edge.target)
     if (!source || !target) return
@@ -140,14 +190,31 @@ export function DiagramView({
   const mermaidId = `mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, '')}`
   const [mermaidSvg, setMermaidSvg] = useState<string | null>(null)
   const [mermaidError, setMermaidError] = useState(false)
-  const mermaidSource = block.mermaid?.trim() || generatedMermaid(block)
-  const rects = useMemo(() => nodeRects(block, width, height), [block, width, height])
+  const renderEdges = useMemo(
+    () => normalizeFlowEdges(block.diagram_type, block.nodes, block.edges),
+    [block.diagram_type, block.nodes, block.edges],
+  )
+  const mermaidSource = block.diagram_type === 'timeline'
+    ? ''
+    : block.diagram_type === 'flow'
+      ? generatedMermaid(block, renderEdges)
+      : block.mermaid?.trim() || generatedMermaid(block, renderEdges)
+  const rects = useMemo(
+    () => nodeRects(block, width, height, renderEdges),
+    [block, width, height, renderEdges],
+  )
   const byId = new Map(block.nodes.map((node) => [node.id, node]))
 
   useEffect(() => {
     let cancelled = false
     setMermaidSvg(null)
     setMermaidError(false)
+    if (block.diagram_type === 'timeline') {
+      setMermaidError(true)
+      return () => {
+        cancelled = true
+      }
+    }
     void import('mermaid')
       .then(({ default: mermaid }) => {
         mermaid.initialize({
@@ -178,9 +245,9 @@ export function DiagramView({
       cancelled = true
       document.getElementById(mermaidId)?.remove()
     }
-  }, [mermaidId, mermaidSource, theme])
+  }, [block.diagram_type, mermaidId, mermaidSource, theme])
 
-  if (!mermaidError) {
+  if (!mermaidError && block.diagram_type !== 'timeline') {
     return (
       <div
         className="mermaid-diagram"
@@ -229,7 +296,7 @@ export function DiagramView({
             <path d="M0,0 L8,4 L0,8 z" fill={resolveColor(theme, 'accent')} />
           </marker>
         </defs>
-        {block.edges.map((edge: DiagramEdge) => {
+        {block.diagram_type === 'timeline' ? null : renderEdges.map((edge: DiagramEdge) => {
           const source = rects.get(edge.source)
           const target = rects.get(edge.target)
           if (!source || !target) return null

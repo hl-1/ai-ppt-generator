@@ -233,6 +233,44 @@ async def test_worker_saves_generated_outline(
 
 
 @pytest.mark.asyncio
+async def test_worker_publishes_stage_progress(
+    client: AsyncClient,
+    queue: FakeQueue,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = await _sign_up(client)
+    project, job_id = await _start_generating(client, headers)
+    events: list[OutlineEvent] = []
+
+    async def capture(_project_id, event: OutlineEvent) -> None:
+        events.append(event)
+
+    monkeypatch.setattr("app.worker.tasks.publish_outline_event", capture)
+    await generate_outline(
+        {"outline_generator": FakeGenerator(), "job_try": 1},
+        project["id"],
+        job_id,
+    )
+
+    assert [
+        (event.stage, event.stage_status)
+        for event in events
+        if event.stage is not None
+    ] == [
+        ("load_input", "started"),
+        ("load_input", "succeeded"),
+        ("plan_structure", "started"),
+        ("plan_structure", "succeeded"),
+        ("validate", "started"),
+        ("validate", "succeeded"),
+        ("save", "started"),
+        ("save", "succeeded"),
+        ("save", "succeeded"),
+    ]
+    assert events[-1].type == "completed"
+
+
+@pytest.mark.asyncio
 async def test_generate_requires_source(
     client: AsyncClient,
     queue: FakeQueue,
@@ -538,7 +576,8 @@ async def test_worker_does_not_retry_missing_credentials(
     outline = await client.get(f"/api/v1/projects/{project['id']}/outline", headers=headers)
     body = outline.json()
     assert body["status"] == "failed"
-    assert body["error"] == "未配置 LLM API Key"
+    assert body["error"] == "模型生成大纲失败，请稍后重试"
+    assert body["error_code"] == "llm_not_configured"
 
 
 def test_sse_encoding_has_event_and_json_data() -> None:

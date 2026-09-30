@@ -83,5 +83,5 @@ def test_callout_quota_is_stated_either_way() -> None:
     gen = _generator()
     assert "最多使用一个 variant=note" in gen._flex_system_prompt(_flex_payload())
     system = gen._flex_system_prompt(_flex_payload(allow_callout=False))
-    assert "不得出现 variant=note" in system
-    assert "variant=source 的来源说明始终允许" in system
+    assert "不得出现 callout 强调框" in system
+    assert "不得出现来源说明块" in system

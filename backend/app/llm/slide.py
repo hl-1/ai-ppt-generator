@@ -111,13 +111,15 @@ class DeepSeekSlideGenerator:
             '- chart: {"slot_id":"visual","type":"chart","chart_type":"bar",'
             '"categories":["..."],"series":[{"name":"...","values":[1,2]}],"unit":"%"}\n'
             '- diagram: {"slot_id":"visual","type":"diagram","diagram_type":"flow",'
-            '"mermaid":"flowchart TB\\n  A[\\"起点\\"] --> B[\\"分流\\"]\\n  B --> C[\\"路径一\\"]\\n  B --> D[\\"路径二\\"]\\n  C --> E[\\"汇聚处理\\"]\\n  D --> E",'
+            '"mermaid":"flowchart TB\\n  A[\\"起点\\"] --> B[\\"分流\\"]\\n'
+            '  B --> C[\\"路径一\\"]\\n  B --> D[\\"路径二\\"]\\n'
+            '  C --> E[\\"汇聚处理\\"]\\n  D --> E",'
             '"nodes":[{"id":"n1","title":"步骤一","desc":"...","status":"default"}],'
             '"edges":[{"source":"n1","target":"n2","label":"下一步"}]}\n'
             '- cards: {"slot_id":"body","type":"cards",'
             '"items":[{"title":"...","desc":"...","icon":"💡"}]}\n'
             '- callout: {"slot_id":"note","type":"callout","text":"...","icon":null,'
-            '"variant":"note"|"source"}\n'
+            '"variant":"note"}\n'
             "硬性约束：\n"
             "1. 只能使用下面列出的 slot_id，每个槽位最多出现一次，必填槽位不得缺失。\n"
             "2. 每个槽位只能使用它声明接受的 type。\n"
@@ -125,6 +127,10 @@ class DeepSeekSlideGenerator:
             "4. 正文使用中文，写具体结论与事实，不写「本页介绍……」这类空话。\n"
             "5. 数字必须来自给定来源，缺少数据时不要编造，改用文字表述。\n"
             "6. speaker_notes 用 2–3 句话给出讲稿提示。\n"
+            "7. 不要生成来源说明块，不要在画布上写“来源：...”或 S1:1 这类引用编号。\n"
+            "8. 简单的先后步骤、五步推进路径、阶段清单、输入-处理-输出必须使用 "
+            "cards、bullets 或 numbered steps，禁止用 diagram 充数；只有存在分流、判断、"
+            "并行、异常、审批、驳回、汇聚等关系时才使用 flow diagram。\n"
             f"本页布局为 {layout.id}（{layout.name}）：{layout.usage}"
         )
 
@@ -197,6 +203,7 @@ class DeepSeekSlideGenerator:
                 "key_points": payload.key_points,
             },
             "neighbor_titles": payload.neighbor_titles,
+            "layout_template": payload.layout_template,
             "hint_layout_id": payload.layout_id,
             "visual": payload.visual_hint,
             "sections": [
@@ -265,15 +272,17 @@ _FLEX_SYSTEM_PROMPT = (
             '"lines":[{"name":"Margin","values":[34.2,32.3]}],"unit":"RMB Mil",'
             '"line_unit":"%","annotations":["-6.3%"]}\n'
             '- diagram: {"id":"diagram","type":"diagram","diagram_type":"flow",'
-            '"mermaid":"flowchart TB\\n  A[\\"起点\\"] --> B[\\"分流\\"]\\n  B --> C[\\"路径一\\"]\\n  B --> D[\\"路径二\\"]\\n  C --> E[\\"汇聚处理\\"]\\n  D --> E",'
+            '"mermaid":"flowchart TB\\n  A[\\"起点\\"] --> B[\\"分流\\"]\\n'
+            '  B --> C[\\"路径一\\"]\\n  B --> D[\\"路径二\\"]\\n'
+            '  C --> E[\\"汇聚处理\\"]\\n  D --> E",'
             '"nodes":[{"id":"n1","title":"步骤一","desc":"...","status":"default"}],'
             '"edges":[{"source":"n1","target":"n2","label":"下一步"}]}\n'
     '- cards: {"id":"cards","type":"cards",'
     '"items":[{"title":"...","desc":"...","icon":"💡"}]}\n'
     '- callout: {"id":"note","type":"callout","text":"...","icon":null,'
-    '"variant":"note"|"source"}\n'
-    "callout 是强调：variant=source 写数据出处，variant=note 写行动建议或提醒，"
-    "用量以本页约束为准。cards 适合「小标题+描述」要点组。\n"
+    '"variant":"note"}\n'
+    "callout 只用于行动建议、提醒或关键判断，variant 必须为 note；"
+    "不要生成来源说明块。cards 适合「小标题+描述」要点组。\n"
     "layout_tree 是嵌套的 row/column/block 树，不含坐标：\n"
     '- 容器: {"type":"row"|"column","id":"...","gap_pt":16,"grow":1,'
     '"ratios":[50,50],"children":[...]}\n'
@@ -292,6 +301,10 @@ _FLEX_SYSTEM_PROMPT = (
     "不强制添加要点列表、KPI 或装饰性图片；让核心证据占据主要空间。\n"
     "8. 财务对比优先使用 financial_table、waterfall 或 combo_chart；"
     "这些高级块必须绑定来源中的真实数字，不能编造数据。"
+    "简单顺序步骤、五步推进路径、阶段清单和输入-处理-输出使用 cards、bullets 或 "
+    "numbered steps，禁止为了凑视觉而使用 flow diagram；只有分流、判断、并行、异常、"
+    "审批、驳回或汇聚关系才使用 flow diagram。"
+    "不要在画布上写“来源：...”或 S1:1 这类引用编号；引用信息只放在 speaker_notes。"
 )
 
 
@@ -309,6 +322,10 @@ def _page_directives(payload: SlideGenerationInput) -> str:
         )
     if payload.skeleton_hint:
         rules.append(f"本页版式必须按此骨架组织：{payload.skeleton_hint}。")
+    if payload.layout_template:
+        rules.append(
+            f"本页必须使用已分配模板 {payload.layout_template}；不要改成其他页面的模板。"
+        )
     rules.append(
         f"本页叙事职责是 {payload.narrative_role}，证据形态是 {payload.evidence_kind}；"
         "标题应优先写结论，避免只写主题名。"
@@ -319,8 +336,10 @@ def _page_directives(payload: SlideGenerationInput) -> str:
             "pie": "解释占比最高项、最低项和结构偏向，不要写成时间趋势。",
             "bar": "写最高项、最低项和差距，不要把分类比较写成时间趋势。",
             "column": "写分类项之间的高低差异，不要把分类比较写成时间趋势。",
-            "flow": "使用短节点标题和短节点描述表达先后关系，不要塞长段落。",
-            "timeline": "使用阶段、时间和交付物表达推进节奏，不要改成普通要点列表。",
+            "flow": "仅在存在分流、判断、并行、异常、审批或汇聚时使用；"
+            "节点标题控制在 8–14 字，描述控制在 24 字内。"
+            "简单顺序步骤改用 cards 或 numbered steps。",
+            "timeline": "使用并列卡片网格表达阶段、时间和交付物；禁止纵向串联节点、连接轴和箭头。",
             "financial_table": "使用财务明细表表达同一指标在多个期间的对照，突出最新期间和重点行。",
             "waterfall": "使用起点、增减项和终点表达桥接变化；增减项必须来自 evidence。",
             "combo_chart": "使用柱形表达主指标、折线表达率或辅助指标，两个系列必须保持相同期间。",
@@ -335,12 +354,9 @@ def _page_directives(payload: SlideGenerationInput) -> str:
             "不要跨页重复同一组数据。"
         )
     if not payload.allow_callout:
-        rules.append(
-            "本页不得出现 variant=note 的强调框；variant=source 的来源说明始终允许，"
-            "来源不受强调框配额影响。"
-        )
+        rules.append("本页不得出现 callout 强调框，也不得出现来源说明块。")
     else:
-        rules.append("本页最多使用一个 variant=note 的强调框，来源说明另计。")
+        rules.append("本页最多使用一个 variant=note 的强调框；不得出现来源说明块。")
     return "".join(f"\n{index}. {rule}" for index, rule in enumerate(rules, start=8))
 
 
@@ -352,12 +368,14 @@ def _enterprise_writing_rules(payload: SlideGenerationInput) -> str:
         "没有数值证据就使用定性描述；不要编造增长率、负责人、期限或资源承诺。"
         "图表页的解读说明变化与影响，不逐项重复读数；相关性不能表述为因果。"
         "事实、推断、建议、预测须明确区分。行动页缺负责人或日期时注明尚未确定。"
-        "正文用短句，cards 不使用装饰性 emoji，图表图例和来源保持可读。"
-        "主标题块 id=title，来源说明 id=source，主体图表 id=chart；"
+        "正文用短句，cards 不使用装饰性 emoji，图表图例保持可读。"
+        "主标题块 id=title，主体图表 id=chart；"
         "图表只使用已支持的 line/column/bar/pie 类型；财务对照可使用 financial_table、"
-        "waterfall 或 combo_chart；流程或阶段关系使用 diagram，"
-        "flow diagram 必须使用 TB 分层或分支汇聚结构，不要生成 LR 横向线性流程，"
-        "不要用 cards 假装有箭头的流程图。"
+        "waterfall 或 combo_chart；简单步骤、阶段清单和推进路径使用 cards、bullets 或 "
+        "numbered steps，不要生硬使用 diagram。只有分流、判断、并行、异常、审批、驳回、"
+        "汇聚等关系才使用 flow diagram。"
+        "flow diagram 只连接有依据的分支、判断、并行或汇聚关系，不要把单一路径画成箭头流程；"
+        "节点只保留短标题和短描述，不把解释段落塞进节点。"
         "修复时参考 previous_draft 保留证据和核心结论，优先重排、精简重复措辞，"
         "不要通过添加无依据内容或不断缩小字号满足检查。"
     )

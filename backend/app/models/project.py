@@ -112,6 +112,7 @@ class ProjectOutline(Base):
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     job_id: Mapped[str | None] = mapped_column(String(100))
     input_signature: Mapped[str | None] = mapped_column(String(64))
+    error_code: Mapped[str | None] = mapped_column(String(64))
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

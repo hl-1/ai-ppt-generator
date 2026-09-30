@@ -1,4 +1,4 @@
-"""Reviewed composition families: shared titles, evidence area and source footer."""
+"""Reviewed composition families: shared titles and evidence-focused content areas."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from functools import lru_cache
 from app.core.paths import SHARED_DIR
 from app.domain.content import (
     Block,
-    CalloutBlock,
     CardsBlock,
     ChartBlock,
     ComboChartBlock,
@@ -25,7 +24,13 @@ from app.domain.content import (
 )
 from app.domain.evidence import comparable_categories, comparable_series, numeric_value
 from app.domain.flex_layout import FlexContainer, FlexLeaf, FlexNode
-from app.domain.mermaid import ensure_mermaid
+from app.domain.flow_policy import (
+    card_items_from_flow_nodes,
+    compact_card_items,
+    compact_flow_nodes,
+    should_keep_flow_diagram,
+)
+from app.domain.mermaid import ensure_mermaid, normalize_flow_edges
 from app.domain.outline import OutlinePageDraft
 from app.domain.slide_geometry import placed_by_block_id
 from app.domain.topic_visuals import evidence_kind_for_visual
@@ -52,7 +57,7 @@ def bind_planned_evidence(
     topic_mode: bool = False,
 ) -> Slide:
     """图表与指标值由已校验的证据组装，模型仅负责解读。"""
-    blocks = list(slide.blocks)
+    blocks = _drop_source_callouts(slide.blocks)
     series = comparable_series(page.evidence)
     categories = comparable_categories(page.evidence)
     evidence_kind = page.evidence_kind
@@ -121,27 +126,51 @@ def bind_planned_evidence(
         blocks = [b for b in blocks if b.type != "diagram"]
         nodes = _diagram_nodes(page, blocks=blocks)
         if len(nodes) >= 2:
-            edges, direction = _diagram_edges_and_direction(page, nodes, evidence_kind)
             block_id = _unique_id("report-diagram", blocks)
-            blocks.append(
-                DiagramBlock(
-                    id=block_id,
-                    slot_id="visual",
-                    diagram_type="timeline" if evidence_kind == "timeline" else "flow",
-                    mermaid=ensure_mermaid(
-                        None,
-                        "timeline" if evidence_kind == "timeline" else "flow",
-                        nodes,
-                        edges,
-                        direction=direction,
-                    ),
-                    nodes=nodes,
-                    edges=edges,
+            if evidence_kind == "flow" and not should_keep_flow_diagram(
+                nodes,
+                _sequential_edges(nodes),
+                context=_page_flow_context(page),
+            ):
+                if not any(isinstance(block, CardsBlock) for block in blocks):
+                    blocks.append(
+                        CardsBlock(
+                            id=block_id,
+                            slot_id="visual",
+                            items=card_items_from_flow_nodes(nodes),
+                        )
+                    )
+            else:
+                if evidence_kind == "flow":
+                    nodes = compact_flow_nodes(nodes)
+                edges, direction = _diagram_edges_and_direction(page, nodes, evidence_kind)
+                blocks.append(
+                    DiagramBlock(
+                        id=block_id,
+                        slot_id="visual",
+                        diagram_type="timeline" if evidence_kind == "timeline" else "flow",
+                        mermaid=ensure_mermaid(
+                            None,
+                            "timeline" if evidence_kind == "timeline" else "flow",
+                            nodes,
+                            edges,
+                            direction=direction,
+                        ),
+                        nodes=nodes,
+                        edges=edges,
+                    )
                 )
-            )
     if not any(
         b.type
-        in {"chart", "diagram", "image", "financial_table", "waterfall", "combo_chart"}
+        in {
+            "chart",
+            "diagram",
+            "image",
+            "financial_table",
+            "waterfall",
+            "combo_chart",
+            "cards",
+        }
         for b in blocks
     ):
         diagram_kind = _semantic_diagram_kind(page)
@@ -165,6 +194,14 @@ def bind_planned_evidence(
                     edges=edges,
                 )
             )
+        elif page.narrative_role in {"driver", "risk", "action", "decision"} and len(nodes) >= 2:
+            blocks.append(
+                CardsBlock(
+                    id=_unique_id("semantic-cards", blocks),
+                    slot_id="visual",
+                    items=card_items_from_flow_nodes(nodes),
+                )
+            )
     if page.evidence_kind == "kpi":
         metrics = [e for e in page.evidence if e.value and e.metric and e.unit]
         blocks = [b for b in blocks if b.type != "kpi"]
@@ -179,29 +216,20 @@ def bind_planned_evidence(
                     note=" · ".join(filter(None, [item.period, item.scope])),
                 )
             )
-    if page.evidence:
-        references = dict.fromkeys(e.source_ref for e in page.evidence)
-        periods = dict.fromkeys(e.period for e in page.evidence if e.period)
-        scopes = dict.fromkeys(e.scope for e in page.evidence if e.scope)
-        source_text = "来源：" + "；".join(
-            (source_labels or {}).get(ref, ref) for ref in references
-        )
-        source_text += "".join(f" · {'、'.join(values)}" for values in (periods, scopes) if values)
-        blocks = [b for b in blocks if not (b.type == "callout" and b.variant == "source")]
-        blocks.append(
-            CalloutBlock(
-                id=_unique_id("report-source", blocks),
-                slot_id="source",
-                text=source_text,
-                variant="source",
-            )
-        )
     notes = slide.speaker_notes or ""
     if page.evidence:
         notes += "\n\n证据原句：\n" + "\n".join(
             f"[{e.source_ref}] {e.quote}" for e in page.evidence
         )
     return slide.model_copy(update={"blocks": blocks, "speaker_notes": notes})
+
+
+def _drop_source_callouts(blocks: list[Block]) -> list[Block]:
+    return [
+        block
+        for block in blocks
+        if not (block.type == "callout" and block.variant == "source")
+    ]
 
 
 def _unique_id(base: str, blocks: list[Block]) -> str:
@@ -303,9 +331,15 @@ def _combo_from_evidence(evidence: list, *, block_id: str) -> ComboChartBlock | 
     )
 
 
-def compose_report_slide(slide: Slide, page: OutlinePageDraft) -> Slide:
+def compose_report_slide(
+    slide: Slide,
+    page: OutlinePageDraft,
+    *,
+    layout_template: str | None = None,
+    curate: bool = True,
+) -> Slide:
     """只在生成期编排；手工编辑不会经过这里，保留用户排版。"""
-    blocks = list(slide.blocks)
+    blocks = _drop_source_callouts(slide.blocks)
     texts = [b for b in blocks if b.type == "text"]
     placed = placed_by_block_id(slide)
     styled_title = next(
@@ -333,7 +367,10 @@ def compose_report_slide(slide: Slide, page: OutlinePageDraft) -> Slide:
     family = layout_family(page)
     composition = report_layouts().get(family, report_layouts()["supporting"])["composition"]
 
-    body, hidden_notes = _curate_report_body(body, page, visuals)
+    if curate:
+        body, hidden_notes = _curate_report_body(body, page, visuals)
+    else:
+        hidden_notes = []
     visuals = [
         b
         for b in body
@@ -366,9 +403,14 @@ def compose_report_slide(slide: Slide, page: OutlinePageDraft) -> Slide:
         diagram=diagram,
         chart=chart,
         advanced=advanced,
+        layout_template=layout_template,
     )
-    kept_ids = {block.id for block in ([title] if title else []) + body + footers}
-    kept_blocks = [block for block in blocks if block.id in kept_ids]
+    curated_by_id = {block.id: block for block in ([title] if title else []) + body + footers}
+    kept_blocks = [
+        curated_by_id[block.id]
+        for block in blocks
+        if block.id in curated_by_id
+    ]
     speaker_notes = _append_hidden_notes(slide.speaker_notes, hidden_notes)
     return slide.model_copy(
         update={"blocks": kept_blocks, "layout_tree": tree, "speaker_notes": speaker_notes}
@@ -389,6 +431,7 @@ def _compose_report_tree(
     diagram: Block | None,
     chart: Block | None,
     advanced: Block | None,
+    layout_template: str | None,
 ) -> FlexContainer:
     if diagram is not None and visual_type in {"flow", "timeline"}:
         return _visual_report_tree(
@@ -399,9 +442,13 @@ def _compose_report_tree(
             page=page,
             family=family,
             insight_id="structure-insight",
+            layout_template=layout_template,
         )
     if chart is not None:
-        if any(block.type in {"cards", "table", "kpi"} for block in insight_blocks):
+        if (
+            any(block.type in {"cards", "table", "kpi"} for block in insight_blocks)
+            and layout_template is None
+        ):
             return _image_support_tree(
                 title=title,
                 visuals=[chart],
@@ -409,6 +456,7 @@ def _compose_report_tree(
                 footers=footers,
                 page=page,
                 family=family,
+                layout_template=layout_template,
             )
         return _visual_report_tree(
             title=title,
@@ -418,6 +466,7 @@ def _compose_report_tree(
             page=page,
             family=family,
             insight_id="chart-insight",
+            layout_template=layout_template,
         )
     if advanced is not None:
         return _visual_report_tree(
@@ -428,8 +477,20 @@ def _compose_report_tree(
             page=page,
             family=family,
             insight_id="evidence-insight",
+            layout_template=layout_template,
         )
     if visuals and insight_blocks:
+        if len(visuals) == 1 and layout_template in {"visual_focus", "visual_below"}:
+            return _visual_report_tree(
+                title=title,
+                visual=visuals[0],
+                insight_blocks=insight_blocks,
+                footers=footers,
+                page=page,
+                family=family,
+                insight_id="visual-support",
+                layout_template=layout_template,
+            )
         return _image_support_tree(
             title=title,
             visuals=visuals,
@@ -437,6 +498,7 @@ def _compose_report_tree(
             footers=footers,
             page=page,
             family=family,
+            layout_template=layout_template,
         )
     if visuals:
         return _visual_report_tree(
@@ -447,20 +509,68 @@ def _compose_report_tree(
             page=page,
             family=family,
             insight_id="visual-stack",
+            layout_template=layout_template,
         )
 
     metrics = [block for block in body if block.type == "kpi"]
     if composition == "metrics" and metrics:
-        return _metrics_tree(title=title, body=body, metrics=metrics, footers=footers, page=page)
-    if (
-        composition == "columns"
-        and 2 <= len(body) <= 4
-        and not all(block.type in {"text", "bullets", "callout"} for block in body)
-        and not any(block.type in {"cards", "table", "kpi"} for block in body)
-    ):
-        return _row_report_tree(title=title, body=body, footers=footers, page=page, tree_id="columns")
-    if composition == "timeline" and len(body) > 1:
+        return _metrics_tree(
+            title=title,
+            body=body,
+            metrics=metrics,
+            footers=footers,
+            page=page,
+            layout_template=layout_template,
+        )
+    if layout_template == "text_columns" and len(body) >= 2:
+        return _row_report_tree(
+            title=title,
+            body=body,
+            footers=footers,
+            page=page,
+            tree_id="assigned-columns",
+        )
+    if layout_template == "text_steps" and body:
         return _timeline_tree(title=title, body=body, footers=footers, page=page)
+    if layout_template in {"visual_left", "visual_right"} and len(body) >= 2:
+        return _text_feature_tree(
+            title=title,
+            body=body,
+            footers=footers,
+            page=page,
+            feature_side="left" if layout_template == "visual_left" else "right",
+        )
+    if layout_template == "visual_below" and body:
+        return _timeline_tree(title=title, body=body, footers=footers, page=page)
+    if layout_template in {
+        "text_feature_left",
+        "text_feature_right",
+        "opening_split_left",
+        "opening_split_right",
+    } and len(body) >= 2:
+        return _text_feature_tree(
+            title=title,
+            body=body,
+            footers=footers,
+            page=page,
+            feature_side="left" if layout_template.endswith("left") else "right",
+        )
+    if layout_template is None:
+        if (
+            composition == "columns"
+            and 2 <= len(body) <= 4
+            and not all(block.type in {"text", "bullets", "callout"} for block in body)
+            and not any(block.type in {"cards", "table", "kpi"} for block in body)
+        ):
+            return _row_report_tree(
+                title=title,
+                body=body,
+                footers=footers,
+                page=page,
+                tree_id="columns",
+            )
+        if composition == "timeline" and len(body) > 1:
+            return _timeline_tree(title=title, body=body, footers=footers, page=page)
     return _text_report_tree(title=title, body=body, footers=footers, page=page, family=family)
 
 
@@ -473,7 +583,30 @@ def _visual_report_tree(
     page: OutlinePageDraft,
     family: str,
     insight_id: str,
+    layout_template: str | None = None,
 ) -> FlexContainer:
+    if layout_template in {"visual_left", "visual_right"} and insight_blocks:
+        return _image_support_tree(
+            title=title,
+            visuals=[visual],
+            support=insight_blocks,
+            footers=footers,
+            page=page,
+            family=family,
+            layout_template=layout_template,
+        )
+    if layout_template == "visual_below" and insight_blocks:
+        children = _header_nodes(title, page)
+        children.append(_leaf(visual, grow=2.2))
+        children.append(_column(insight_blocks, f"{insight_id}-below", grow=0.75))
+        children.extend(_footer_nodes(footers))
+        return FlexContainer(
+            type="column",
+            id=f"visual-below-{family}",
+            gap_pt=12,
+            children=children,
+        )
+
     children = _header_nodes(title, page)
     stage_children: list[FlexNode] = [_leaf(visual, grow=1.0, bleed=True)]
     overlay_children: list[FlexNode] = []
@@ -512,19 +645,25 @@ def _image_support_tree(
     footers: list[Block],
     page: OutlinePageDraft,
     family: str,
+    layout_template: str | None = None,
 ) -> FlexContainer:
     children = _header_nodes(title, page)
+    visual_column = _column(visuals, "visual-pane")
+    support_column = _column(support, "support-pane")
+    if layout_template == "visual_right":
+        ratios = [42, 58]
+        row_children = [support_column, visual_column]
+    else:
+        ratios = [58, 42]
+        row_children = [visual_column, support_column]
     children.append(
         FlexContainer(
             type="row",
             id="image-support-main",
-            ratios=[58, 42],
+            ratios=ratios,
             gap_pt=28,
             grow=2.4,
-            children=[
-                _column(visuals, "visual-pane"),
-                _column(support, "support-pane"),
-            ],
+            children=row_children,
         )
     )
     children.extend(_footer_nodes(footers))
@@ -538,16 +677,22 @@ def _metrics_tree(
     metrics: list[Block],
     footers: list[Block],
     page: OutlinePageDraft,
+    layout_template: str | None = None,
 ) -> FlexContainer:
     children = _header_nodes(title, page)
-    for start in range(0, len(metrics), 3):
-        row = metrics[start : start + 3]
+    row_size = {
+        "metrics_pairs": 2,
+        "metrics_stack": 1,
+    }.get(layout_template, 3)
+    for start in range(0, len(metrics), row_size):
+        row = metrics[start : start + row_size]
         children.append(
             FlexContainer(
                 type="row",
                 id=f"metrics-{start}",
                 gap_pt=24,
                 grow=0.9,
+                preset="solid_boxes" if layout_template == "metrics_grid" else None,
                 children=[_leaf(block) for block in row],
             )
         )
@@ -576,6 +721,32 @@ def _row_report_tree(
     )
     children.extend(_footer_nodes(footers))
     return FlexContainer(type="column", id=f"{tree_id}-report", gap_pt=16, children=children)
+
+
+def _text_feature_tree(
+    *,
+    title: Block | None,
+    body: list[Block],
+    footers: list[Block],
+    page: OutlinePageDraft,
+    feature_side: str,
+) -> FlexContainer:
+    children = _header_nodes(title, page)
+    feature = _column([body[0]], "text-feature", grow=1.4)
+    support = _column(body[1:], "text-support", grow=1.0)
+    row_children = [feature, support] if feature_side == "left" else [support, feature]
+    children.append(
+        FlexContainer(
+            type="row",
+            id=f"text-feature-{feature_side}",
+            ratios=[58, 42] if feature_side == "left" else [42, 58],
+            gap_pt=28,
+            grow=2.0,
+            children=row_children,
+        )
+    )
+    children.extend(_footer_nodes(footers))
+    return FlexContainer(type="column", id="text-feature-report", gap_pt=16, children=children)
 
 
 def _timeline_tree(
@@ -682,6 +853,12 @@ def _curate_report_body(
     接受这些块。这里是生成期的确定性收口；真实文档的图表数值仍由
     ``bind_planned_evidence`` 绑定，绝不会因为裁剪而补造数据。
     """
+    body = [
+        block.model_copy(update={"items": compact_card_items(block.items)})
+        if isinstance(block, CardsBlock)
+        else block
+        for block in body
+    ]
     chart = next((block for block in visuals if isinstance(block, ChartBlock)), None)
     advanced = next(
         (
@@ -692,6 +869,33 @@ def _curate_report_body(
         None,
     )
     diagram = next((block for block in visuals if isinstance(block, DiagramBlock)), None)
+    if (
+        diagram is not None
+        and diagram.diagram_type == "flow"
+        and not should_keep_flow_diagram(
+            diagram.nodes,
+            diagram.edges,
+            context=_page_flow_context(page),
+        )
+    ):
+        replacement = CardsBlock(
+            id=diagram.id,
+            slot_id=diagram.slot_id,
+            items=card_items_from_flow_nodes(diagram.nodes),
+        )
+        body = [replacement if block is diagram else block for block in body]
+        support, hidden = _visual_support_blocks(
+            [
+                block
+                for block in body
+                if block is not replacement
+                and block.type not in {"cards", "table", "kpi", "callout", "diagram"}
+            ],
+            limit=1,
+            text_limit=76,
+            max_source_chars=90,
+        )
+        return [replacement, *support], hidden
     visual_type = _effective_visual_type(page, visuals)
 
     if diagram is not None and visual_type in {"flow", "timeline"}:
@@ -904,15 +1108,19 @@ def _limit_table(block: TableBlock | None) -> TableBlock | None:
 
 
 def _compact_diagram(block: DiagramBlock) -> DiagramBlock:
-    nodes = [
-        node.model_copy(
-            update={
-                "title": _compact_text(node.title, 24),
-                "desc": _compact_text(node.desc, 48),
-            }
-        )
-        for node in block.nodes[:9]
-    ]
+    nodes = (
+        compact_flow_nodes(block.nodes)
+        if block.diagram_type == "flow"
+        else [
+            node.model_copy(
+                update={
+                    "title": _compact_text(node.title, 20),
+                    "desc": _compact_text(node.desc, 32),
+                }
+            )
+            for node in block.nodes[:9]
+        ]
+    )
     node_ids = {node.id for node in nodes}
     edges = [edge for edge in block.edges if edge.source in node_ids and edge.target in node_ids]
     return block.model_copy(
@@ -966,23 +1174,6 @@ def _chart_type_for(page: OutlinePageDraft, *, series, categories) -> str:
     return "line"
 
 
-_FLOW_KEYWORDS = (
-    "流程",
-    "路径",
-    "机制",
-    "驱动",
-    "驱动力",
-    "原因",
-    "影响",
-    "形成",
-    "转向",
-    "方法",
-    "如何",
-    "怎么",
-    "步骤",
-    "输入",
-    "输出",
-)
 _TIMELINE_KEYWORDS = (
     "阶段",
     "时间",
@@ -991,41 +1182,25 @@ _TIMELINE_KEYWORDS = (
     "演进",
     "历程",
     "节奏",
-    "变化",
-    "趋势",
     "未来",
 )
-_BRANCH_FLOW_KEYWORDS = (
-    "故障",
-    "预警",
-    "分流",
-    "分类",
-    "并行",
-    "汇聚",
-    "应急",
-    "处置",
-    "审批",
-    "排查",
-    "恢复",
-    "复盘",
-    "上报",
-)
-_VISUAL_NARRATIVE_ROLES = {"driver", "risk", "action", "decision"}
 
 
 def _semantic_diagram_kind(page: OutlinePageDraft) -> str | None:
     """给非数值概念页补结构图，避免所有内容都退化成文字卡片。"""
     if page.page_role in {"cover", "toc", "section"} or len(page.key_points) < 2:
         return None
-    if page.visual_type in {"flow", "timeline"}:
-        return page.visual_type
+    if page.visual_type == "timeline":
+        return "timeline"
     blob = " ".join([page.title, page.objective, page.key_message, *page.key_points])
-    if page.narrative_role in _VISUAL_NARRATIVE_ROLES:
+    if should_keep_flow_diagram(
+        _diagram_nodes(page),
+        _sequential_edges(_diagram_nodes(page)),
+        context=_page_flow_context(page),
+    ):
         return "flow"
     if any(word in blob for word in _TIMELINE_KEYWORDS):
         return "timeline"
-    if any(word in blob for word in _FLOW_KEYWORDS):
-        return "flow"
     return None
 
 
@@ -1061,9 +1236,10 @@ def _diagram_edges_and_direction(
 ) -> tuple[list[DiagramEdge], str | None]:
     if diagram_kind == "timeline":
         return _sequential_edges(nodes), "TB"
-    if _should_branch_flow(page, nodes) or len(nodes) >= 5:
-        return _branch_flow_edges(nodes), "TB"
-    return _sequential_edges(nodes), "TB"
+    edges = _sequential_edges(nodes)
+    if should_keep_flow_diagram(nodes, edges, context=_page_flow_context(page)):
+        return normalize_flow_edges("flow", nodes, edges), "TB"
+    return edges, "TB"
 
 
 def _sequential_edges(nodes: list[DiagramNode]) -> list[DiagramEdge]:
@@ -1073,20 +1249,8 @@ def _sequential_edges(nodes: list[DiagramNode]) -> list[DiagramEdge]:
     ]
 
 
-def _should_branch_flow(page: OutlinePageDraft, nodes: list[DiagramNode]) -> bool:
-    if len(nodes) < 6:
-        return False
-    blob = " ".join(
-        [
-            page.title,
-            page.objective,
-            page.key_message,
-            *page.key_points,
-            *[node.title for node in nodes],
-            *[node.desc for node in nodes],
-        ]
-    )
-    return any(keyword in blob for keyword in _BRANCH_FLOW_KEYWORDS)
+def _page_flow_context(page: OutlinePageDraft) -> list[str]:
+    return [page.title, page.objective, page.key_message, *page.key_points]
 
 
 def _branch_flow_edges(nodes: list[DiagramNode]) -> list[DiagramEdge]:

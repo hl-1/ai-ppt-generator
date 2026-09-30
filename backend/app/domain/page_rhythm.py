@@ -1,13 +1,133 @@
-"""跨页节奏：按页序确定性分配版式骨架与 callout 配额。
+"""跨页节奏：整套页面预分配兼容模板，并限制 callout 使用频率。
 
 各页是并发生成的，页间看不到彼此用了什么版式，所以"这份稿子不要十页长得
 一样"这件事没法交给模型自觉，只能在派发之前分配好。
 
-用 position 取模而不是随机：单页重试时算出来的还是同一份分配，重来一次
-不会把这一页的版面换成另一副样子。
+模板随机分配在整套页面开始前完成，并由稳定种子驱动；单页重试时会得到
+同一份分配。每个兼容模板池用完之前不会复用模板。
 """
 
 from __future__ import annotations
+
+import hashlib
+import random
+from dataclasses import dataclass
+
+from app.domain.outline import OutlinePageDraft
+
+
+@dataclass(frozen=True)
+class LayoutTemplate:
+    id: str
+    hint: str
+
+
+_TEMPLATE_POOLS = {
+    "opening": (
+        LayoutTemplate("opening_stack", "封面、目录或章节页以标题为主，辅助信息纵向排列"),
+        LayoutTemplate("opening_split_left", "封面、目录或章节页以标题为主，辅助信息靠左排列"),
+        LayoutTemplate("opening_split_right", "封面、目录或章节页以标题为主，辅助信息靠右排列"),
+    ),
+    "narrative": (
+        LayoutTemplate("text_stack", "标题在上，结论与支撑内容沿页面纵向展开"),
+        LayoutTemplate("text_columns", "标题在上，将两组以上的支撑内容分成并列栏"),
+        LayoutTemplate("text_steps", "标题在上，将有先后关系的内容排成编号步骤"),
+        LayoutTemplate("text_feature_left", "标题在上，左侧突出主结论，右侧放支撑要点"),
+        LayoutTemplate("text_feature_right", "标题在上，右侧突出主结论，左侧放支撑要点"),
+    ),
+    "visual": (
+        LayoutTemplate("visual_focus", "标题在上，图表、流程或图片作为全宽主体，解读放在下方"),
+        LayoutTemplate("visual_left", "标题在上，左侧放主视觉，右侧放简短解读"),
+        LayoutTemplate("visual_right", "标题在上，右侧放主视觉，左侧放简短解读"),
+        LayoutTemplate("visual_below", "标题在上，主视觉居中占据主体区域，支撑要点排列在底部"),
+    ),
+    "metrics": (
+        LayoutTemplate("metrics_grid", "标题在上，指标卡片按三列网格排列"),
+        LayoutTemplate("metrics_pairs", "标题在上，指标卡片每行并列两个"),
+        LayoutTemplate("metrics_stack", "标题在上，指标逐行排列并保留简短解读"),
+    ),
+}
+
+_VISUAL_EVIDENCE_KINDS = {
+    "trend",
+    "comparison",
+    "composition",
+    "flow",
+    "timeline",
+    "chart",
+    "waterfall",
+}
+
+
+def assign_layout_templates(
+    pages: list[OutlinePageDraft],
+    *,
+    seed: str,
+    topic_mode: bool = False,
+) -> dict[int, LayoutTemplate]:
+    """为整套 flex 页面预分配兼容模板，避免并发生成时各页各自选版。"""
+    seed_value = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    rng = random.Random(seed_value)
+    remaining = {group: list(pool) for group, pool in _TEMPLATE_POOLS.items()}
+    assigned: dict[int, LayoutTemplate] = {}
+    used_rhythms: set[str] = set()
+
+    for position, page in enumerate(pages, start=1):
+        group = _template_group(page)
+        pool = _TEMPLATE_POOLS[group]
+        choices = remaining[group]
+        if choices:
+            candidates = (
+                [item for item in choices if _template_rhythm(item) not in used_rhythms]
+                if topic_mode
+                else choices
+            )
+            template = rng.choice(candidates or choices)
+            choices.remove(template)
+        else:
+            candidates = (
+                [item for item in pool if _template_rhythm(item) not in used_rhythms]
+                if topic_mode
+                else pool
+            )
+            template = rng.choice(candidates or pool)
+        assigned[position] = template
+        used_rhythms.add(_template_rhythm(template))
+    return assigned
+
+
+def _template_group(page: OutlinePageDraft) -> str:
+    if (
+        page.page_role in {"cover", "toc", "section"}
+        and not page.visual
+        and page.visual_type == "auto"
+        and page.evidence_kind not in (_VISUAL_EVIDENCE_KINDS | {"kpi"})
+    ):
+        return "opening"
+    if page.evidence_kind == "kpi":
+        return "metrics"
+    if (
+        page.visual
+        or page.visual_type != "auto"
+        or page.evidence_kind in _VISUAL_EVIDENCE_KINDS
+    ):
+        return "visual"
+    return "narrative"
+
+
+def _template_rhythm(template: LayoutTemplate) -> str:
+    if template.id.endswith("_left"):
+        return "feature_left"
+    if template.id.endswith("_right"):
+        return "feature_right"
+    if template.id in {"text_columns", "metrics_grid"}:
+        return "columns"
+    if template.id in {"visual_below", "metrics_pairs"}:
+        return "visual_then_support"
+    if template.id in {"text_steps"}:
+        return "steps"
+    return "stack"
+
 
 # 内容页骨架轮换池。每条都是一句给模型的硬约束，说清块的组合与横向切分方式。
 _CONTENT_SKELETONS = (
@@ -24,8 +144,8 @@ _EVIDENCE_SKELETONS = {
     "trend": "趋势分析：标题在上，全宽放折线图，下方只保留最多 2 条趋势结论",
     "composition": "构成分析：标题在上，全宽放饼图，下方最多 3 张结构说明卡片",
     "comparison": "对比分析：标题在上，全宽放柱状图或条形图，下方给出最高、最低和差距解读",
-    "flow": "流程表达：标题在上，全宽放从左到右的流程节点与箭头，节点只写短标题和交付物",
-    "timeline": "阶段路线：标题在上，全宽放时间轴，节点只保留阶段短标题和交付结果",
+    "flow": "流程表达：只在存在真实分支、判断或汇聚时用连接线；单一路径改成并列卡片",
+    "timeline": "阶段路线：标题在上，用并列阶段卡片网格保留时间和交付结果，不画时间轴或箭头",
     "actions": "行动计划：标题在上，只选行动表格或行动卡片一种表达，不能同时生成两套",
     "table": "结构化对照：标题在上，只放一个精简表格，避免再叠加卡片和长段说明",
     "chart": "图表解读：图表占据完整宽度，下方只保留少量关键发现，不叠加表格或多张卡片",

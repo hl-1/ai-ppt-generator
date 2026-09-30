@@ -177,14 +177,6 @@ def check_report_quality(
                 }
             ):
                 warn("unsupported_conclusion", "分析结论尚未绑定原句证据，请核对支撑材料", slide.id)
-            if plan.evidence and not any(
-                (b.type == "callout" and b.variant == "source")
-                or (b.type == "text" and "来源" in b.text)
-                for b in slide.blocks
-            ):
-                warn(
-                    "missing_source_label", "本页有数据证据，建议在页面显示来源与统计时间", slide.id
-                )
         types = tuple(
             b.type for b in slide.blocks if not (b.type == "callout" and b.variant == "source")
         )

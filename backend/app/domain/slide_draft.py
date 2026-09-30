@@ -37,7 +37,13 @@ from app.domain.flex_layout import (
 )
 from app.domain.flex_normalize import normalize
 from app.domain.flex_presets import BlockRef, seed_layout_for_blocks
-from app.domain.mermaid import ensure_mermaid
+from app.domain.flow_policy import (
+    card_items_from_flow_nodes,
+    compact_card_items,
+    compact_flow_nodes,
+    should_keep_flow_diagram,
+)
+from app.domain.mermaid import ensure_mermaid, mermaid_for_diagram, normalize_flow_edges
 
 # 模型只负责"往哪个槽位放什么内容"。块 id、锁定标记、图片来源这些
 # 由服务端掌握的字段不进入模型契约：让模型编造它们只会带来无谓的校验负担。
@@ -312,7 +318,11 @@ class FlexSlideDraft(BaseModel):
 
 def draft_to_slide(slide_id: uuid.UUID, layout_id: str, draft: SlideDraft) -> Slide:
     """把模型产出的槽位内容补齐为完整内容块。"""
-    blocks = [_to_block(f"{slide_id}-{content.slot_id}", content) for content in draft.blocks]
+    blocks = [
+        _to_block(f"{slide_id}-{content.slot_id}", content)
+        for content in draft.blocks
+        if not _is_source_callout(content)
+    ]
     return Slide(
         id=str(slide_id),
         layout_id=layout_id,
@@ -331,8 +341,9 @@ def flex_draft_to_slide(
     use_preset_on_invalid_tree: bool = True,
 ) -> Slide:
     """把 flex 草稿转为 Slide：本地 id 升格为全局 id，并 normalize 布局树。"""
-    id_map = {content.id: f"{slide_id}-{content.id}" for content in draft.blocks}
-    blocks = [_to_flex_block(id_map[content.id], content) for content in draft.blocks]
+    contents = [content for content in draft.blocks if not _is_source_callout(content)]
+    id_map = {content.id: f"{slide_id}-{content.id}" for content in contents}
+    blocks = [_to_flex_block(id_map[content.id], content) for content in contents]
 
     tree = _rewrite_tree_block_ids(draft.layout_tree, id_map)
     leaf_ids = set(iter_leaf_block_ids(tree))
@@ -358,6 +369,10 @@ def flex_draft_to_slide(
         blocks=blocks,
         speaker_notes=draft.speaker_notes,
     )
+
+
+def _is_source_callout(content: SlotContent | FlexBlockContent) -> bool:
+    return isinstance(content, (CalloutContent, FlexCalloutContent)) and content.variant == "source"
 
 
 def _rewrite_tree_block_ids(node: FlexNode, id_map: dict[str, str]) -> FlexNode:
@@ -451,10 +466,22 @@ def _to_block(block_id: str, content: SlotContent):  # noqa: ANN202
                 DiagramEdge(source=edge.source, target=edge.target, label=edge.label)
                 for edge in content.edges
             ]
+            if content.diagram_type == "flow":
+                if not should_keep_flow_diagram(nodes, edges):
+                    return CardsBlock(
+                        **common,
+                        items=card_items_from_flow_nodes(nodes),
+                    )
+                nodes = compact_flow_nodes(nodes)
+                edges = normalize_flow_edges(content.diagram_type, nodes, edges)
             return DiagramBlock(
                 **common,
                 diagram_type=content.diagram_type,
-                mermaid=ensure_mermaid(content.mermaid, content.diagram_type, nodes, edges),
+                mermaid=(
+                    mermaid_for_diagram(content.diagram_type, nodes, edges)
+                    if content.diagram_type == "flow"
+                    else ensure_mermaid(content.mermaid, content.diagram_type, nodes, edges)
+                ),
                 nodes=nodes,
                 edges=edges,
             )
@@ -465,10 +492,12 @@ def _to_block(block_id: str, content: SlotContent):  # noqa: ANN202
         case CardsContent():
             return CardsBlock(
                 **common,
-                items=[
-                    CardItem(title=item.title, desc=item.desc, icon=item.icon)
-                    for item in content.items
-                ],
+                items=compact_card_items(
+                    [
+                        CardItem(title=item.title, desc=item.desc, icon=item.icon)
+                        for item in content.items
+                    ]
+                ),
             )
         case CalloutContent():
             return CalloutBlock(
@@ -560,10 +589,22 @@ def _to_flex_block(block_id: str, content: FlexBlockContent):  # noqa: ANN202
                 DiagramEdge(source=edge.source, target=edge.target, label=edge.label)
                 for edge in content.edges
             ]
+            if content.diagram_type == "flow":
+                if not should_keep_flow_diagram(nodes, edges):
+                    return CardsBlock(
+                        **common,
+                        items=card_items_from_flow_nodes(nodes),
+                    )
+                nodes = compact_flow_nodes(nodes)
+                edges = normalize_flow_edges(content.diagram_type, nodes, edges)
             return DiagramBlock(
                 **common,
                 diagram_type=content.diagram_type,
-                mermaid=ensure_mermaid(content.mermaid, content.diagram_type, nodes, edges),
+                mermaid=(
+                    mermaid_for_diagram(content.diagram_type, nodes, edges)
+                    if content.diagram_type == "flow"
+                    else ensure_mermaid(content.mermaid, content.diagram_type, nodes, edges)
+                ),
                 nodes=nodes,
                 edges=edges,
             )
@@ -574,10 +615,12 @@ def _to_flex_block(block_id: str, content: FlexBlockContent):  # noqa: ANN202
         case FlexCardsContent():
             return CardsBlock(
                 **common,
-                items=[
-                    CardItem(title=item.title, desc=item.desc, icon=item.icon)
-                    for item in content.items
-                ],
+                items=compact_card_items(
+                    [
+                        CardItem(title=item.title, desc=item.desc, icon=item.icon)
+                        for item in content.items
+                    ]
+                ),
             )
         case FlexCalloutContent():
             return CalloutBlock(

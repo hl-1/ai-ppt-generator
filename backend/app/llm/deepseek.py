@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import json
+from typing import get_args
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from app.domain.content_density import PAGE_ROLES, outline_density_hint
 from app.domain.layout import load_layouts
-from app.domain.outline import OutlineDraft, OutlinePageDraft
+from app.domain.outline import (
+    DeckBlueprint,
+    EvidenceKind,
+    NarrativeRole,
+    OutlineDraft,
+    OutlinePageDraft,
+)
 from app.llm.base import OutlineGenerationInput, OutlineSourceSection
 from app.llm.client import StructuredChatClient
 from app.llm.errors import (
@@ -28,6 +35,28 @@ _VISUAL_RULE = (
     "配图规则：visual 只描述与本页观点直接相关的业务画面；没有表达价值时留 null。"
     "数据分析页优先展示证据，不强制配图库照片；封面/目录/章节页留 null。"
 )
+_NARRATIVE_ROLES = frozenset(get_args(NarrativeRole))
+_EVIDENCE_ROLE_FALLBACKS = {
+    "trend": "performance",
+    "comparison": "performance",
+    "composition": "performance",
+    "kpi": "performance",
+    "chart": "performance",
+    "waterfall": "performance",
+    "flow": "action",
+    "timeline": "action",
+    "actions": "action",
+}
+
+
+class _ModelOutlinePageDraft(OutlinePageDraft):
+    # 模型偶尔会把 evidence_kind 的合法值误填到 narrative_role。
+    narrative_role: NarrativeRole | EvidenceKind = "supporting"
+
+
+class _ModelOutlineDraft(BaseModel):
+    pages: list[_ModelOutlinePageDraft]
+    blueprint: DeckBlueprint = Field(default_factory=DeckBlueprint)
 
 
 class DeepSeekOutlineGenerator:
@@ -48,19 +77,125 @@ class DeepSeekOutlineGenerator:
         self._layout_ids = layout_ids if layout_ids is not None else frozenset(load_layouts())
 
     async def generate(self, payload: OutlineGenerationInput) -> OutlineDraft:
-        try:
-            draft = await self._chat.complete(
-                OutlineDraft,
-                system=self._system_prompt(),
-                user=self._user_prompt(payload),
-                purpose="生成大纲",
-            )
-        except (InvalidModelOutputError, ValidationError) as error:
-            raise InvalidOutlineOutputError("模型返回的大纲 JSON 不符合约定结构") from error
-
         allowed_refs = {section.ref for section in payload.sections}
-        self._validate_draft(draft, page_count=payload.page_count, allowed_refs=allowed_refs)
-        return draft
+        last_error: Exception | None = None
+        last_draft: OutlineDraft | None = None
+        for attempt in range(2):
+            if attempt and last_draft and len(last_draft.pages) < payload.page_count:
+                draft = await self._append_missing_pages(last_draft, payload)
+                self._validate_draft(
+                    draft,
+                    page_count=payload.page_count,
+                    allowed_refs=allowed_refs,
+                )
+                return draft
+
+            correction = (
+                "上一轮输出未通过服务端结构校验。请重新生成完整 JSON，不要解释；"
+                f"pages 必须恰好包含 {payload.page_count} 页，逐页检查所有字段均符合给定结构，"
+                "并确保 narrative_role 使用叙事职责、evidence_kind 使用证据形态。\n"
+                if attempt
+                else ""
+            )
+            try:
+                model_draft = await self._chat.complete(
+                    _ModelOutlineDraft,
+                    system=self._system_prompt() + correction,
+                    user=self._user_prompt(payload),
+                    purpose="生成大纲",
+                )
+                draft = self._normalize_model_draft(model_draft)
+                last_draft = draft
+                self._validate_draft(
+                    draft,
+                    page_count=payload.page_count,
+                    allowed_refs=allowed_refs,
+                )
+                return draft
+            except (InvalidModelOutputError, ValidationError) as error:
+                last_error = error
+
+        if isinstance(last_error, InvalidOutlineOutputError):
+            raise InvalidOutlineOutputError(str(last_error)) from last_error
+        raise InvalidOutlineOutputError("模型返回的大纲 JSON 不符合约定结构") from last_error
+
+    async def _append_missing_pages(
+        self,
+        draft: OutlineDraft,
+        payload: OutlineGenerationInput,
+    ) -> OutlineDraft:
+        missing_count = payload.page_count - len(draft.pages)
+        pages = list(draft.pages)
+        allowed_refs = {section.ref for section in payload.sections}
+        fallback_layout = "bullets" if "bullets" in self._layout_ids else min(self._layout_ids)
+        for _ in range(missing_count):
+            has_summary = bool(pages) and pages[-1].page_role == "summary"
+            insert_at = len(pages) - 1 if has_summary else len(pages)
+            page_number = insert_at + 1
+            page_system = (
+                "你是 PPT 大纲规划助手。只输出一个页面 JSON 对象，不要 Markdown 或额外说明。"
+                "字段必须符合给定结构。narrative_role 表示叙事职责，只能使用 cover、"
+                "executive_summary、performance、driver、risk、action、decision、supporting、"
+                "summary；evidence_kind 表示证据形态，两者不能混用。"
+                "只引用给定来源，不得编造数字、日期或事实。"
+            )
+            page_user = json.dumps(
+                {
+                    "deck_title": payload.title,
+                    "audience": payload.audience,
+                    "tone": payload.tone,
+                    "report_brief": payload.report_brief.model_dump(),
+                    "required_page_count": payload.page_count,
+                    "page_number": page_number,
+                    "page_role": "content",
+                    "existing_pages": [
+                        {
+                            "title": page.title,
+                            "key_message": page.key_message,
+                            "key_points": page.key_points,
+                        }
+                        for page in pages
+                    ],
+                    "source_sections": [
+                        {
+                            "ref": section.ref,
+                            "heading": section.heading,
+                            "text": section.text,
+                        }
+                        for section in payload.sections
+                    ],
+                    "layouts": sorted(self._layout_ids),
+                },
+                ensure_ascii=False,
+            )
+            model_page = await self._chat.complete(
+                _ModelOutlinePageDraft,
+                system=page_system,
+                user=(
+                    "仅补充缺失的这一页，避免重复已有页面。优先覆盖尚未表达的来源信息；"
+                    "key_points 写 2–5 条，source_refs 仅使用已给 ref，layout_id 仅使用合法布局。\n"
+                    f"{page_user}"
+                ),
+                purpose="补全大纲页面",
+            )
+            normalized_page = self._normalize_model_draft(
+                _ModelOutlineDraft(pages=[model_page], blueprint=draft.blueprint)
+            ).pages[0]
+            normalized_page = normalized_page.model_copy(
+                update={
+                    "page_role": "content",
+                    "layout_id": (
+                        normalized_page.layout_id
+                        if normalized_page.layout_id in self._layout_ids
+                        else fallback_layout
+                    ),
+                    "source_refs": [
+                        ref for ref in normalized_page.source_refs if ref in allowed_refs
+                    ],
+                }
+            )
+            pages.insert(insert_at, normalized_page)
+        return OutlineDraft(pages=pages, blueprint=draft.blueprint)
 
     async def refit_page(
         self,
@@ -194,7 +329,7 @@ class DeepSeekOutlineGenerator:
             visual_options += "、waterfall、combo_chart"
         visual_guidance = (
             "先判断数据关系再选：时间变化用 line，分类比较用 bar/column，部分占整体用 pie，"
-            "步骤/路径用 flow，阶段/里程碑用 timeline；"
+            "只有真实分支、判断或并行关系用 flow；线性步骤和阶段里程碑用并列卡片，timeline 禁止用箭头串联；"
         )
         if "table" in self._layout_ids:
             visual_guidance += "财务明细对照用 financial_table；"
@@ -220,6 +355,11 @@ class DeepSeekOutlineGenerator:
             "首屏多为 cover，中间多为 content，可选 toc/section，收尾可用 summary。\n"
             "6. narrative_role 表示叙事职责，可选 cover、executive_summary、performance、"
             "driver、risk、action、decision、supporting、summary；"
+            "它回答本页为什么存在。evidence_kind 表示证据形态，回答本页用什么材料支撑。"
+            "严禁把 trend、comparison、composition、flow、timeline 等"
+            "evidence_kind 值填入 narrative_role；"
+            "指标趋势、分类比较和构成分析页的 narrative_role 使用 performance，"
+            "路径/阶段/行动页使用 action。"
             f"evidence_kind 表示证据形态，本次可选：{', '.join(evidence_options)}。\n"
             f"7. visual_type 表示具体视觉形式，可选 {visual_options}。{visual_guidance}\n"
             "8. 先规划 blueprint，再安排页面。经营复盘用摘要、表现、原因、风险、行动；"
@@ -234,12 +374,35 @@ class DeepSeekOutlineGenerator:
             "趋势图仅用于同指标、同单位、同范围且时间明确的至少两个数据点；"
             "构成/比较图使用同指标、同单位、同范围且分类明确的至少两个数据点；不足用定性分析。\n"
             "11. flow/timeline 用于非数值结构关系，可由 key_points 组织，不要求 value；"
-            "机制、路径、驱动力、阶段、变化类页面优先用 flow/timeline，避免连续 cards 页面。\n"
+            "flow 必须有真实分支、判断、并行或汇聚关系。单一路径步骤、阶段和里程碑使用并列卡片，"
+            "timeline 节点不得用连线或箭头串联。\n"
             "12. 区分事实、推断、建议和预测；不把相关性写成因果。"
             "总结回应核心问题，并在材料支持时列出下一步或待决策事项。\n"
             f"{multi_slot_rule}\n"
             f"{_VISUAL_RULE}"
         )
+
+    @staticmethod
+    def _normalize_model_draft(draft: _ModelOutlineDraft) -> OutlineDraft:
+        pages: list[OutlinePageDraft] = []
+        for page in draft.pages:
+            narrative_role = page.narrative_role
+            if narrative_role not in _NARRATIVE_ROLES:
+                if page.page_role == "cover":
+                    narrative_role = "cover"
+                elif page.page_role == "summary":
+                    narrative_role = "summary"
+                else:
+                    narrative_role = _EVIDENCE_ROLE_FALLBACKS.get(
+                        page.evidence_kind,
+                        "supporting",
+                    )
+            pages.append(
+                OutlinePageDraft.model_validate(
+                    page.model_dump() | {"narrative_role": narrative_role}
+                )
+            )
+        return OutlineDraft(pages=pages, blueprint=draft.blueprint)
 
     def _user_prompt(self, payload: OutlineGenerationInput) -> str:
         sections_payload = [

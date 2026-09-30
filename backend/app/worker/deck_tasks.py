@@ -11,7 +11,7 @@ from app.core.db import async_session_factory
 from app.domain.content import Slide as SlideContent
 from app.domain.evidence import prepare_page_plan
 from app.domain.outline import DeckBlueprint, OutlinePage
-from app.domain.page_rhythm import allows_callout, skeleton_hint
+from app.domain.page_rhythm import LayoutTemplate, allows_callout, assign_layout_templates
 from app.domain.validation import StructureIssue
 from app.images.pipeline import ImagePipeline, create_image_pipeline
 from app.llm.base import OutlineSourceSection, SlideGenerationInput, SlideGenerator
@@ -97,6 +97,7 @@ async def _generate_one(
     page = SlideTarget(page.position, plan)
     page_role = normalize_page_role(getattr(page.page, "page_role", None))
     visual_hint = getattr(page.page, "visual", None)
+    assigned_template = context.layout_template(page.position)
     payload = SlideGenerationInput(
         deck_title=context.title,
         audience=context.audience,
@@ -123,13 +124,8 @@ async def _generate_one(
         neighbor_titles=context.neighbor_titles(page.position),
         visual_hint=visual_hint,
         # 跨页多样性必须提前分配：各页并发生成，看不到彼此的版式
-        skeleton_hint=skeleton_hint(
-            page.position,
-            page_role=page_role,
-            has_visual=bool(visual_hint),
-            evidence_kind=getattr(page.page, "evidence_kind", None) or "narrative",
-            narrative_role=getattr(page.page, "narrative_role", None) or "supporting",
-        ),
+        layout_template=assigned_template.id if assigned_template else None,
+        skeleton_hint=assigned_template.hint if assigned_template else None,
         allow_callout=allows_callout(page.position),
     )
 
@@ -194,10 +190,23 @@ class DeckContext:
         self._ordered_titles = ordered_titles
         self.blueprint = blueprint or DeckBlueprint()
         self.topic_mode = topic_mode
+        ordered_pages = sorted(pages.values(), key=lambda target: target.position)
+        self._layout_templates = (
+            assign_layout_templates(
+                [target.page for target in ordered_pages],
+                seed=":".join(str(target.page.id) for target in ordered_pages),
+                topic_mode=topic_mode,
+            )
+            if self.layout_mode == "flex"
+            else {}
+        )
 
     def neighbor_titles(self, position: int) -> list[str]:
         start = max(0, position - 2)
         return self._ordered_titles[start : position + 1]
+
+    def layout_template(self, position: int) -> LayoutTemplate | None:
+        return self._layout_templates.get(position)
 
 
 class SlideTarget:

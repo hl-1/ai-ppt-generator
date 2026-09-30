@@ -31,6 +31,7 @@ import type {
   TableBlock,
   Theme,
 } from '@/render/types'
+import { normalizeFlowEdges } from '@/render/diagramTopology'
 
 const PRESET_CHIPS: { value: GroupPreset; label: string }[] = [
   { value: 'solid_boxes', label: '实心' },
@@ -511,7 +512,8 @@ function mermaidFromDiagram(
     const label = [clean(node.title), clean(node.desc)].filter(Boolean).join('<br/>')
     lines.push(`    ${id}["${label || `节点${index + 1}`}"]`)
   })
-  edges.forEach((edge) => {
+  const renderEdges = diagramType === 'timeline' ? [] : normalizeFlowEdges(diagramType, nodes, edges)
+  renderEdges.forEach((edge) => {
     const source = ids.get(edge.source)
     const target = ids.get(edge.target)
     if (!source || !target || source === target) return

@@ -105,28 +105,36 @@ def build_slide_workflow(generator: SlideGenerator):
             or payload.evidence_kind in {"flow", "timeline"}
             or payload.visual_type in {"flow", "timeline"}
         )
-        if enterprise:
-            plan = OutlinePageDraft(
-                title=payload.page_title,
-                objective=payload.objective,
-                key_points=payload.key_points,
-                layout_id=payload.layout_id,
-                page_role=payload.page_role,
-                narrative_role=payload.narrative_role,
-                evidence_kind=payload.evidence_kind,
-                visual_type=payload.visual_type,
-                key_message=payload.key_message,
-                evidence=payload.evidence,
-            )
-            if slide.layout_mode == "flex":
+        plan = OutlinePageDraft(
+            title=payload.page_title,
+            objective=payload.objective,
+            key_points=payload.key_points,
+            layout_id=payload.layout_id,
+            page_role=payload.page_role,
+            narrative_role=payload.narrative_role,
+            evidence_kind=payload.evidence_kind,
+            visual_type=payload.visual_type,
+            key_message=payload.key_message,
+            evidence=payload.evidence,
+        )
+        if slide.layout_mode == "flex":
+            if enterprise:
                 labels = {
                     s.ref: " · ".join(filter(None, [s.heading, s.locator, s.ref]))
                     for s in payload.sections
                 }
-                slide = compose_report_slide(
-                    bind_planned_evidence(slide, plan, labels, topic_mode=payload.topic_mode),
+                slide = bind_planned_evidence(
+                    slide,
                     plan,
+                    labels,
+                    topic_mode=payload.topic_mode,
                 )
+            slide = compose_report_slide(
+                slide,
+                plan,
+                layout_template=payload.layout_template,
+                curate=enterprise,
+            )
         # 生成期先定列宽再定行高：宽度决定折行，折行决定自然高度。
         # 两步都放在校验之前，让溢出/容量告警反映的是最终版面。
         if slide.layout_mode == "flex" and slide.layout_tree is not None:

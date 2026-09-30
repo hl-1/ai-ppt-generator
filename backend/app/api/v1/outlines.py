@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import Annotated
 
@@ -29,6 +30,7 @@ from app.services.outline_progress import outline_events, publish_outline_event
 from app.worker.context import create_outline_generator
 
 router = APIRouter(prefix="/projects/{project_id}/outline", tags=["outline"])
+logger = logging.getLogger(__name__)
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 QueueDep = Annotated[ArqRedis, Depends(get_queue)]
 
@@ -111,6 +113,7 @@ async def generate_outline(
         outline = ProjectOutline(project_id=project.id)
         session.add(outline)
     outline.status = "generating"
+    outline.error_code = None
     outline.error = None
     outline.job_id = job_id
     await session.commit()
@@ -124,8 +127,26 @@ async def generate_outline(
         )
     except RedisError as error:
         outline.status = "failed"
-        outline.error = "任务队列暂时不可用"
+        outline.error_code = "queue_unavailable"
+        outline.error = "大纲生成失败，请稍后重试"
         await session.commit()
+        logger.exception(
+            "outline stage failed project_id=%s stage=queue error_code=queue_unavailable",
+            project.id,
+        )
+        await publish_outline_event(
+            project.id,
+            OutlineEvent(
+                type="failed",
+                status="failed",
+                progress=100,
+                message="大纲生成失败",
+                revision=outline.revision,
+                stage="queue",
+                stage_status="failed",
+                error_code="queue_unavailable",
+            ),
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="任务队列暂时不可用",
@@ -142,7 +163,14 @@ async def generate_outline(
             progress=0,
             message="任务已进入队列",
             revision=outline.revision,
+            stage="queue",
+            stage_status="succeeded",
         ),
+    )
+    logger.info(
+        "outline stage succeeded project_id=%s job_id=%s stage=queue",
+        project.id,
+        job_id,
     )
     return OutlineGenerateAccepted(job_id=job_id)
 
@@ -325,9 +353,24 @@ async def stream_outline_events(
         fallback=OutlineEvent(
             type="snapshot",
             status=outline.status,
-            progress=100 if settled else 0,
-            message="大纲已就绪" if settled else "等待任务进度",
+            progress=100 if settled or outline.status == "failed" else 0,
+            message=(
+                "大纲已就绪"
+                if settled
+                else "大纲生成失败"
+                if outline.status == "failed"
+                else "等待任务进度"
+            ),
             revision=outline.revision,
+            stage="save" if settled else None,
+            stage_status=(
+                "succeeded"
+                if settled
+                else "failed"
+                if outline.status == "failed"
+                else None
+            ),
+            error_code=outline.error_code,
         ),
         terminal_types={"completed", "failed"},
     )

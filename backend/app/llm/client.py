@@ -1,12 +1,20 @@
 from typing import TypeVar
 
+import httpx
+from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
+from openai import APIError, APITimeoutError
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings, get_settings
-from app.llm.errors import InvalidModelOutputError, LLMNotConfiguredError
+from app.llm.errors import (
+    InvalidModelOutputError,
+    LLMNotConfiguredError,
+    LLMTimeoutError,
+    LLMUnavailableError,
+)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -27,11 +35,14 @@ def create_chat_model(settings: Settings | None = None) -> ChatOpenAI:
         "api_key": cfg.llm_api_key or "not-configured",
         "base_url": cfg.llm_base_url,
         "timeout": cfg.llm_timeout_seconds,
-        "max_retries": 2,
+        # ARQ 统一负责任务级重试；客户端不再叠加隐式重试，避免一次任务等待数分钟。
+        "max_retries": 0,
+        "extra_body": {
+            "thinking": {
+                "type": "enabled" if cfg.llm_thinking_enabled else "disabled",
+            }
+        },
     }
-    # 思考模式默认关闭；关闭时不要传 thinking，避免无谓地拉长延迟
-    if cfg.llm_thinking_enabled:
-        kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
     return ChatOpenAI(**kwargs)
 
 
@@ -56,7 +67,11 @@ class StructuredChatClient:
         chain = _PROMPT | self._model.with_structured_output(schema, method="json_mode")
         try:
             result = await chain.ainvoke({"system": system, "user": user})
-        except Exception as error:
+        except (TimeoutError, httpx.TimeoutException, APITimeoutError) as error:
+            raise LLMTimeoutError("模型请求超时") from error
+        except (httpx.HTTPError, APIError) as error:
+            raise LLMUnavailableError("模型服务暂不可用") from error
+        except (OutputParserException, ValidationError, ValueError) as error:
             raise InvalidModelOutputError("模型返回内容不符合约定结构") from error
 
         if isinstance(result, schema):

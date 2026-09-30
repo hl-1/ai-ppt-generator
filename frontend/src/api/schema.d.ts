@@ -1701,7 +1701,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            type: "column" | "row" | "overlay";
+            type: "column" | "overlay" | "row";
             /** Id */
             id: string;
             /** Children */
@@ -1727,7 +1727,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            type: "column" | "row" | "overlay";
+            type: "column" | "overlay" | "row";
             /** Id */
             id: string;
             /** Children */
@@ -2185,6 +2185,8 @@ export interface components {
             revision: number;
             /** Job Id */
             job_id: string | null;
+            /** Error Code */
+            error_code: ("queue_unavailable" | "input_load_failed" | "input_missing" | "llm_not_configured" | "model_timeout" | "model_unavailable" | "invalid_model_output" | "invalid_outline" | "save_failed" | "unknown") | null;
             /** Error */
             error: string | null;
             /**
