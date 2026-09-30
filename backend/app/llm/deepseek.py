@@ -427,16 +427,26 @@ class DeepSeekOutlineGenerator:
         }
         topic_hint = (
             "当前为主题样稿模式：允许使用模拟素材，但必须尊重 visual_type；"
-            "同一套大纲中不要重复绑定同一组数据。\n"
+            "同一套大纲中不要重复绑定同一组数据。每页必须覆盖不同的主题子问题；"
+            "流程页表达判断、分流和回路，路线图表达带时间的阶段与交付物，行动页表达责任动作；"
+            "三者不得复用同一组事件或只改写标题。\n"
             if payload.topic_mode
             else ""
         )
-        return (
+        if payload.issues:
+            body["revision_feedback"] = payload.issues
+            body["previous_draft"] = payload.previous_draft
+        prompt = (
             "请根据以下项目参数与来源小节生成大纲 JSON。\n"
             f"{outline_density_hint(payload.content_density)}\n"
             f"{topic_hint}"
-            f"{json.dumps(body, ensure_ascii=False)}"
         )
+        if payload.issues:
+            prompt += (
+                "上一次大纲存在重复页面。请保留有效页面，针对反馈重写重复页面的目标、结论和要点，"
+                "并检查整份大纲后再输出。\n"
+            )
+        return prompt + json.dumps(body, ensure_ascii=False)
 
     def _validate_draft(
         self,

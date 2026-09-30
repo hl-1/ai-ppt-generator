@@ -7,7 +7,9 @@ from langgraph.graph import END, START, StateGraph
 from app.domain.evidence import prepare_page_plan
 from app.domain.outline import OutlineDraft
 from app.domain.topic_visuals import normalize_topic_pages
+from app.domain.topic_uniqueness import find_duplicate_topic_pages
 from app.llm.base import OutlineGenerationInput, OutlineGenerator, OutlineSourceSection
+from app.llm.errors import InvalidOutlineOutputError
 
 # 总预算压住 prompt 体积，单节上限避免某一节吞掉全部配额；
 # 按整节追加，超长只截断该节正文，保证 ref 与文本不会错位。
@@ -83,25 +85,36 @@ def build_outline_workflow(generator: OutlineGenerator):
         return {"prepared": prepare_outline_input(state["input"])}
 
     async def generate(state: OutlineWorkflowState) -> dict[str, OutlineDraft]:
-        draft = await generator.generate(state["prepared"])
-        sources = {s.ref: s.text for s in state["prepared"].sections}
-        pages = draft.pages
-        if state["prepared"].topic_mode:
-            pages = normalize_topic_pages(pages, sources)
-        return {
-            "draft": draft.model_copy(
+        payload = state["prepared"]
+        sources = {section.ref: section.text for section in payload.sections}
+        draft = await generator.generate(payload)
+        for repair_round in range(3):
+            pages = draft.pages
+            if payload.topic_mode:
+                pages = normalize_topic_pages(pages, sources)
+            pages = [
+                prepare_page_plan(page, sources, topic_mode=payload.topic_mode)
+                for page in pages
+            ]
+            draft = draft.model_copy(update={"pages": pages})
+            if not payload.topic_mode:
+                return {"draft": draft}
+
+            duplicates = find_duplicate_topic_pages(pages)
+            if not duplicates:
+                return {"draft": draft}
+            if repair_round == 2:
+                raise InvalidOutlineOutputError(
+                    "主题大纲经两轮修复后仍有重复页面，未保存重复内容"
+                )
+            payload = payload.model_copy(
                 update={
-                    "pages": [
-                        prepare_page_plan(
-                            page,
-                            sources,
-                            topic_mode=state["prepared"].topic_mode,
-                        )
-                        for page in pages
-                    ],
+                    "issues": duplicates,
+                    "previous_draft": draft.model_dump(mode="json"),
                 }
             )
-        }
+            draft = await generator.generate(payload)
+        raise InvalidOutlineOutputError("主题大纲重复校验未通过")
 
     graph = StateGraph(OutlineWorkflowState)
     graph.add_node("prepare", prepare)

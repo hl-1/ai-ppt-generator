@@ -150,7 +150,7 @@ def test_flow_without_numeric_evidence_keeps_diagram_intent():
     assert result.visual_type == "flow"
 
 
-def test_simple_flow_is_downgraded_to_cards():
+def test_explicit_simple_flow_keeps_diagram():
     page = plan(
         evidence_kind="flow",
         visual_type="flow",
@@ -158,10 +158,10 @@ def test_simple_flow_is_downgraded_to_cards():
         evidence=[],
     )
     result = bind_planned_evidence(slide(), page)
-    cards = next(block for block in result.blocks if block.type == "cards")
+    diagram = next(block for block in result.blocks if block.type == "diagram")
 
-    assert not any(block.type == "diagram" for block in result.blocks)
-    assert [item.title for item in cards.items] == ["输入", "处理", "输出"]
+    assert [item.title for item in diagram.nodes] == ["输入", "处理", "输出"]
+    assert len(diagram.edges) == 2
 
 
 def test_incident_flow_generates_branch_and_merge_mermaid():
@@ -406,10 +406,59 @@ def test_comparison_evidence_defaults_to_bar_chart():
     assert chart.categories == ["A方案", "B方案"]
 
 
+@pytest.mark.parametrize("visual_type", ["column", "bar", "pie"])
+def test_explicit_chart_type_is_preserved_for_document_pages(visual_type):
+    page = plan(
+        visual_type=visual_type,
+        evidence_kind="comparison",
+        evidence=[category_fact("A方案", "120"), category_fact("B方案", "95")],
+    )
+    result = compose_report_slide(bind_planned_evidence(slide(), page), page)
+    chart = next(block for block in result.blocks if block.type == "chart")
+
+    assert chart.chart_type == visual_type
+    assert chart.series[0].values == [120.0, 95.0]
+
+
+def test_combo_chart_preserves_outline_series_and_units():
+    evidence = [
+        fact(str(value), period, metric=metric, unit=unit)
+        for metric, unit, values in [
+            ("成熟度", "分", [52, 61, 70, 78]),
+            ("采用率", "%", [18, 31, 47, 63]),
+        ]
+        for period, value in zip(["Q1", "Q2", "Q3", "Q4"], values, strict=True)
+    ]
+    page = plan(visual_type="combo_chart", evidence_kind="comparison", evidence=evidence)
+    source = slide().model_copy(update={"blocks": [
+        *slide().blocks,
+        DiagramBlock(
+            id="unwanted", slot_id="visual", diagram_type="timeline",
+            nodes=[{"id": "n1", "title": "Wrong visual"}],
+        ),
+    ]})
+    result = compose_report_slide(bind_planned_evidence(source, page), page)
+    combo = next(block for block in result.blocks if block.type == "combo_chart")
+
+    assert combo.categories == ["Q1", "Q2", "Q3", "Q4"]
+    assert combo.bars[0].values == [52.0, 61.0, 70.0, 78.0]
+    assert combo.lines[0].values == [18.0, 31.0, 47.0, 63.0]
+    assert (combo.unit, combo.line_unit) == ("分", "%")
+    assert not any(block.type in {"diagram", "chart"} for block in result.blocks)
+
+
+def test_composition_preserves_confirmed_outline_title():
+    page = plan(title="用户确认的标题")
+    result = compose_report_slide(slide(), page)
+    title = next(block for block in result.blocks if block.id == "heading-xyz")
+
+    assert title.text == page.title
+
+
 def test_simple_flow_plan_binds_numbered_cards():
     page = plan(
         evidence_kind="flow",
-        visual_type="flow",
+        visual_type="auto",
         key_points=["采集：汇总业务输入", "校验：核对口径", "输出：形成汇报"],
         evidence=[],
     )
@@ -429,10 +478,10 @@ def test_flow_visual_type_overrides_narrative_evidence_kind():
     )
 
     result = bind_planned_evidence(slide(), page)
-    cards = next(block for block in result.blocks if block.type == "cards")
+    diagram = next(block for block in result.blocks if block.type == "diagram")
 
-    assert isinstance(cards, CardsBlock)
-    assert not any(block.type == "diagram" for block in result.blocks)
+    assert isinstance(diagram, DiagramBlock)
+    assert [node.title for node in diagram.nodes] == ["识别问题", "拆解任务"]
 
 
 def test_timeline_reuses_table_rows_as_diagram_nodes():
@@ -524,8 +573,7 @@ def test_flow_page_is_full_width_and_drops_competing_structures():
 
     result = compose_report_slide(source, page)
 
-    assert [block.type for block in result.blocks] == ["text", "cards"]
-    assert not any(block.type == "diagram" for block in result.blocks)
+    assert [block.type for block in result.blocks] == ["text", "diagram"]
 
 
 def test_flow_page_keeps_one_compact_support_text_without_squeezing():
@@ -582,8 +630,7 @@ def test_flow_page_keeps_one_compact_support_text_without_squeezing():
     result = compose_report_slide(source, page)
 
     assert [block.id for block in result.blocks] == ["title", "diagram", "support"]
-    assert [block.type for block in result.blocks] == ["text", "cards", "text"]
-    assert not any(block.type == "diagram" for block in result.blocks)
+    assert [block.type for block in result.blocks] == ["text", "diagram", "text"]
 
 
 def test_chart_page_drops_table_and_cards():
@@ -786,7 +833,7 @@ def test_pptx_roundtrip_checks_actual_numeric_values():
     assert any(shape.has_chart for shape in Presentation(BytesIO(payload)).slides[0].shapes)
 
 
-def test_legacy_linear_flow_exports_as_cards_without_connectors():
+def test_linear_flow_export_preserves_connectors():
     flow = DiagramBlock(
         id="legacy-flow",
         slot_id="legacy-flow",
@@ -817,7 +864,7 @@ def test_legacy_linear_flow_exports_as_cards_without_connectors():
 
     shapes = Presentation(BytesIO(render_deck_to_pptx(deck).getvalue())).slides[0].shapes
 
-    assert not any(shape.shape_type == MSO_SHAPE_TYPE.LINE for shape in shapes)
+    assert sum(shape.shape_type == MSO_SHAPE_TYPE.LINE for shape in shapes) == 2
     assert {shape.text.strip() for shape in shapes if shape.has_text_frame} >= {
         "输入",
         "处理",

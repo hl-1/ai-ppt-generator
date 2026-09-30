@@ -13,6 +13,7 @@ import hashlib
 import random
 from dataclasses import dataclass
 
+from app.domain.layout import load_layouts
 from app.domain.outline import OutlinePageDraft
 
 
@@ -27,6 +28,8 @@ _TEMPLATE_POOLS = {
         LayoutTemplate("opening_stack", "封面、目录或章节页以标题为主，辅助信息纵向排列"),
         LayoutTemplate("opening_split_left", "封面、目录或章节页以标题为主，辅助信息靠左排列"),
         LayoutTemplate("opening_split_right", "封面、目录或章节页以标题为主，辅助信息靠右排列"),
+        LayoutTemplate("opening_split_top", "封面、目录或章节页先突出标题，再横向展开辅助信息"),
+        LayoutTemplate("opening_split_bottom", "封面、目录或章节页先展开辅助信息，再收束到标题"),
     ),
     "narrative": (
         LayoutTemplate("text_stack", "标题在上，结论与支撑内容沿页面纵向展开"),
@@ -40,6 +43,12 @@ _TEMPLATE_POOLS = {
         LayoutTemplate("visual_left", "标题在上，左侧放主视觉，右侧放简短解读"),
         LayoutTemplate("visual_right", "标题在上，右侧放主视觉，左侧放简短解读"),
         LayoutTemplate("visual_below", "标题在上，主视觉居中占据主体区域，支撑要点排列在底部"),
+        LayoutTemplate("visual_above", "标题在上，先呈现判断与支撑要点，再用主视觉展开证据"),
+        LayoutTemplate("visual_left_wide", "标题在上，左侧主视觉占宽栏，右侧只放精简解读"),
+        LayoutTemplate("visual_right_wide", "标题在上，右侧主视觉占宽栏，左侧只放精简解读"),
+        LayoutTemplate("visual_left_balanced", "标题在上，主视觉与解读左右均衡并列"),
+        LayoutTemplate("visual_right_balanced", "标题在上，解读与主视觉左右均衡并列"),
+        LayoutTemplate("visual_support_grid", "标题在上，主视觉占据上半区，解读要点在下方横向排列"),
     ),
     "metrics": (
         LayoutTemplate("metrics_grid", "标题在上，指标卡片按三列网格排列"),
@@ -68,13 +77,16 @@ def assign_layout_templates(
     """为整套 flex 页面预分配兼容模板，避免并发生成时各页各自选版。"""
     seed_value = hashlib.sha256(seed.encode("utf-8")).hexdigest()
     rng = random.Random(seed_value)
-    remaining = {group: list(pool) for group, pool in _TEMPLATE_POOLS.items()}
+    pools = {group: tuple(pool) for group, pool in _TEMPLATE_POOLS.items()}
+    if not topic_mode:
+        pools["visual"] = pools["visual"][:4]
+    remaining = {group: list(pool) for group, pool in pools.items()}
     assigned: dict[int, LayoutTemplate] = {}
     used_rhythms: set[str] = set()
 
     for position, page in enumerate(pages, start=1):
-        group = _template_group(page)
-        pool = _TEMPLATE_POOLS[group]
+        group = _template_group(page, topic_mode=topic_mode)
+        pool = pools[group]
         choices = remaining[group]
         if choices:
             candidates = (
@@ -96,7 +108,60 @@ def assign_layout_templates(
     return assigned
 
 
-def _template_group(page: OutlinePageDraft) -> str:
+def assign_fixed_layouts(
+    pages: list[OutlinePageDraft],
+    *,
+    seed: str,
+) -> dict[int, str]:
+    """Randomize compatible fixed layouts without reuse until each pool is exhausted."""
+    rng = random.Random(hashlib.sha256(seed.encode("utf-8")).hexdigest())
+    available_layouts = load_layouts()
+    used: set[str] = set()
+    assigned: dict[int, str] = {}
+
+    for position, page in enumerate(pages, start=1):
+        candidates = [
+            layout_id
+            for layout_id in _fixed_layout_candidates(page)
+            if layout_id in available_layouts
+        ]
+        if page.layout_id in candidates:
+            candidates.remove(page.layout_id)
+            candidates.insert(0, page.layout_id)
+        if not candidates:
+            candidates = ["bullets"] if "bullets" in available_layouts else list(available_layouts)
+        unused = [layout_id for layout_id in candidates if layout_id not in used]
+        selected = rng.choice(unused or candidates)
+        assigned[position] = selected
+        used.add(selected)
+    return assigned
+
+
+def _fixed_layout_candidates(page: OutlinePageDraft) -> list[str]:
+    if page.page_role == "cover":
+        return ["cover"]
+    if page.page_role == "toc":
+        return ["toc"]
+    if page.page_role == "section":
+        return ["section"]
+    if page.evidence_kind == "kpi":
+        return ["kpi"]
+    if page.visual_type in {"line", "column", "bar", "pie"}:
+        return ["chart"]
+    if page.visual_type == "financial_table" or page.evidence_kind == "table":
+        return ["table"]
+    if page.visual:
+        return ["image-left", "image-right"]
+    if page.page_role == "summary" or page.narrative_role in {"executive_summary", "summary"}:
+        return ["summary", "two-column", "bullets"]
+    if page.narrative_role in {"driver", "risk", "action", "decision"}:
+        return ["two-column", "bullets", "summary", "table"]
+    return ["bullets", "two-column", "summary", "table"]
+
+
+def _template_group(page: OutlinePageDraft, *, topic_mode: bool = False) -> str:
+    if topic_mode and page.page_role in {"cover", "toc", "section"}:
+        return "opening"
     if (
         page.page_role in {"cover", "toc", "section"}
         and not page.visual
@@ -116,17 +181,16 @@ def _template_group(page: OutlinePageDraft) -> str:
 
 
 def _template_rhythm(template: LayoutTemplate) -> str:
-    if template.id.endswith("_left"):
-        return "feature_left"
-    if template.id.endswith("_right"):
-        return "feature_right"
-    if template.id in {"text_columns", "metrics_grid"}:
-        return "columns"
-    if template.id in {"visual_below", "metrics_pairs"}:
-        return "visual_then_support"
-    if template.id in {"text_steps"}:
-        return "steps"
-    return "stack"
+    return template.id
+
+
+TOPIC_LAYOUT_CAPACITY = len(
+    {
+        _template_rhythm(template)
+        for pool in _TEMPLATE_POOLS.values()
+        for template in pool
+    }
+)
 
 
 # 内容页骨架轮换池。每条都是一句给模型的硬约束，说清块的组合与横向切分方式。

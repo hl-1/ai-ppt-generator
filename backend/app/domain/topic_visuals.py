@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import random
 import re
 from collections.abc import Mapping
 
@@ -131,6 +133,8 @@ def normalize_topic_pages(
     used_signatures: set[tuple] = set()
     used_visuals: set[str] = set()
     result: list[OutlinePageDraft] = []
+    seed = "\n".join([*sources.keys(), *(page.title for page in pages)])
+    rng = random.Random(hashlib.sha256(seed.encode("utf-8")).hexdigest())
 
     for index, page in enumerate(pages, start=1):
         if page.page_role in {"cover", "toc", "section"}:
@@ -139,9 +143,9 @@ def normalize_topic_pages(
 
         visual_type = page.visual_type
         if visual_type == "auto":
-            visual_type = _suggest_visual(page, index, used_visuals, sources)
+            visual_type = _suggest_visual(page, index, used_visuals, sources, rng)
         elif visual_type in used_visuals:
-            visual_type = _suggest_visual(page, index, used_visuals, sources)
+            visual_type = _suggest_visual(page, index, used_visuals, sources, rng)
 
         kind = evidence_kind_for_visual(visual_type)
         evidence = page.evidence
@@ -191,6 +195,7 @@ def _suggest_visual(
     position: int,
     used_visuals: set[str],
     sources: Mapping[str, str],
+    rng: random.Random,
 ) -> str:
     blob = " ".join([page.title, page.objective, page.key_message, *page.key_points])
     keyword_map = (
@@ -202,16 +207,26 @@ def _suggest_visual(
     )
     for keywords, visual_type in keyword_map:
         if any(keyword in blob for keyword in keywords):
+            if visual_type in used_visuals:
+                continue
             if visual_type in {"line", "column", "bar", "pie"} and not topic_visual_evidence(
                 sources, visual_type
             ):
                 continue
-            if visual_type not in used_visuals or visual_type in {"flow", "timeline"}:
-                return visual_type
+            return visual_type
 
     for offset in range(len(TOPIC_VISUAL_ORDER)):
         candidate = TOPIC_VISUAL_ORDER[(position - 1 + offset) % len(TOPIC_VISUAL_ORDER)]
-        if candidate in {"flow", "timeline"} or candidate not in used_visuals:
-            if candidate in {"flow", "timeline"} or topic_visual_evidence(sources, candidate):
-                return candidate
+        if candidate in used_visuals:
+            continue
+        if candidate in {"flow", "timeline"} or topic_visual_evidence(sources, candidate):
+            return candidate
+
+    exhausted = [
+        candidate
+        for candidate in TOPIC_VISUAL_ORDER
+        if candidate in {"flow", "timeline"} or topic_visual_evidence(sources, candidate)
+    ]
+    if exhausted:
+        return rng.choice(exhausted)
     return "auto"

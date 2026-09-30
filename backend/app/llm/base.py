@@ -46,6 +46,8 @@ class OutlineGenerationInput(BaseModel):
     content_density: ContentDensity = DEFAULT_CONTENT_DENSITY
     topic_mode: bool = False
     sections: list[OutlineSourceSection] = Field(default_factory=list)
+    issues: list[str] = Field(default_factory=list)
+    previous_draft: dict[str, Any] | None = None
 
 
 class OutlineGenerator(Protocol):
@@ -102,6 +104,8 @@ class SlideGenerationInput(BaseModel):
     sections: list[OutlineSourceSection] = Field(default_factory=list)
     # 相邻页标题，用来避免内容重复或衔接断裂
     neighbor_titles: list[str] = Field(default_factory=list)
+    # 主题模式下提供全稿页面目标，避免并发生成时各页缺少横向对照。
+    other_page_briefs: list[dict[str, Any]] = Field(default_factory=list)
     # 大纲给的配图意图，非空时本页必须产出一个 image 块并以它作 alt
     visual_hint: str | None = Field(default=None, max_length=120)
     # 版式骨架与 callout 配额由编排层按页序分配，见 domain/page_rhythm

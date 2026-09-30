@@ -94,6 +94,17 @@ def build_slide_workflow(generator: SlideGenerator):
             slide = draft_to_slide(slide_id, state["input"].layout_id, draft)
         theme = resolve_theme(state.get("theme_id") or "ivory", state.get("theme_overrides"))
         payload = state["input"]
+        if slide.layout_mode == "fixed":
+            slide = slide.model_copy(
+                update={
+                    "blocks": [
+                        block.model_copy(update={"text": payload.page_title})
+                        if block.type == "text" and block.slot_id == "title"
+                        else block
+                        for block in slide.blocks
+                    ]
+                }
+            )
         # 主题页以及显式指定流程/时间线的页面即使没有数值证据，也必须
         # 经过服务端的结构绑定与编排；否则它们会绕过 DiagramBlock 生成，
         # 退化成普通文本或保留表格的默认布局。

@@ -9,9 +9,13 @@ from sqlalchemy.orm import selectinload
 from app.core.config import get_settings
 from app.core.db import async_session_factory
 from app.domain.content import Slide as SlideContent
-from app.domain.evidence import prepare_page_plan
 from app.domain.outline import DeckBlueprint, OutlinePage
-from app.domain.page_rhythm import LayoutTemplate, allows_callout, assign_layout_templates
+from app.domain.page_rhythm import (
+    LayoutTemplate,
+    allows_callout,
+    assign_fixed_layouts,
+    assign_layout_templates,
+)
 from app.domain.validation import StructureIssue
 from app.images.pipeline import ImagePipeline, create_image_pipeline
 from app.llm.base import OutlineSourceSection, SlideGenerationInput, SlideGenerator
@@ -89,11 +93,11 @@ async def _generate_one(
 
     from app.domain.content_density import normalize_page_role
 
-    plan = prepare_page_plan(
-        page.page,
-        {ref: s.text for ref, s in context.sections.items()},
-        topic_mode=context.topic_mode,
-    )
+    # The confirmed outline is the generation contract; planning already ran before confirmation.
+    plan = page.page
+    assigned_layout_id = context.layout_id(page.position, plan.layout_id)
+    if assigned_layout_id != plan.layout_id:
+        plan = plan.model_copy(update={"layout_id": assigned_layout_id})
     page = SlideTarget(page.position, plan)
     page_role = normalize_page_role(getattr(page.page, "page_role", None))
     visual_hint = getattr(page.page, "visual", None)
@@ -107,7 +111,7 @@ async def _generate_one(
         page_title=page.page.title,
         objective=page.page.objective,
         key_points=page.page.key_points,
-        layout_id=page.page.layout_id,
+        layout_id=assigned_layout_id,
         layout_mode=context.layout_mode,
         content_density=context.content_density,
         page_role=page_role,
@@ -122,6 +126,7 @@ async def _generate_one(
             context.sections[ref] for ref in page.page.source_refs if ref in context.sections
         ],
         neighbor_titles=context.neighbor_titles(page.position),
+        other_page_briefs=context.other_page_briefs(page.position),
         visual_hint=visual_hint,
         # 跨页多样性必须提前分配：各页并发生成，看不到彼此的版式
         layout_template=assigned_template.id if assigned_template else None,
@@ -200,6 +205,14 @@ class DeckContext:
             if self.layout_mode == "flex"
             else {}
         )
+        self._fixed_layout_ids = (
+            assign_fixed_layouts(
+                [target.page for target in ordered_pages],
+                seed=":".join(str(target.page.id) for target in ordered_pages),
+            )
+            if self.topic_mode and self.layout_mode == "fixed"
+            else {}
+        )
 
     def neighbor_titles(self, position: int) -> list[str]:
         start = max(0, position - 2)
@@ -207,6 +220,27 @@ class DeckContext:
 
     def layout_template(self, position: int) -> LayoutTemplate | None:
         return self._layout_templates.get(position)
+
+    def layout_id(self, position: int, fallback: str) -> str:
+        return self._fixed_layout_ids.get(position, fallback)
+
+    def other_page_briefs(self, position: int) -> list[dict[str, Any]]:
+        if not self.topic_mode:
+            return []
+        return [
+            {
+                "position": target.position,
+                "title": target.page.title,
+                "objective": target.page.objective,
+                "key_message": target.page.key_message,
+                "key_points": target.page.key_points,
+                "narrative_role": target.page.narrative_role,
+                "evidence_kind": target.page.evidence_kind,
+                "visual_type": target.page.visual_type,
+            }
+            for target in sorted(self.pages.values(), key=lambda item: item.position)
+            if target.position != position
+        ]
 
 
 class SlideTarget:
@@ -287,6 +321,7 @@ async def _save_ready(
         slide = await session.get(Slide, slide_id, with_for_update=True)
         if slide is None:
             return
+        slide.layout_id = content.layout_id
         slide.blocks = [block.model_dump(mode="json") for block in content.blocks]
         slide.speaker_notes = content.speaker_notes
         # 以项目编排意图为准，避免内容默认值把 flex 页落成 fixed

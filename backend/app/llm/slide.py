@@ -159,6 +159,7 @@ class DeepSeekSlideGenerator:
                 "key_points": payload.key_points,
             },
             "neighbor_titles": payload.neighbor_titles,
+            "other_pages": payload.other_page_briefs if payload.topic_mode else [],
             "slots": [_slot_spec(slot) for slot in layout.slots],
             "sections": [
                 {"ref": s.ref, "heading": s.heading, "text": s.text} for s in payload.sections
@@ -203,6 +204,7 @@ class DeepSeekSlideGenerator:
                 "key_points": payload.key_points,
             },
             "neighbor_titles": payload.neighbor_titles,
+            "other_pages": payload.other_page_briefs if payload.topic_mode else [],
             "layout_template": payload.layout_template,
             "hint_layout_id": payload.layout_id,
             "visual": payload.visual_hint,
@@ -315,6 +317,11 @@ def _page_directives(payload: SlideGenerationInput) -> str:
     所以由编排层提前分配好、在这里落成本页不可商量的命令。
     """
     rules: list[str] = []
+    rules.append(
+        "已确认的 page 是本页内容依据：主标题逐字使用 page.title，"
+        "正文围绕 objective、key_message 和 key_points 展开，保留各要点的含义、数字和口径；"
+        "不得替换成其他主题或其他页面的内容。"
+    )
     if payload.visual_hint:
         rules.append(
             f"本页必须包含且仅包含一个 image 块，alt 严格写成「{payload.visual_hint}」，"
@@ -336,9 +343,9 @@ def _page_directives(payload: SlideGenerationInput) -> str:
             "pie": "解释占比最高项、最低项和结构偏向，不要写成时间趋势。",
             "bar": "写最高项、最低项和差距，不要把分类比较写成时间趋势。",
             "column": "写分类项之间的高低差异，不要把分类比较写成时间趋势。",
-            "flow": "仅在存在分流、判断、并行、异常、审批或汇聚时使用；"
+            "flow": "使用 flow diagram 表达本页要点，顺序步骤可使用线性连接；"
             "节点标题控制在 8–14 字，描述控制在 24 字内。"
-            "简单顺序步骤改用 cards 或 numbered steps。",
+            "保留大纲中的步骤与关系，不得改成 cards 或 numbered steps。",
             "timeline": "使用并列卡片网格表达阶段、时间和交付物；禁止纵向串联节点、连接轴和箭头。",
             "financial_table": "使用财务明细表表达同一指标在多个期间的对照，突出最新期间和重点行。",
             "waterfall": "使用起点、增减项和终点表达桥接变化；增减项必须来自 evidence。",
@@ -351,7 +358,9 @@ def _page_directives(payload: SlideGenerationInput) -> str:
     if payload.topic_mode:
         rules.append(
             "当前为主题样稿模式，数据是模拟素材；数字必须来自本页 evidence，"
-            "不要跨页重复同一组数据。"
+            "不要跨页重复同一组数据。必须逐项对照 other_pages，确保本页的目标、核心结论、"
+            "阶段、行动和支撑要点均有独立角度；流程表达判断与分流，路线图表达带时间的阶段和交付物，"
+            "不得把同一组事件换一种说法再写一遍。"
         )
     if not payload.allow_callout:
         rules.append("本页不得出现 callout 强调框，也不得出现来源说明块。")
@@ -361,7 +370,7 @@ def _page_directives(payload: SlideGenerationInput) -> str:
 
 
 def _enterprise_writing_rules(payload: SlideGenerationInput) -> str:
-    return (
+    rules = (
         "企业汇报约束：一页只支撑一个核心观点，保持与 blueprint 的主线一致。"
         "分析页标题表达有证据的判断，封面/目录/定义页可用主题标题。"
         "图表和 KPI 的数字仅使用 evidence 中的值，保留指标、单位、时间和范围。"
@@ -379,6 +388,14 @@ def _enterprise_writing_rules(payload: SlideGenerationInput) -> str:
         "修复时参考 previous_draft 保留证据和核心结论，优先重排、精简重复措辞，"
         "不要通过添加无依据内容或不断缩小字号满足检查。"
     )
+    if payload.topic_mode:
+        rules += (
+            "主题样稿正文必须与 other_pages 中每页的目标和要点区分开；"
+            "不能只改写标题、卡片名称或句式来制造表面差异。"
+        )
+    if payload.visual_type == "flow":
+        rules += "本页明确指定 flow，优先遵循此选择；简单步骤也保留流程图，不自动改为卡片。"
+    return rules
 
 
 def _slot_spec(slot: Slot) -> dict:

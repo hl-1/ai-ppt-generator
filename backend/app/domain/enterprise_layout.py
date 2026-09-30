@@ -70,12 +70,7 @@ def bind_planned_evidence(
         evidence_kind = requested_kind or evidence_kind
         # 主题模式的视觉选择是页面主视觉；避免模型额外塞入图片把图表/流程挤成窄条。
         blocks = [b for b in blocks if b.type != "image"]
-    requested_visual = (
-        page.visual_type
-        if topic_mode
-        or page.visual_type in {"financial_table", "waterfall", "combo_chart"}
-        else "auto"
-    )
+    requested_visual = page.visual_type
     effective_page = page.model_copy(
         update={"evidence_kind": evidence_kind, "visual_type": requested_visual}
     )
@@ -120,17 +115,27 @@ def bind_planned_evidence(
     elif page.visual_type == "combo_chart":
         combo = _combo_from_evidence(page.evidence, block_id="report-combo")
         if combo is not None:
-            blocks = [b for b in blocks if b.type not in {"chart", "image"}]
+            blocks = [
+                b
+                for b in blocks
+                if b.type not in {
+                    "chart", "image", "diagram", "financial_table", "waterfall", "combo_chart"
+                }
+            ]
             blocks.append(combo)
     if evidence_kind in {"flow", "timeline"}:
         blocks = [b for b in blocks if b.type != "diagram"]
         nodes = _diagram_nodes(page, blocks=blocks)
         if len(nodes) >= 2:
             block_id = _unique_id("report-diagram", blocks)
-            if evidence_kind == "flow" and not should_keep_flow_diagram(
-                nodes,
-                _sequential_edges(nodes),
-                context=_page_flow_context(page),
+            if (
+                evidence_kind == "flow"
+                and page.visual_type != "flow"
+                and not should_keep_flow_diagram(
+                    nodes,
+                    _sequential_edges(nodes),
+                    context=_page_flow_context(page),
+                )
             ):
                 if not any(isinstance(block, CardsBlock) for block in blocks):
                     blocks.append(
@@ -327,7 +332,8 @@ def _combo_from_evidence(evidence: list, *, block_id: str) -> ComboChartBlock | 
         categories=periods,
         bars=[{"name": series[0][0], "values": series[0][1]}],
         lines=[{"name": name, "values": values} for name, values in series[1:]],
-        unit=numeric[0].unit or None,
+        unit=next(item.unit for item in numeric if item.metric == series[0][0]) or None,
+        line_unit=next(item.unit for item in numeric if item.metric == series[1][0]) or None,
     )
 
 
@@ -356,6 +362,10 @@ def compose_report_slide(
         ),
         styled_title or (texts[0] if texts else None),
     )
+    if curate and title is not None:
+        confirmed_title = title.model_copy(update={"text": page.title})
+        blocks = [confirmed_title if block is title else block for block in blocks]
+        title = confirmed_title
     footers = [b for b in blocks if b.type == "callout" and b.variant == "source"]
     body = [b for b in blocks if b != title and b not in footers]
     visuals = [
@@ -433,6 +443,24 @@ def _compose_report_tree(
     advanced: Block | None,
     layout_template: str | None,
 ) -> FlexContainer:
+    if (
+        page.page_role in {"cover", "toc", "section"}
+        and layout_template
+        in {
+            "opening_stack",
+            "opening_split_left",
+            "opening_split_right",
+            "opening_split_top",
+            "opening_split_bottom",
+        }
+    ):
+        return _opening_report_tree(
+            title=title,
+            body=body,
+            footers=footers,
+            page=page,
+            layout_template=layout_template,
+        )
     if diagram is not None and visual_type in {"flow", "timeline"}:
         return _visual_report_tree(
             title=title,
@@ -480,7 +508,12 @@ def _compose_report_tree(
             layout_template=layout_template,
         )
     if visuals and insight_blocks:
-        if len(visuals) == 1 and layout_template in {"visual_focus", "visual_below"}:
+        if len(visuals) == 1 and layout_template in {
+            "visual_focus",
+            "visual_below",
+            "visual_above",
+            "visual_support_grid",
+        }:
             return _visual_report_tree(
                 title=title,
                 visual=visuals[0],
@@ -498,6 +531,27 @@ def _compose_report_tree(
             footers=footers,
             page=page,
             family=family,
+            layout_template=layout_template,
+        )
+    if visuals and len(visuals) == 1 and layout_template in {
+        "visual_left",
+        "visual_right",
+        "visual_below",
+        "visual_above",
+        "visual_left_wide",
+        "visual_right_wide",
+        "visual_left_balanced",
+        "visual_right_balanced",
+        "visual_support_grid",
+    }:
+        return _visual_report_tree(
+            title=title,
+            visual=visuals[0],
+            insight_blocks=[],
+            footers=footers,
+            page=page,
+            family=family,
+            insight_id="visual-support",
             layout_template=layout_template,
         )
     if visuals:
@@ -585,7 +639,14 @@ def _visual_report_tree(
     insight_id: str,
     layout_template: str | None = None,
 ) -> FlexContainer:
-    if layout_template in {"visual_left", "visual_right"} and insight_blocks:
+    if layout_template in {
+        "visual_left",
+        "visual_right",
+        "visual_left_wide",
+        "visual_right_wide",
+        "visual_left_balanced",
+        "visual_right_balanced",
+    }:
         return _image_support_tree(
             title=title,
             visuals=[visual],
@@ -595,14 +656,60 @@ def _visual_report_tree(
             family=family,
             layout_template=layout_template,
         )
-    if layout_template == "visual_below" and insight_blocks:
+    if layout_template == "visual_below":
         children = _header_nodes(title, page)
         children.append(_leaf(visual, grow=2.2))
-        children.append(_column(insight_blocks, f"{insight_id}-below", grow=0.75))
+        children.append(
+            _column(insight_blocks, f"{insight_id}-below", grow=0.75)
+            if insight_blocks
+            else _spacer(f"spacer-{insight_id}-below", grow=0.75)
+        )
         children.extend(_footer_nodes(footers))
         return FlexContainer(
             type="column",
             id=f"visual-below-{family}",
+            gap_pt=12,
+            children=children,
+        )
+    if layout_template == "visual_above":
+        children = _header_nodes(title, page)
+        children.append(
+            _column(insight_blocks, f"{insight_id}-above", grow=0.8)
+            if insight_blocks
+            else _spacer(f"spacer-{insight_id}-above", grow=0.8)
+        )
+        children.append(_leaf(visual, grow=2.2, bleed=True))
+        children.extend(_footer_nodes(footers))
+        return FlexContainer(
+            type="column",
+            id=f"visual-above-{family}",
+            gap_pt=12,
+            children=children,
+        )
+    if layout_template == "visual_support_grid":
+        children = _header_nodes(title, page)
+        children.append(_leaf(visual, grow=2.0, bleed=True))
+        support_grid = (
+            [_leaf(block) for block in insight_blocks]
+            if insight_blocks
+            else [
+                _spacer(f"spacer-{insight_id}-grid-a", grow=1.0),
+                _spacer(f"spacer-{insight_id}-grid-b", grow=1.0),
+            ]
+        )
+        children.append(
+            FlexContainer(
+                type="row",
+                id=f"{insight_id}-grid",
+                gap_pt=20,
+                grow=0.85,
+                children=support_grid,
+            )
+        )
+        children.extend(_footer_nodes(footers))
+        return FlexContainer(
+            type="column",
+            id=f"visual-support-grid-{family}",
             gap_pt=12,
             children=children,
         )
@@ -649,12 +756,29 @@ def _image_support_tree(
 ) -> FlexContainer:
     children = _header_nodes(title, page)
     visual_column = _column(visuals, "visual-pane")
-    support_column = _column(support, "support-pane")
-    if layout_template == "visual_right":
-        ratios = [42, 58]
+    support_column = (
+        _column(support, "support-pane")
+        if support
+        else FlexContainer(
+            type="column",
+            id="support-pane",
+            gap_pt=14,
+            children=[_spacer("spacer-support-pane", grow=1.0)],
+        )
+    )
+    ratio_by_template = {
+        "visual_left": (58, 42),
+        "visual_right": (42, 58),
+        "visual_left_wide": (68, 32),
+        "visual_right_wide": (32, 68),
+        "visual_left_balanced": (50, 50),
+        "visual_right_balanced": (50, 50),
+    }
+    if layout_template in {"visual_right", "visual_right_wide", "visual_right_balanced"}:
+        ratios = list(ratio_by_template[layout_template])
         row_children = [support_column, visual_column]
     else:
-        ratios = [58, 42]
+        ratios = list(ratio_by_template.get(layout_template or "", (58, 42)))
         row_children = [visual_column, support_column]
     children.append(
         FlexContainer(
@@ -785,6 +909,94 @@ def _text_report_tree(
     return FlexContainer(type="column", id=f"text-{family}", gap_pt=18, children=children)
 
 
+def _opening_report_tree(
+    *,
+    title: Block | None,
+    body: list[Block],
+    footers: list[Block],
+    page: OutlinePageDraft,
+    layout_template: str,
+) -> FlexContainer:
+    if layout_template == "opening_stack":
+        return _text_report_tree(
+            title=title,
+            body=body,
+            footers=footers,
+            page=page,
+            family="opening-stack",
+        )
+
+    if layout_template in {"opening_split_top", "opening_split_bottom"}:
+        details = [*body, *footers]
+        detail_children: list[FlexNode] = (
+            [_leaf(block) for block in details]
+            if details
+            else [
+                _spacer("spacer-opening-detail-a", grow=1.0),
+                _spacer("spacer-opening-detail-b", grow=1.0),
+            ]
+        )
+        detail_row = FlexContainer(
+            type="row",
+            id="opening-detail-row",
+            gap_pt=20,
+            grow=1.0,
+            children=detail_children,
+        )
+        title_nodes = _header_nodes(title, page)
+        children: list[FlexNode] = (
+            [*title_nodes, detail_row]
+            if layout_template == "opening_split_top"
+            else [detail_row, *title_nodes]
+        )
+        return FlexContainer(
+            type="column",
+            id="opening-split-vertical",
+            gap_pt=22,
+            children=children,
+        )
+
+    title_leaf = (
+        _leaf(
+            title,
+            "display" if page.page_role == "cover" else "title",
+            grow=0.8,
+        )
+        if title is not None
+        else None
+    )
+    detail_blocks = [*body, *footers]
+    title_pane = (
+        FlexContainer(
+            type="column",
+            id="opening-title-pane",
+            gap_pt=12,
+            grow=1.0,
+            children=[title_leaf],
+        )
+        if title_leaf is not None
+        else _spacer("spacer-opening-title", grow=1.0)
+    )
+    detail_pane = (
+        _column(detail_blocks, "opening-detail-pane", grow=1.0)
+        if detail_blocks
+        else _spacer("spacer-opening-detail", grow=1.0)
+    )
+    if layout_template == "opening_split_right":
+        children = [detail_pane, title_pane]
+        ratios = [58, 42]
+    else:
+        children = [title_pane, detail_pane]
+        ratios = [42, 58]
+    return FlexContainer(
+        type="row",
+        id="opening-split",
+        gap_pt=28,
+        ratios=ratios,
+        children=children,
+    )
+
+
 def _header_nodes(title: Block | None, page: OutlinePageDraft) -> list[FlexNode]:
     if title is None:
         return []
@@ -872,6 +1084,7 @@ def _curate_report_body(
     if (
         diagram is not None
         and diagram.diagram_type == "flow"
+        and page.visual_type != "flow"
         and not should_keep_flow_diagram(
             diagram.nodes,
             diagram.edges,

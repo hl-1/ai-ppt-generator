@@ -176,6 +176,47 @@ async def _complete_outline(project_id: str) -> ProjectOutline:
         return project.outline
 
 
+async def test_editing_outline_marks_existing_content_for_regeneration(client, queue):
+    from app.models.slide import Slide
+    from app.services.deck import sync_slides
+
+    headers = await _sign_up(client)
+    project = await _project(client, headers)
+    await client.post(f"/api/v1/projects/{project['id']}/outline/generate", headers=headers)
+    outline = await _complete_outline(project["id"])
+    saved = await client.patch(
+        f"/api/v1/projects/{project['id']}/outline",
+        json={"revision": outline.revision, "pages": outline.pages}, headers=headers,
+    )
+    assert saved.status_code == 200
+    pages = saved.json()["pages"]
+    async with async_session_factory() as session:
+        for index, item in enumerate(pages, start=1):
+            session.add(Slide(
+                project_id=uuid.UUID(project["id"]), outline_page_id=uuid.UUID(item["id"]),
+                position=index, layout_id=item["layout_id"], title=item["title"], status="ready",
+                blocks=[{"id": "previous-content"}], issues=[], layout_mode="flex",
+                layout_tree={"type": "column", "id": "root", "children": []},
+            ))
+        await session.commit()
+
+    pages[1]["key_points"] = ["Edited finding", "Updated recommendation"]
+    updated = await client.patch(
+        f"/api/v1/projects/{project['id']}/outline",
+        json={"revision": saved.json()["revision"], "pages": pages}, headers=headers,
+    )
+    assert updated.status_code == 200
+    async with async_session_factory() as session:
+        record = (await session.execute(
+            select(Project).options(selectinload(Project.outline), selectinload(Project.sources))
+            .where(Project.id == uuid.UUID(project["id"]))
+        )).scalar_one()
+        pending = await sync_slides(session, record)
+        assert [slide.outline_page_id for slide in pending] == [uuid.UUID(pages[1]["id"])]
+        assert pending[0].blocks == []
+        await session.rollback()
+
+
 @pytest.mark.asyncio
 async def test_generate_outline_enqueues_unique_job(
     client: AsyncClient,

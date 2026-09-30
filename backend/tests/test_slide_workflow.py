@@ -78,6 +78,18 @@ async def test_workflow_skips_repair_for_capacity_overflow() -> None:
 
 
 @pytest.mark.asyncio
+async def test_fixed_workflow_preserves_confirmed_title() -> None:
+    generator = ScriptedGenerator([
+        _draft(["具体经营结果与数据", "下一步行动与影响"], title="模型改写标题")
+    ])
+    slide, _ = await run_slide_workflow(
+        build_slide_workflow(generator), _payload(), uuid.uuid4()
+    )
+
+    assert next(block for block in slide.blocks if block.slot_id == "title").text == "现状与问题"
+
+
+@pytest.mark.asyncio
 async def test_topic_workflow_repairs_capacity_overflow_once() -> None:
     too_long = ["主题页过长的要点" * 12] * 9
     generator = ScriptedGenerator(

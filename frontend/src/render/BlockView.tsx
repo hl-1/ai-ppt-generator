@@ -7,7 +7,6 @@ import {
 } from '@/render/BusinessViews'
 import { ChartView } from '@/render/ChartView'
 import { DiagramView } from '@/render/DiagramView'
-import { flowCardItems, shouldRenderFlowAsCards } from '@/render/diagramTopology'
 import { EditableText } from '@/render/EditableText'
 import { pt, resolveColor } from '@/render/style'
 import type {
@@ -637,28 +636,6 @@ export function BlockView({
     case 'combo_chart':
       return <ComboChartView block={block as ComboChartBlock} slot={slot} theme={theme} />
     case 'diagram':
-      if (
-        block.diagram_type === 'flow' &&
-        shouldRenderFlowAsCards(block.diagram_type, block.nodes, block.edges)
-      ) {
-        return (
-          <CardsView
-            block={{
-              id: block.id,
-              slot_id: block.slot_id,
-              locked: block.locked,
-              type: 'cards',
-              style: block.style,
-              items: flowCardItems(block.nodes),
-            }}
-            slot={slot}
-            theme={theme}
-            editable={editable}
-            onCommit={onCommit}
-            onSelect={onSelect}
-          />
-        )
-      }
       return (
         <DiagramView
           block={block as DiagramBlock}

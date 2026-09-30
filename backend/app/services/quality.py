@@ -9,6 +9,8 @@ from app.domain.enterprise_quality import check_report_quality
 from app.domain.export_check import ExportCheckReport, run_export_check
 from app.domain.outline import DeckBlueprint, OutlinePage, ReportBrief
 from app.domain.theme import resolve_project_theme
+from app.domain.topic_uniqueness import find_duplicate_topic_layouts
+from app.domain.validation import StructureIssue
 from app.llm.base import OutlineSourceSection
 from app.models.project import Project
 from app.models.slide import Slide
@@ -114,6 +116,31 @@ def build_quality_report(project: Project, slides: list[Slide]) -> ExportCheckRe
         load_image=load_image,
         media_key_from_url=media_key_from_url,
     )
+    topic_mode = any(source.kind == "topic" for source in project.sources)
+    if topic_mode:
+        report.issues = [
+            issue.model_copy(
+                update={
+                    "severity": "error",
+                    "message": f"主题样稿检测到重复页面，已阻止导出：{issue.message}",
+                }
+            )
+            if "标题与另一页" in issue.message or "正文与另一页" in issue.message
+            else issue
+            for issue in report.issues
+        ]
+        for first_slide_id, duplicate_slide_id in find_duplicate_topic_layouts(deck.slides):
+            report.issues.append(
+                StructureIssue(
+                    severity="error",
+                    slide_id=duplicate_slide_id,
+                    slot_id=None,
+                    message=(
+                        f"主题生成的版式与页面 {first_slide_id} 重复，已阻止导出；"
+                        "请重新生成或更换其中一页的内容结构。"
+                    ),
+                )
+            )
     pages = _page_by_outline_id(project)
     plans = {str(s.id): pages[s.outline_page_id] for s in slides if s.outline_page_id in pages}
     extra = check_report_quality(

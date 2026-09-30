@@ -14,6 +14,7 @@ from app.api.v1.projects import OwnedProject
 from app.core.db import get_session
 from app.domain.evidence import evidence_problem, prepare_page_plan
 from app.domain.layout import load_layouts
+from app.domain.topic_uniqueness import find_duplicate_topic_pages
 from app.llm.base import OutlineSourceSection
 from app.llm.errors import InvalidOutlineOutputError, LLMNotConfiguredError
 from app.models.project import Project, ProjectOutline
@@ -25,6 +26,7 @@ from app.schemas.outline import (
     OutlineRevisionRequest,
     OutlineUpdate,
 )
+from app.services.deck import invalidate_outline_slides
 from app.services.outline_inputs import migrate_outline_signature, outline_input_matches
 from app.services.outline_progress import outline_events, publish_outline_event
 from app.worker.context import create_outline_generator
@@ -192,10 +194,16 @@ async def update_outline(
         for j, section in enumerate(source.sections, 1)
     }
     topic_mode = any(source.kind == "topic" for source in project.sources)
-    outline.pages = [
-        prepare_page_plan(page, sources, topic_mode=topic_mode).model_dump(mode="json")
-        for page in body.pages
+    prepared_pages = [
+        prepare_page_plan(page, sources, topic_mode=topic_mode) for page in body.pages
     ]
+    await invalidate_outline_slides(
+        session,
+        project,
+        prepared_pages,
+        blueprint=body.blueprint.model_dump(mode="json") if body.blueprint is not None else None,
+    )
+    outline.pages = [page.model_dump(mode="json") for page in prepared_pages]
     if body.blueprint is not None:
         outline.blueprint = body.blueprint.model_dump(mode="json")
     outline.revision += 1
@@ -279,6 +287,7 @@ async def fit_outline_page_evidence(
 
     pages[page_index] = prepared
     _validate_pages(project, pages)
+    await invalidate_outline_slides(session, project, pages)
     outline.pages = [page.model_dump(mode="json") for page in pages]
     outline.revision += 1
     await session.commit()
@@ -304,7 +313,18 @@ async def confirm_outline(
     migrated = migrate_outline_signature(project, outline.input_signature)
     if migrated is not None:
         outline.input_signature = migrated
-    _validate_pages(project, [*map(_page_from_dict, outline.pages)])
+    pages = [*map(_page_from_dict, outline.pages)]
+    _validate_pages(project, pages)
+    if any(source.kind == "topic" for source in project.sources):
+        duplicates = find_duplicate_topic_pages(pages)
+        if duplicates:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={
+                    "message": "主题大纲包含重复页面，请修改后再确认",
+                    "issues": duplicates,
+                },
+            )
 
     outline.status = "confirmed"
     outline.revision += 1

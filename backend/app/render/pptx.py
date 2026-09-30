@@ -34,7 +34,6 @@ from app.domain.content import (
     WaterfallBlock,
 )
 from app.domain.flex_skin import BOX_RADIUS_PT, SkinDecoration, iter_skin_decorations
-from app.domain.flow_policy import card_items_from_flow_nodes, should_keep_flow_diagram
 from app.domain.geometry import (
     CANVAS_HEIGHT_PT,
     CANVAS_WIDTH_PT,
@@ -1117,18 +1116,6 @@ class PptxRenderer:
             return
 
         edges = normalize_flow_edges(block.diagram_type, block.nodes, block.edges)
-        if block.diagram_type == "flow" and not should_keep_flow_diagram(block.nodes, edges):
-            self._render_cards(
-                pptx_slide,
-                CardsBlock(
-                    id=block.id,
-                    slot_id=block.slot_id,
-                    style=block.style,
-                    items=card_items_from_flow_nodes(block.nodes),
-                ),
-                rect=rect,
-            )
-            return
         node_rects = self._diagram_node_rects(block, rect, edges)
         by_id = {node.id: node for node in block.nodes}
 

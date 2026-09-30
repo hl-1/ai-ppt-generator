@@ -9,6 +9,7 @@ from app.domain.content import Block
 from app.domain.content import Slide as ContentSlide
 from app.domain.flex_layout import FlexContainer
 from app.domain.outline import OutlinePage
+from app.domain.page_rhythm import assign_fixed_layouts
 from app.domain.theme import Theme
 from app.domain.validation import validate_slide
 from app.models.project import Project
@@ -58,6 +59,30 @@ async def load_slides(session: AsyncSession, project_id: uuid.UUID) -> list[Slid
     return list(result.scalars())
 
 
+async def invalidate_outline_slides(
+    session: AsyncSession,
+    project: Project,
+    pages: list[OutlinePage],
+    *,
+    blueprint: dict | None = None,
+) -> None:
+    previous = {
+        page.id: page.model_dump(exclude={"planning_notes"})
+        for page in outline_pages(project)
+    }
+    changed_ids = {
+        page.id for page in pages
+        if previous.get(page.id) != page.model_dump(exclude={"planning_notes"})
+    }
+    blueprint_changed = blueprint is not None and blueprint != project.outline.blueprint
+    if not changed_ids and not blueprint_changed:
+        return
+    for slide in await load_slides(session, project.id):
+        if slide.outline_page_id in changed_ids or blueprint_changed:
+            # Keep the previous content until generation starts, but do not reuse it as ready.
+            slide.status = "pending"
+
+
 def refresh_slide_issues(
     slide: Slide,
     *,
@@ -95,16 +120,25 @@ async def sync_slides(
         )
 
     project_mode = project.layout_mode if project.layout_mode in ("fixed", "flex") else "flex"
+    fixed_layouts = (
+        assign_fixed_layouts(
+            pages,
+            seed=":".join(str(page.id) for page in pages),
+        )
+        if project_mode == "fixed" and any(source.kind == "topic" for source in project.sources)
+        else {}
+    )
 
     pending: list[Slide] = []
     for position, page in enumerate(pages, start=1):
+        assigned_layout_id = fixed_layouts.get(position, page.layout_id)
         slide = existing.get(page.id)
         if slide is None:
             slide = Slide(
                 project_id=project.id,
                 outline_page_id=page.id,
                 position=position,
-                layout_id=page.layout_id,
+                layout_id=assigned_layout_id,
                 title=page.title,
                 status="pending",
                 blocks=[],
@@ -116,8 +150,8 @@ async def sync_slides(
         else:
             slide.position = position
             slide.title = page.title
-            if regenerate_all or slide.layout_id != page.layout_id:
-                slide.layout_id = page.layout_id
+            if regenerate_all or slide.layout_id != assigned_layout_id:
+                slide.layout_id = assigned_layout_id
                 reset_slide_for_regeneration(slide, layout_mode=project_mode)
             # flex 项目下，非 flex 或缺布局树的 ready 页重置为待生成
             elif (
