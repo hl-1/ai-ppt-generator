@@ -234,11 +234,22 @@ def _measure_cards(
     gap = 16.0
     pad = 12.0
     min_width = 96.0
+    financial = theme.visual_style == "financial-tech"
+    if financial:
+        from app.domain.financial_tech import financial_tech_style
+
+        min_width = financial_tech_style()["card_min_width_pt"]
+        pad = financial_tech_style()["card_padding_pt"]
     columns = min(
         len(block.items),
         max(1, int((width_pt + gap) // (min_width + gap))),
     )
     rows = (len(block.items) + columns - 1) // columns
+    if financial:
+        from app.domain.financial_tech import panel_grid
+
+        columns, _, _ = panel_grid(len(block.items), width_pt, height_pt)
+        rows = (len(block.items) + columns - 1) // columns
     card_w = max((width_pt - gap * max(columns - 1, 0)) / columns, 1.0)
     card_h = max((height_pt - gap * max(rows - 1, 0)) / rows, 1.0)
     inner_w = max(card_w - 2 * pad, 1.0)
@@ -255,6 +266,15 @@ def _measure_cards(
             item.desc, style=body_style, width_pt=inner_w, height_pt=inner_h
         )
         used = title_result.height_pt + 6.0 + desc_result.height_pt
+        if financial:
+            from app.domain.financial_tech import panel_header_height
+
+            header = panel_header_height(card_h, title_style.size_pt, title_style.line_height)
+            title_result = measure_text(title, style=title_style,
+                                        width_pt=max(1, card_w - 48), height_pt=max(1, header - 12))
+            desc_result = measure_text(item.desc, style=body_style, width_pt=inner_w,
+                                       height_pt=max(1, card_h - header - 2 * pad - 18))
+            used = max(header, title_result.height_pt + 12) + 18 + desc_result.height_pt
         results.append(
             (
                 f"第 {index + 1} 张卡片",
@@ -316,6 +336,15 @@ def _measure_diagram(
         return []
     gap_x = 18.0
     gap_y = 16.0
+    financial_boxes = None
+    if theme.visual_style == "financial-tech" and block.diagram_type != "timeline":
+        from app.domain.financial_tech import platform_node_rects
+        from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, Rect
+        from app.domain.mermaid import normalize_flow_edges
+
+        financial_boxes, _ = platform_node_rects(block.nodes,
+            normalize_flow_edges(block.diagram_type, block.nodes, block.edges),
+            Rect(x=0, y=0, w=width_pt / CANVAS_WIDTH_PT, h=height_pt / CANVAS_HEIGHT_PT))
     if block.diagram_type == "timeline":
         node_h = max((height_pt - gap_y * (count - 1)) / count, 1.0)
         node_w = width_pt * 0.82
@@ -329,12 +358,16 @@ def _measure_diagram(
     title_style = merge_text_style(theme, "subtitle", block.style)
     body_style = merge_text_style(theme, "body", block.style)
     results = []
-    if geometry_height > height_pt + 0.5 or (
+    if financial_boxes is None and (geometry_height > height_pt + 0.5 or (
         block.diagram_type != "timeline"
         and node_w * count + gap_x * (count - 1) > width_pt + 0.5
-    ):
+    )):
         results.append(("结构图节点区域", geometry_height, height_pt, count, False))
     for index, node in enumerate(block.nodes):
+        if financial_boxes is not None:
+            box = financial_boxes[node.id]
+            inner_w = max(1, box.w * CANVAS_WIDTH_PT - 24)
+            inner_h = max(1, box.h * CANVAS_HEIGHT_PT - 24)
         title_result = measure_text(
             node.title, style=title_style, width_pt=inner_w, height_pt=inner_h
         )

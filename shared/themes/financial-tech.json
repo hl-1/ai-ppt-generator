@@ -1,0 +1,51 @@
+{
+  "id": "financial-tech",
+  "name": "金融科技蓝金",
+  "description": "深海军蓝、金色标题与蓝青业务面板，适合金融服务、平台架构与数字化业务汇报",
+  "visual_style": "financial-tech",
+  "palette": {
+    "background": "#0B1630",
+    "surface": "#15315A",
+    "ink": "#EEF4FC",
+    "ink_soft": "#CCD9EC",
+    "ink_muted": "#9CB3D2",
+    "accent": "#139BE8",
+    "accent_soft": "#16538C",
+    "line": "#306897",
+    "line_strong": "#54BEF4",
+    "chart_series": ["#139BE8", "#4DDDFF", "#D7B46A", "#78A5F5", "#68D3BD", "#E99595"]
+  },
+  "fonts": {
+    "display": {
+      "web": "'Microsoft YaHei', 'Noto Sans SC', Arial, sans-serif",
+      "pptx_latin": "Arial",
+      "pptx_east_asian": "微软雅黑"
+    },
+    "body": {
+      "web": "'Microsoft YaHei', 'Noto Sans SC', Arial, sans-serif",
+      "pptx_latin": "Arial",
+      "pptx_east_asian": "微软雅黑"
+    }
+  },
+  "text_styles": {
+    "display": {"font": "display", "size_pt": 46, "line_height": 1.25, "weight": 700, "letter_spacing_pt": 0, "color": "#D7B46A"},
+    "title": {"font": "display", "size_pt": 30, "line_height": 1.3, "weight": 700, "letter_spacing_pt": 0, "color": "#D7B46A"},
+    "subtitle": {"font": "body", "size_pt": 17, "line_height": 1.35, "weight": 600, "letter_spacing_pt": 0, "color": "ink"},
+    "body": {"font": "body", "size_pt": 15, "line_height": 1.5, "weight": 400, "letter_spacing_pt": 0, "color": "ink_soft"},
+    "bullet": {"font": "body", "size_pt": 16, "line_height": 1.5, "weight": 400, "letter_spacing_pt": 0, "color": "ink_soft"},
+    "caption": {"font": "body", "size_pt": 11, "line_height": 1.4, "weight": 400, "letter_spacing_pt": 0, "color": "ink_muted"},
+    "kpi_value": {"font": "display", "size_pt": 38, "line_height": 1.15, "weight": 700, "letter_spacing_pt": 0, "color": "ink"},
+    "kpi_label": {"font": "body", "size_pt": 15, "line_height": 1.4, "weight": 600, "letter_spacing_pt": 0, "color": "#D7B46A"},
+    "kpi_note": {"font": "body", "size_pt": 11, "line_height": 1.4, "weight": 400, "letter_spacing_pt": 0, "color": "ink_muted"},
+    "table_header": {"font": "body", "size_pt": 14, "line_height": 1.4, "weight": 600, "letter_spacing_pt": 0, "color": "ink"},
+    "table_cell": {"font": "body", "size_pt": 13, "line_height": 1.4, "weight": 400, "letter_spacing_pt": 0, "color": "ink_soft"},
+    "chart_label": {"font": "body", "size_pt": 11, "line_height": 1.3, "weight": 400, "letter_spacing_pt": 0, "color": "ink_muted"}
+  },
+  "shape": {"radius_pt": 2, "border_width_pt": 0.75, "bullet_marker": "rule"},
+  "ambient": [
+    {"motif": "corner_bracket", "corner": "top_left", "color": "accent", "strength": 0.8, "size_pt": 22, "thickness_pt": 1.5, "inset_pt": 22},
+    {"motif": "corner_bracket", "corner": "bottom_right", "color": "#4DDDFF", "strength": 0.65, "size_pt": 22, "thickness_pt": 1.5, "inset_pt": 22},
+    {"motif": "edge_band", "edge": "bottom", "color": "accent", "strength": 0.75, "thickness_pt": 2, "start": 0.055, "end": 0.945},
+    {"motif": "hairline_grid", "color": "line", "strength": 0.2, "columns": 8, "rows": 5, "thickness_pt": 0.5, "avoid_content": true, "scope": ["cover", "section"]}
+  ]
+}

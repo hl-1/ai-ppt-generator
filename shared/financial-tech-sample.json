@@ -1,0 +1,83 @@
+{
+  "id": "financial-tech-sample",
+  "title": "企业家综合金融服务",
+  "theme_id": "financial-tech",
+  "slides": [
+    {
+      "id": "services", "layout_id": "bullets", "layout_mode": "flex",
+      "speaker_notes": "金融科技蓝金主题示例。数据仅用于展示页面样式。",
+      "layout_tree": {"type": "column", "id": "services-root", "gap_pt": 20, "children": [
+        {"type": "block", "id": "services-title-leaf", "block_id": "services-title", "text_style": "title"},
+        {"type": "block", "id": "services-cards-leaf", "block_id": "services-cards", "grow": 4.7},
+        {"type": "row", "id": "services-metrics", "gap_pt": 16, "grow": 2.8, "children": [
+          {"type": "block", "id": "clients-leaf", "block_id": "clients"},
+          {"type": "block", "id": "assets-leaf", "block_id": "assets"},
+          {"type": "block", "id": "coverage-leaf", "block_id": "coverage"},
+          {"type": "block", "id": "branches-leaf", "block_id": "branches"}
+        ]},
+        {"type": "block", "id": "services-footer-leaf", "block_id": "services-footer", "text_style": "caption", "grow": 0.5}
+      ]},
+      "blocks": [
+        {"id": "services-title", "slot_id": "title", "type": "text", "text": "企业家客户服务矩阵"},
+        {"id": "services-cards", "slot_id": "body", "type": "cards", "items": [
+          {"title": "个人财富服务", "desc": "个人及家庭财富规划\n资产配置与风险管理\n客户权益与专属服务"},
+          {"title": "家族传承服务", "desc": "家族信托与治理规划\n财富传承与公益慈善\n跨代际金融服务"},
+          {"title": "企业金融服务", "desc": "经营融资与现金管理\n跨境结算与供应链金融\n企业全生命周期服务"},
+          {"title": "员工关怀服务", "desc": "员工薪酬与福利管理\n个人贷款与保障服务\n企业员工专属权益"}
+        ]},
+        {"id": "clients", "slot_id": "kpi_1", "type": "kpi", "value": "2,695", "label": "服务企业", "note": "企业客户 / 示例"},
+        {"id": "assets", "slot_id": "kpi_2", "type": "kpi", "value": "4,714", "label": "服务规模", "note": "综合服务 / 示例"},
+        {"id": "coverage", "slot_id": "kpi_3", "type": "kpi", "value": "433", "label": "服务触点", "note": "服务网络 / 示例"},
+        {"id": "branches", "slot_id": "kpi_4", "type": "kpi", "value": "166", "label": "生态伙伴", "note": "合作机构 / 示例"},
+        {"id": "services-footer", "slot_id": "footer", "type": "text", "text": "个人财富  /  家族传承  /  企业金融  /  员工关怀", "style": {"fill": "accent", "color": "ink", "align": "center"}}
+      ]
+    },
+    {
+      "id": "platform", "layout_id": "chart", "layout_mode": "flex",
+      "layout_tree": {"type": "column", "id": "platform-root", "gap_pt": 20, "children": [
+        {"type": "block", "id": "platform-title-leaf", "block_id": "platform-title", "text_style": "title"},
+        {"type": "block", "id": "platform-visual-leaf", "block_id": "platform-visual", "grow": 6.4},
+        {"type": "block", "id": "platform-footer-leaf", "block_id": "platform-footer", "text_style": "caption", "grow": 0.8}
+      ]},
+      "blocks": [
+        {"id": "platform-title", "slot_id": "title", "type": "text", "text": "企业家综合服务平台"},
+        {"id": "platform-visual", "slot_id": "visual", "type": "diagram", "diagram_type": "flow", "nodes": [
+          {"id": "hub", "title": "综合服务平台", "desc": "统一客户与服务入口", "status": "active"},
+          {"id": "wealth", "title": "财富管理", "desc": "资产配置与专属服务"},
+          {"id": "family", "title": "家族传承", "desc": "家族治理与财富传承"},
+          {"id": "finance", "title": "企业金融", "desc": "融资与结算服务"},
+          {"id": "employee", "title": "员工关怀", "desc": "薪酬与福利服务"},
+          {"id": "ecosystem", "title": "生态合作", "desc": "跨机构资源协同"},
+          {"id": "risk", "title": "风险管理", "desc": "安全与合规保障"}
+        ], "edges": [
+          {"source": "hub", "target": "wealth"}, {"source": "hub", "target": "family"},
+          {"source": "hub", "target": "finance"}, {"source": "hub", "target": "employee"},
+          {"source": "hub", "target": "ecosystem"}, {"source": "hub", "target": "risk"}
+        ]},
+        {"id": "platform-footer", "slot_id": "footer", "type": "text", "text": "客户需求驱动 · 专业能力协同 · 全生命周期服务", "style": {"align": "center"}}
+      ]
+    },
+    {
+      "id": "architecture", "layout_id": "chart", "layout_mode": "flex",
+      "layout_tree": {"type": "column", "id": "architecture-root", "gap_pt": 20, "children": [
+        {"type": "block", "id": "architecture-title-leaf", "block_id": "architecture-title", "text_style": "title"},
+        {"type": "block", "id": "architecture-visual-leaf", "block_id": "architecture-visual", "grow": 6.4},
+        {"type": "block", "id": "architecture-footer-leaf", "block_id": "architecture-footer", "text_style": "caption", "grow": 0.8}
+      ]},
+      "blocks": [
+        {"id": "architecture-title", "slot_id": "title", "type": "text", "text": "数字化服务平台架构"},
+        {"id": "architecture-visual", "slot_id": "visual", "type": "diagram", "diagram_type": "flow", "nodes": [
+          {"id": "entry", "title": "统一服务入口", "desc": "企业端 · 员工端 · 客户端", "status": "active"},
+          {"id": "crm", "title": "客户运营", "desc": "客户画像与服务触达"},
+          {"id": "products", "title": "产品服务", "desc": "产品组合与方案匹配"},
+          {"id": "partners", "title": "生态协同", "desc": "资源连接与协同交付"},
+          {"id": "data", "title": "数据与风控底座", "desc": "数据治理 · 统一身份 · 合规审计"}
+        ], "edges": [
+          {"source": "entry", "target": "crm"}, {"source": "entry", "target": "products"}, {"source": "entry", "target": "partners"},
+          {"source": "crm", "target": "data"}, {"source": "products", "target": "data"}, {"source": "partners", "target": "data"}
+        ]},
+        {"id": "architecture-footer", "slot_id": "footer", "type": "text", "text": "统一入口  /  业务协同  /  数据支撑", "style": {"align": "center"}}
+      ]
+    }
+  ]
+}

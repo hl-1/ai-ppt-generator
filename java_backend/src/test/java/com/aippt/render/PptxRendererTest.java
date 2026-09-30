@@ -15,6 +15,34 @@ import com.aippt.shared.storage.LocalStorage;
 class PptxRendererTest {
 
     @Test
+    void financialThemeExportsPanelsAndPlatformNodes() throws Exception {
+        SharedCatalog catalog = new SharedCatalog();
+        var deck = com.aippt.shared.json.JsonMapperHolder.MAPPER.readTree(
+                com.aippt.shared.config.RepoPaths.sharedDir().resolve("financial-tech-sample.json").toFile());
+        byte[] bytes = renderer(catalog).render(deck, "financial-tech");
+        var report = PptxVerify.verify(bytes, SlideContent.listFromDeck(deck));
+        assertTrue(report.passed(), () -> report.issueMaps().toString());
+        try (var ppt = new org.apache.poi.xslf.usermodel.XMLSlideShow(new java.io.ByteArrayInputStream(bytes))) {
+            assertEquals(3, ppt.getSlides().size());
+            assertEquals(4, ppt.getSlides().get(0).getShapes().stream().filter(s -> s instanceof org.apache.poi.xslf.usermodel.XSLFFreeformShape).count());
+            for (var shape : ppt.getSlides().get(0).getShapes()) {
+                if (shape instanceof org.apache.poi.xslf.usermodel.XSLFFreeformShape) {
+                    var properties = ((org.openxmlformats.schemas.presentationml.x2006.main.CTShape) shape.getXmlObject()).getSpPr();
+                    assertTrue(properties.isSetGradFill());
+                    assertTrue(!properties.isSetSolidFill());
+                    assertEquals(90 * 60000, properties.getGradFill().getLin().getAng());
+                    assertEquals(2, properties.getGradFill().getGsLst().sizeOfGsArray());
+                }
+            }
+            var text = ppt.getSlides().get(1).getShapes().stream()
+                    .filter(s -> s instanceof org.apache.poi.xslf.usermodel.XSLFTextShape)
+                    .map(s -> ((org.apache.poi.xslf.usermodel.XSLFTextShape) s).getText()).toList();
+            assertTrue(text.stream().anyMatch(value -> value.contains("综合服务平台")));
+            assertTrue(text.stream().anyMatch(value -> value.contains("家族传承")));
+        }
+    }
+
+    @Test
     void sampleDeckExportsNativePptx() {
         SharedCatalog catalog = new SharedCatalog();
         PptxRenderer renderer = renderer(catalog);

@@ -84,16 +84,25 @@ async def _project(
 
 
 def _pages(count: int = 5) -> list[dict]:
+    sections = [
+        ("平台化复盘", "介绍内部工具转为平台的背景", ["业务需求扩大", "统一能力入口"]),
+        ("使用成效", "回顾各部门的使用表现", ["活跃团队增加", "关键任务覆盖更广"]),
+        ("能力边界", "区分稳定服务与探索能力", ["明确可复用组件", "记录尚未解决的问题"]),
+        ("投入安排", "说明建设资源如何分配", ["优先保障核心运维", "安排专项研发预算"]),
+        ("推广计划", "确定后续落地的顺序", ["选择试点部门", "收集反馈后扩大应用"]),
+        ("风险管理", "识别规模化过程中的约束", ["跟踪系统容量", "制定故障处置预案"]),
+    ]
     return [
         {
             "id": str(uuid.uuid4()),
-            "title": f"第 {index} 页",
-            "objective": "说明本页的核心目标",
-            "key_points": ["要点一", "要点二"],
+            "title": title,
+            "objective": objective,
+            "key_points": points,
             "source_refs": ["S1:1"],
             "layout_id": "cover" if index == 1 else "bullets",
+            "page_role": "cover" if index == 1 else "content",
         }
-        for index in range(1, count + 1)
+        for index, (title, objective, points) in enumerate(sections[:count], start=1)
     ]
 
 
@@ -108,16 +117,7 @@ class BrokenGenerator:
 class FakeGenerator:
     async def generate(self, payload: OutlineGenerationInput) -> OutlineDraft:
         return OutlineDraft(
-            pages=[
-                OutlinePageDraft(
-                    title=f"第 {index} 页",
-                    objective="说明本页的核心目标",
-                    key_points=["要点一", "要点二"],
-                    source_refs=["S1:1"],
-                    layout_id="cover" if index == 1 else "bullets",
-                )
-                for index in range(1, payload.page_count + 1)
-            ]
+            pages=[OutlinePageDraft.model_validate(page) for page in _pages(payload.page_count)]
         )
 
 

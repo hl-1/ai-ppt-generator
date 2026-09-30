@@ -74,6 +74,15 @@ def comparable_categories(items: list[EvidenceItem]) -> list[EvidenceItem]:
     return numeric
 
 
+def comparable_metric_series(items: list[EvidenceItem]) -> list[list[EvidenceItem]]:
+    """Keep each metric and unit separate when a page compares multiple trends."""
+    groups: dict[tuple[str, str, str], list[EvidenceItem]] = {}
+    for item in items:
+        if item.value and item.metric and item.unit and item.period:
+            groups.setdefault((item.metric, item.unit, item.scope), []).append(item)
+    return [series for group in groups.values() if (series := comparable_series(group))]
+
+
 def check_evidence_conflicts(items: list[EvidenceItem]) -> list[str]:
     values: dict[tuple, set[Decimal | None]] = defaultdict(set)
     for item in items:
@@ -121,15 +130,15 @@ def prepare_page_plan(
     if topic_mode and page.visual_type != "auto":
         kind = evidence_kind_for_visual(page.visual_type) or kind
     numeric = [e for e in valid if e.value and e.metric and e.unit]
-    series = comparable_series(valid)
     categories = comparable_categories(valid)
-    if kind == "trend" and (not series or conflicts) and not topic_mode:
+    metric_series = comparable_metric_series(valid)
+    if kind == "trend" and (not metric_series or conflicts) and not topic_mode:
         notes.append("可比数据不足，已改为定性分析；补齐同指标、单位、时间与范围后可使用趋势图")
         kind = "narrative"
     if kind == "chart" and conflicts and not topic_mode:
         notes.append("图表数据存在口径冲突，已改为定性分析；请核对来源数据后再使用图表")
         kind = "narrative"
-    if kind == "chart" and not series and not categories and not topic_mode:
+    if kind == "chart" and not metric_series and not categories and not topic_mode:
         notes.append("可比数据不足，已改为定性分析；补齐时间序列或分类数据后可使用图表")
         kind = "narrative"
     if (

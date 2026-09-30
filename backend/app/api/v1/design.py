@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 
 from app.domain.content import Deck
 from app.domain.layout import Layout, load_layouts
-from app.domain.sample import load_sample_deck
+from app.domain.sample import load_financial_tech_sample, load_sample_deck
 from app.domain.theme import Theme, load_themes
 from app.domain.validation import StructureIssue, validate_deck
 from app.render.pptx import PPTX_MEDIA_TYPE, render_deck_to_pptx
@@ -64,4 +64,22 @@ def export_sample_deck(theme_id: str | None = Query(default=None)) -> StreamingR
         buffer,
         media_type=PPTX_MEDIA_TYPE,
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
+@router.get("/themes/{theme_id}/preview.pptx")
+def export_theme_preview(theme_id: str) -> StreamingResponse:
+    return export_edited_theme_preview(theme_id, load_financial_tech_sample())
+
+
+@router.post("/themes/{theme_id}/preview.pptx")
+def export_edited_theme_preview(theme_id: str, deck: Deck) -> StreamingResponse:
+    if theme_id not in load_themes():
+        raise HTTPException(status_code=404, detail=f"未知主题：{theme_id}")
+    return StreamingResponse(
+        render_deck_to_pptx(deck, theme_id),
+        media_type=PPTX_MEDIA_TYPE,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(deck.title + '.pptx')}"
+        },
     )

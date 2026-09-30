@@ -334,6 +334,36 @@ def _leaf_height_pt(leaf: FlexLeaf, ctx: _FitContext) -> float:
         series_count = 1 + len(block.lines)
         return max(_PREFERRED_HEIGHT_PT["combo_chart"], 220.0 + series_count * 18.0)
     if block.type == "cards":
+        if ctx.theme.visual_style == "financial-tech":
+            from app.domain.financial_tech import (
+                financial_tech_style,
+                panel_grid,
+                panel_header_height,
+            )
+
+            spec = financial_tech_style()
+            columns, card_width, _ = panel_grid(
+                len(block.items), ctx.widths_pt.get(block.id, SAFE_AREA_WIDTH_PT), CANVAS_HEIGHT_PT
+            )
+            title_style = merge_text_style(ctx.theme, "subtitle", block.style)
+            body_style = merge_text_style(ctx.theme, "body", block.style)
+            header = panel_header_height(
+                CANVAS_HEIGHT_PT, title_style.size_pt, title_style.line_height
+            )
+            body_height = max(
+                measure_text(
+                    item.desc,
+                    style=body_style,
+                    width_pt=max(1, card_width - 2 * spec["card_padding_pt"]),
+                    height_pt=CANVAS_HEIGHT_PT,
+                ).height_pt
+                for item in block.items
+            )
+            rows = (len(block.items) + columns - 1) // columns
+            return (
+                rows * (header + body_height * _BREATHING + 2 * spec["card_padding_pt"] + 18)
+                + (rows - 1) * spec["card_gap_pt"]
+            )
         # 横排卡片高度取最高一张的标题+描述估算
         tallest = max(
             (

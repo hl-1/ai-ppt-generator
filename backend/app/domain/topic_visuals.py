@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import random
 import re
 from collections.abc import Mapping
 
@@ -46,7 +44,7 @@ def topic_visual_evidence(
     used_signatures: set[tuple] | None = None,
 ) -> list[EvidenceItem]:
     """Extract the structured records embedded by the topic sample generator."""
-    if visual_type not in {"line", "column", "bar", "pie"}:
+    if visual_type not in {"line", "column", "bar", "pie", "combo_chart"}:
         return []
 
     records: list[EvidenceItem] = []
@@ -79,7 +77,7 @@ def topic_visual_evidence(
 
     candidates: list[list[EvidenceItem]] = []
     for items in groups.values():
-        if visual_type == "line":
+        if visual_type in {"line", "combo_chart"}:
             if len({item.period for item in items}) >= 2:
                 candidates.append(items)
         elif len({item.category for item in items}) >= 2:
@@ -94,6 +92,17 @@ def topic_visual_evidence(
             items[0].category,
         )
     )
+    if visual_type == "combo_chart":
+        for index, left in enumerate(candidates):
+            for right in candidates[index + 1 :]:
+                if (
+                    left[0].metric != right[0].metric
+                    and left[0].scope == right[0].scope
+                    and {item.period for item in left} == {item.period for item in right}
+                    and len(left) + len(right) <= 12
+                ):
+                    return [*left, *right]
+        return []
     for items in candidates:
         signature = (
             tuple((item.metric, item.category, item.period, item.value) for item in items),
@@ -118,10 +127,15 @@ def _metric_preference(visual_type: VisualType, metric: str) -> int:
 
 def _compatible_evidence(items: list[EvidenceItem], visual_type: VisualType) -> bool:
     numeric = [item for item in items if item.value and item.metric and item.unit]
+    if visual_type in {"line", "combo_chart"}:
+        from app.domain.evidence import comparable_metric_series
+
+        groups = comparable_metric_series(numeric)
+        if visual_type == "line":
+            return bool(groups) and sum(len(group) for group in groups) == len(numeric)
+        return len(groups) >= 2 and len({tuple(e.period for e in group) for group in groups}) == 1
     if len(numeric) < 2 or len({(item.metric, item.unit, item.scope) for item in numeric}) != 1:
         return False
-    if visual_type == "line":
-        return len({item.period for item in numeric if item.period}) >= 2
     return len({item.category for item in numeric if item.category}) >= 2
 
 
@@ -129,41 +143,40 @@ def normalize_topic_pages(
     pages: list[OutlinePageDraft],
     sources: Mapping[str, str],
 ) -> list[OutlinePageDraft]:
-    """Give topic samples a varied, repeatable visual rhythm."""
-    used_signatures: set[tuple] = set()
-    used_visuals: set[str] = set()
+    """Choose visual forms from the page's purpose and evidence."""
     result: list[OutlinePageDraft] = []
-    seed = "\n".join([*sources.keys(), *(page.title for page in pages)])
-    rng = random.Random(hashlib.sha256(seed.encode("utf-8")).hexdigest())
 
-    for index, page in enumerate(pages, start=1):
+    for page in pages:
         if page.page_role in {"cover", "toc", "section"}:
             result.append(page.model_copy(update={"visual_type": "auto"}))
             continue
 
         visual_type = page.visual_type
+        if visual_type == "auto" and (
+            page.page_role == "summary"
+            or page.narrative_role in {"executive_summary", "summary", "decision", "risk", "driver"}
+            or page.evidence_kind in {"kpi", "actions", "table"}
+            or (page.narrative_role == "action" and page.evidence_kind not in {"flow", "timeline"})
+        ):
+            result.append(page)
+            continue
+        page_sources = {ref: sources[ref] for ref in page.source_refs if ref in sources} or sources
         if visual_type == "auto":
-            visual_type = _suggest_visual(page, index, used_visuals, sources, rng)
-        elif visual_type in used_visuals:
-            visual_type = _suggest_visual(page, index, used_visuals, sources, rng)
+            visual_type = _suggest_visual(page, page_sources)
 
         kind = evidence_kind_for_visual(visual_type)
         evidence = page.evidence
-        if visual_type in {"line", "column", "bar", "pie"}:
+        if visual_type in {"line", "column", "bar", "pie", "combo_chart"}:
             if not _compatible_evidence(evidence, visual_type):
                 extracted = topic_visual_evidence(
-                    sources,
+                    page_sources,
                     visual_type,
-                    used_signatures=used_signatures,
                 )
                 if extracted:
                     evidence = extracted
                 elif not evidence:
                     visual_type = "auto"
                     kind = None
-        if visual_type != "auto":
-            used_visuals.add(visual_type)
-
         result.append(
             page.model_copy(
                 update={
@@ -192,14 +205,15 @@ def normalize_topic_page(
 
 def _suggest_visual(
     page: OutlinePageDraft,
-    position: int,
-    used_visuals: set[str],
     sources: Mapping[str, str],
-    rng: random.Random,
 ) -> str:
     blob = " ".join([page.title, page.objective, page.key_message, *page.key_points])
+    if any(
+        word in blob for word in ("双指标", "双线", "成熟度与采用率", "指标与率")
+    ) and topic_visual_evidence(sources, "combo_chart"):
+        return "combo_chart"
     keyword_map = (
-        (("流程", "路径", "步骤", "机制", "推进"), "flow"),
+        (("分流", "判断", "审批", "并行", "汇聚", "流程"), "flow"),
         (("阶段", "路线", "里程碑", "规划", "时间"), "timeline"),
         (("构成", "结构", "占比", "资源"), "pie"),
         (("对比", "比较", "对象", "差异", "排名"), "bar"),
@@ -207,26 +221,10 @@ def _suggest_visual(
     )
     for keywords, visual_type in keyword_map:
         if any(keyword in blob for keyword in keywords):
-            if visual_type in used_visuals:
-                continue
             if visual_type in {"line", "column", "bar", "pie"} and not topic_visual_evidence(
                 sources, visual_type
             ):
                 continue
             return visual_type
 
-    for offset in range(len(TOPIC_VISUAL_ORDER)):
-        candidate = TOPIC_VISUAL_ORDER[(position - 1 + offset) % len(TOPIC_VISUAL_ORDER)]
-        if candidate in used_visuals:
-            continue
-        if candidate in {"flow", "timeline"} or topic_visual_evidence(sources, candidate):
-            return candidate
-
-    exhausted = [
-        candidate
-        for candidate in TOPIC_VISUAL_ORDER
-        if candidate in {"flow", "timeline"} or topic_visual_evidence(sources, candidate)
-    ]
-    if exhausted:
-        return rng.choice(exhausted)
     return "auto"

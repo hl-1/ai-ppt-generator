@@ -37,11 +37,13 @@ import org.openxmlformats.schemas.drawingml.x2006.main.CTTableCell;
 import org.openxmlformats.schemas.drawingml.x2006.main.CTTableCellProperties;
 import org.openxmlformats.schemas.drawingml.x2006.main.CTTableProperties;
 import org.openxmlformats.schemas.drawingml.x2006.main.STLineCap;
+import org.openxmlformats.schemas.presentationml.x2006.main.CTShape;
 import org.springframework.stereotype.Component;
 
 import com.aippt.domain.Ambient;
 import com.aippt.domain.Colors;
 import com.aippt.domain.Geometry;
+import com.aippt.domain.FinancialTech;
 import com.aippt.domain.Geometry.Rect;
 import com.aippt.domain.Layout;
 import com.aippt.domain.SharedCatalog;
@@ -216,6 +218,9 @@ public class PptxRenderer {
             case "image" -> renderImage(ppt, page, theme, block, rect);
             case "chart" -> PptxChart.render(ppt, page, rect, block, theme);
             case "cards" -> renderCards(page, theme, block, rect);
+            case "diagram" -> {
+                if ("financial-tech".equals(theme.visualStyle())) renderFinancialDiagram(page, theme, block, rect);
+            }
             case "callout" -> renderCallout(page, theme, block, rect);
             default -> {
             }
@@ -227,7 +232,9 @@ public class PptxRenderer {
         TextTarget target = styledTextbox(page, theme, rect, Blocks.styleOf(block));
         XSLFTextParagraph paragraph = target.box.getTextParagraphs().get(0);
         PptxText.writeParagraph(paragraph, Blocks.text(block), theme, style);
-        PptxText.applyAlign(paragraph, target.align);
+        String align = target.align;
+        if ("financial-tech".equals(theme.visualStyle()) && ("title".equals(textStyle) || "display".equals(textStyle)) && align == null) align = "center";
+        PptxText.applyAlign(paragraph, align);
         fitStack(target, theme, List.of(new Line(style, Blocks.text(block))), 0);
     }
 
@@ -255,7 +262,14 @@ public class PptxRenderer {
     private void renderKpi(XSLFSlide page, Theme theme, Map<String, Object> block, Rect rect) {
         BlockStyle style = Blocks.styleOf(block);
         BlockStyle.ResolvedBox box = BlockStyle.resolveBox(theme, style);
+        if ("financial-tech".equals(theme.visualStyle())) {
+            Map<String, Object> chrome = new java.util.LinkedHashMap<>(Map.of("fill", "surface", "border_color", "line", "border_width_pt", 0.75, "radius_pt", theme.shape().radiusPt()));
+            Object rawStyle = block.get("style");
+            if (rawStyle instanceof Map<?, ?> overrides) overrides.forEach((key, value) -> { if (value != null) chrome.put(String.valueOf(key), value); });
+            box = BlockStyle.resolveBox(theme, BlockStyle.from(chrome));
+        }
         addBoxChrome(page, theme, rect, box);
+        if ("financial-tech".equals(theme.visualStyle())) addFilled(page, new Rect(rect.x(), rect.y(), rect.w(), 2 / Geometry.CANVAS_HEIGHT_PT), theme.palette().accent(), ShapeType.RECT, 0, 0, null);
         double pad = Math.max(box.paddingPt(), 14.0);
         Rect content = padded(rect, pad);
         TextTarget target = new TextTarget(addTextbox(page, content, null), style == null ? null : style.align(), content);
@@ -271,6 +285,10 @@ public class PptxRenderer {
 
     @SuppressWarnings("unchecked")
     private void renderCards(XSLFSlide page, Theme theme, Map<String, Object> block, Rect rect) {
+        if ("financial-tech".equals(theme.visualStyle())) {
+            renderFinancialCards(page, theme, block, rect);
+            return;
+        }
         Object raw = block.get("items");
         if (!(raw instanceof List<?> list) || list.isEmpty()) {
             return;
@@ -523,6 +541,112 @@ public class PptxRenderer {
         shape.setFillColor(PptxColor.rgb(color));
         shape.setLineColor(null);
         shape.setLineWidth(0);
+    }
+
+    private void renderFinancialCards(XSLFSlide page, Theme theme, Map<String, Object> block, Rect rect) {
+        JsonNode items = JsonMapperHolder.MAPPER.valueToTree(block.get("items"));
+        if (items.isEmpty()) return;
+        var grid = FinancialTech.panelGrid(items.size(), rect.w() * 960, rect.h() * 540);
+        BlockStyle style = Blocks.styleOf(block);
+        Theme.TextStyle title = BlockStyle.mergeTextStyle(theme, "subtitle", style);
+        Theme.TextStyle body = BlockStyle.mergeTextStyle(theme, "body", style);
+        double headerH = FinancialTech.headerHeight(grid.height(), title), pad = FinancialTech.spec("card_padding_pt");
+        String cyan = theme.palette().chartSeries().get(1);
+        for (int index = 0; index < items.size(); index++) {
+            JsonNode item = items.get(index);
+            Rect card = new Rect(rect.x() + (index % grid.columns()) * (grid.width() + 16) / 960,
+                    rect.y() + (index / grid.columns()) * (grid.height() + 16) / 540, grid.width() / 960, grid.height() / 540);
+            addFilled(page, card, theme.palette().surface(), ShapeType.ROUND_RECT, theme.shape().radiusPt(), 0.75, theme.palette().line());
+            double x = card.x() * 960, y = card.y() * 540, width = grid.width();
+            Path2D path = new Path2D.Double();
+            path.moveTo(x, y);
+            path.lineTo(x + width * 0.94, y); path.lineTo(x + width, y + headerH / 2);
+            path.lineTo(x + width * 0.94, y + headerH); path.lineTo(x, y + headerH);
+            path.lineTo(x + width * 0.06, y + headerH / 2); path.closePath();
+            XSLFFreeformShape chevron = page.createFreeform();
+            chevron.setPath(path);
+            String headerColor = index % 2 == 0 ? theme.palette().accent()
+                    : Colors.mixHex(theme.palette().accent(), theme.palette().accentSoft(), FinancialTech.spec("secondary_header_accent_mix"));
+            var gradient = ((CTShape) chevron.getXmlObject()).getSpPr().addNewGradFill();
+            var stops = gradient.addNewGsLst();
+            String[] headerColors = {
+                    Colors.mixHex(cyan, headerColor, FinancialTech.spec("header_highlight_mix")),
+                    Colors.mixHex(theme.palette().background(), headerColor, FinancialTech.spec("header_shade_mix"))
+            };
+            for (int stopIndex = 0; stopIndex < headerColors.length; stopIndex++) {
+                var stop = stops.addNewGs();
+                stop.setPos(stopIndex * 100000);
+                Color color = PptxColor.rgb(headerColors[stopIndex]);
+                stop.addNewSrgbClr().setVal(new byte[]{(byte) color.getRed(), (byte) color.getGreen(), (byte) color.getBlue()});
+            }
+            var linear = gradient.addNewLin();
+            linear.setAng(90 * 60000);
+            linear.setScaled(false);
+            chevron.setLineColor(null);
+            Rect header = new Rect(card.x() + 12 / 960.0, card.y() + 6 / 540.0, Math.max(1, width - 24) / 960, Math.max(1, headerH - 12) / 540);
+            TextTarget heading = new TextTarget(addTextbox(page, header, null), style != null && style.align() != null ? style.align() : "center", header);
+            heading.box.setVerticalAlignment(VerticalAlignment.MIDDLE);
+            String icon = item.path("icon").asText("");
+            String text = (icon.isBlank() ? String.format("%02d", index + 1) : icon) + "  " + item.path("title").asText();
+            writeLines(heading, theme, List.of(new Line(title, text)), 0); fitStack(heading, theme, List.of(new Line(title, text)), 0);
+            addFilled(page, new Rect(card.x() + pad / 960, card.y() + (headerH + pad) / 540, 26 / 960.0, 2 / 540.0), cyan, ShapeType.RECT, 0, 0, null);
+            Rect desc = new Rect(card.x() + pad / 960, card.y() + (headerH + pad + 14) / 540,
+                    Math.max(1, width - 2 * pad) / 960, Math.max(1, grid.height() - headerH - 2 * pad - 18) / 540);
+            TextTarget content = new TextTarget(addTextbox(page, desc, null), style == null ? null : style.align(), desc);
+            var lines = List.of(new Line(body, item.path("desc").asText()));
+            writeLines(content, theme, lines, 0); fitStack(content, theme, lines, 0);
+            addFilled(page, new Rect(card.x(), card.bottom() - 4 / 540.0, card.w(), 4 / 540.0), index % 2 == 0 ? theme.palette().accent() : cyan, ShapeType.RECT, 0, 0, null);
+        }
+    }
+
+    private void renderFinancialDiagram(XSLFSlide page, Theme theme, Map<String, Object> block, Rect rect) {
+        JsonNode nodes = JsonMapperHolder.MAPPER.valueToTree(block.get("nodes"));
+        JsonNode edges = JsonMapperHolder.MAPPER.valueToTree(block.getOrDefault("edges", List.of()));
+        if (nodes.isEmpty()) return;
+        var platform = FinancialTech.platform(nodes, edges, rect);
+        String cyan = theme.palette().chartSeries().get(1);
+        if (platform.hub() != null) {
+            var ring = addFilled(page, new Rect(rect.x() + rect.w() * 0.3, rect.y() + rect.h() * 0.16, rect.w() * 0.4, rect.h() * 0.68), theme.palette().background(), ShapeType.ELLIPSE, 0, 1, theme.palette().line());
+            ring.setFillColor(null);
+        }
+        for (JsonNode edge : edges) {
+            Rect a = platform.rects().get(edge.path("source").asText()), b = platform.rects().get(edge.path("target").asText());
+            if (a == null || b == null) continue;
+            double dx = (b.x() + b.w() / 2 - a.x() - a.w() / 2) * 960;
+            double dy = (b.y() + b.h() / 2 - a.y() - a.h() / 2) * 540;
+            double scaleA = 0.5 / Math.max(Math.max(Math.abs(dx) / (a.w() * 960), Math.abs(dy) / (a.h() * 540)), 0.001);
+            double scaleB = 0.5 / Math.max(Math.max(Math.abs(dx) / (b.w() * 960), Math.abs(dy) / (b.h() * 540)), 0.001);
+            double x1 = (a.x() + a.w() / 2) * 960 + dx * scaleA, y1 = (a.y() + a.h() / 2) * 540 + dy * scaleA;
+            double x2 = (b.x() + b.w() / 2) * 960 - dx * scaleB, y2 = (b.y() + b.h() / 2) * 540 - dy * scaleB;
+            var connector = page.createConnector();
+            connector.setAnchor(new Rectangle2D.Double(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1)));
+            connector.setFlipHorizontal(x1 > x2); connector.setFlipVertical(y1 > y2);
+            connector.setLineColor(PptxColor.rgb(cyan)); connector.setLineWidth(1.5);
+            connector.setLineTailDecoration(org.apache.poi.sl.usermodel.LineDecoration.DecorationShape.TRIANGLE);
+            if (!edge.path("label").asText("").isBlank()) {
+                Rect label = new Rect(Math.max(rect.x(), ((x1 + x2) / 2 - 40) / 960), Math.max(rect.y(), ((y1 + y2) / 2 - 16) / 540), Math.min(rect.w(), 80 / 960.0), 16 / 540.0);
+                TextTarget text = new TextTarget(addTextbox(page, label, null), "center", label);
+                var lines = List.of(new Line(theme.textStyle("caption"), edge.path("label").asText()));
+                writeLines(text, theme, lines, 0); fitStack(text, theme, lines, 0);
+            }
+        }
+        BlockStyle style = Blocks.styleOf(block);
+        for (JsonNode node : nodes) {
+            Rect box = platform.rects().get(node.path("id").asText());
+            boolean central = node.path("id").asText().equals(platform.hub());
+            String border = "risk".equals(node.path("status").asText()) ? theme.palette().chartSeries().get(2) : cyan;
+            addFilled(page, box, central || "active".equals(node.path("status").asText()) ? theme.palette().accentSoft() : theme.palette().surface(), ShapeType.ROUND_RECT, theme.shape().radiusPt(), central ? 1.5 : 0.75, border);
+            addFilled(page, new Rect(box.x() + 12 / 960.0, box.y(), Math.min(24 / 960.0, box.w() * 0.3), 2 / 540.0), border, ShapeType.RECT, 0, 0, null);
+            Rect content = padded(box, 12);
+            TextTarget target = new TextTarget(addTextbox(page, content, null), "center", content);
+            target.box.setVerticalAlignment(VerticalAlignment.MIDDLE);
+            Theme.TextStyle title = BlockStyle.mergeTextStyle(theme, "subtitle", style);
+            if (central && (style == null || style.color() == null)) title = new Theme.TextStyle(title.font(), title.sizePt(), title.lineHeight(), title.weight(), title.letterSpacingPt(), theme.textStyle("title").color(), title.italic());
+            List<Line> lines = new ArrayList<>();
+            lines.add(new Line(title, node.path("title").asText()));
+            if (!node.path("desc").asText("").isBlank()) lines.add(new Line(BlockStyle.mergeTextStyle(theme, "body", style), node.path("desc").asText()));
+            writeLines(target, theme, lines, 6); fitStack(target, theme, lines, 6);
+        }
     }
 
     private record Line(Theme.TextStyle style, String content) {

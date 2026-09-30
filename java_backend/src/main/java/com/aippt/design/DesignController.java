@@ -9,6 +9,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,6 +34,21 @@ public class DesignController {
 
     private final SharedCatalog catalog;
     private final PptxRenderer pptxRenderer;
+
+    @GetMapping("/themes/{themeId}/preview.pptx")
+    public ResponseEntity<byte[]> themePreview(@PathVariable String themeId) throws java.io.IOException {
+        return editedThemePreview(themeId, com.aippt.shared.json.JsonMapperHolder.MAPPER.readTree(
+                com.aippt.shared.config.RepoPaths.sharedDir().resolve("financial-tech-sample.json").toFile()));
+    }
+
+    @PostMapping("/themes/{themeId}/preview.pptx")
+    public ResponseEntity<byte[]> editedThemePreview(@PathVariable String themeId, @RequestBody JsonNode deck) {
+        catalog.requireTheme(themeId);
+        String filename = URLEncoder.encode(deck.path("title").asText("deck") + ".pptx", StandardCharsets.UTF_8).replace("+", "%20");
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(PptxRenderer.PPTX_MEDIA_TYPE))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + filename)
+                .body(pptxRenderer.render(deck, themeId));
+    }
 
     @GetMapping("/layouts")
     public List<Layout> layouts() {

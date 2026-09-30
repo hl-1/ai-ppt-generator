@@ -145,6 +145,7 @@ def build_slide_workflow(generator: SlideGenerator):
                 plan,
                 layout_template=payload.layout_template,
                 curate=enterprise,
+                decision_request=payload.blueprint.decision_request,
             )
         # 生成期先定列宽再定行高：宽度决定折行，折行决定自然高度。
         # 两步都放在校验之前，让溢出/容量告警反映的是最终版面。
@@ -164,7 +165,17 @@ def build_slide_workflow(generator: SlideGenerator):
         if enterprise:
             issues.extend(check_planned_data(slide, plan))
         issues.extend(check_page_readability(slide))
-        issues.extend(check_evidence_alignment(slide, payload.evidence_kind))
+        issues.extend(
+            check_evidence_alignment(
+                slide,
+                payload.evidence_kind,
+                summary_metrics=payload.visual_type == "auto"
+                and (
+                    payload.page_role == "summary"
+                    or payload.narrative_role in {"executive_summary", "summary", "decision"}
+                ),
+            )
+        )
         issues.extend(
             check_slide_richness(
                 slide,
@@ -180,9 +191,7 @@ def build_slide_workflow(generator: SlideGenerator):
     async def repair(state: SlideWorkflowState) -> dict:
         topic_mode = state["input"].topic_mode
         repairable = [
-            issue
-            for issue in state["issues"]
-            if is_repair_worthy(issue, topic_mode=topic_mode)
+            issue for issue in state["issues"] if is_repair_worthy(issue, topic_mode=topic_mode)
         ]
         messages = [_describe(issue) for issue in repairable]
         repaired = state["input"].model_copy(

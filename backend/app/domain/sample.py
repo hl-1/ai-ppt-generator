@@ -15,3 +15,9 @@ def load_sample_deck() -> Deck:
     以及溢出回归集的种子，因此必须保持对布局的完整覆盖。
     """
     return Deck.model_validate(json.loads(SAMPLE_DECK_PATH.read_text(encoding="utf-8")))
+
+
+@lru_cache
+def load_financial_tech_sample() -> Deck:
+    path = SHARED_DIR / "financial-tech-sample.json"
+    return Deck.model_validate(json.loads(path.read_text(encoding="utf-8")))

@@ -8,6 +8,8 @@ import {
 import { ChartView } from '@/render/ChartView'
 import { DiagramView } from '@/render/DiagramView'
 import { EditableText } from '@/render/EditableText'
+import { FinancialCardsView } from '@/render/FinancialTechViews'
+import { isFinancialTech } from '@/render/financialTech'
 import { pt, resolveColor } from '@/render/style'
 import type {
   Block,
@@ -43,6 +45,9 @@ interface BlockProps<T> {
 function TextView({ block, slot, theme, editable, onCommit, onSelect }: BlockProps<TextBlock>) {
   const styleName = slot.text_style ?? 'body'
   const style = mergeTextCss(theme, styleName, block.style)
+  if (isFinancialTech(theme) && (styleName === 'title' || styleName === 'display')) {
+    style.textAlign = block.style?.align ?? 'center'
+  }
   const chrome = boxCss(theme, block.style)
   const shell: CSSProperties = {
     ...chrome,
@@ -360,6 +365,14 @@ function KpiView({ block, theme, editable, onCommit, onSelect }: BlockProps<KpiB
     paddingBlock: pt(8),
     overflow: 'hidden',
   }
+  if (isFinancialTech(theme)) {
+    shell.background = block.style?.fill === 'none' ? undefined : chrome.background ?? resolveColor(theme, 'surface')
+    shell.border = chrome.border ?? `${pt(0.75)} solid ${resolveColor(theme, 'line')}`
+    shell.borderTop = `${pt(2)} solid ${resolveColor(theme, 'accent')}`
+    shell.borderRadius = chrome.borderRadius ?? pt(theme.shape.radius_pt)
+    shell.paddingBlock = pt(14)
+    shell.gap = pt(6)
+  }
   const valueCss = {
     ...valueStyle,
     whiteSpace: 'nowrap' as const,
@@ -410,7 +423,9 @@ const CARD_GAP_PT = 16
 const CARD_PAD_PT = 12
 const CARD_MIN_WIDTH_PT = 96
 
-function CardsView({ block, theme, editable, onCommit, onSelect }: BlockProps<CardsBlock>) {
+function CardsView({ block, slot, theme, editable, onCommit, onSelect }: BlockProps<CardsBlock>) {
+  if (isFinancialTech(theme)) return <FinancialCardsView block={block} slot={slot} theme={theme}
+    editable={editable} onCommit={onCommit} onSelect={onSelect} />
   const titleStyle = mergeTextCss(theme, 'subtitle', block.style)
   const descStyle = mergeTextCss(theme, 'body', block.style)
   const chrome = boxCss(theme, block.style)

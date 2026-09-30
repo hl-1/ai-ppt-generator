@@ -29,29 +29,14 @@ def _page(visual_type: str = "auto") -> OutlinePageDraft:
     )
 
 
-def test_topic_auto_visuals_rotate_and_bind_distinct_data() -> None:
+def test_topic_auto_visuals_do_not_inject_unrelated_sample_charts() -> None:
     sources = _topic_sources()
     pages = normalize_topic_pages([_page() for _ in range(6)], sources)
 
-    assert [page.visual_type for page in pages] == [
-        "line",
-        "column",
-        "pie",
-        "bar",
-        "flow",
-        "timeline",
-    ]
-    assert [page.evidence_kind for page in pages] == [
-        "trend",
-        "comparison",
-        "composition",
-        "comparison",
-        "flow",
-        "timeline",
-    ]
-    assert pages[1].evidence != pages[2].evidence
+    assert all(page.visual_type == "auto" for page in pages)
+    assert all(page.evidence == [] for page in pages)
     prepared = [prepare_page_plan(page, sources, topic_mode=True) for page in pages]
-    assert prepared[1].evidence != prepared[3].evidence
+    assert all(page.evidence == [] for page in prepared)
 
 
 def test_topic_selected_pie_is_not_downgraded_or_replaced() -> None:

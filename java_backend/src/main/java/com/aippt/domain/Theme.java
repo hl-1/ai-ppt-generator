@@ -16,9 +16,13 @@ public record Theme(
         Fonts fonts,
         Map<String, TextStyle> textStyles,
         Shape shape,
-        List<JsonNode> ambient
+        List<JsonNode> ambient,
+        String visualStyle
 ) {
     public Theme {
+        if (visualStyle == null) {
+            visualStyle = "standard";
+        }
         if (ambient == null) {
             ambient = List.of();
         }
@@ -138,7 +142,7 @@ public record Theme(
                     raw.get("bullet_marker") == null ? shape.bulletMarker() : String.valueOf(raw.get("bullet_marker"))
             );
         }
-        return new Theme(id, name, description, nextPalette, nextFonts, nextStyles, nextShape, ambient);
+        return new Theme(id, name, description, nextPalette, nextFonts, nextStyles, nextShape, ambient, visualStyle);
     }
 
     private static String str(Object value, String fallback) {

@@ -96,7 +96,17 @@ def slide_evidence_map(project: Project, slides: list[Slide]) -> dict[str, str]:
     """每页的大纲证据形态，供导出前检查核对“承诺的图表是否真的存在”。"""
     pages = _page_by_outline_id(project)
     return {
-        str(slide.id): getattr(pages[slide.outline_page_id], "evidence_kind", "narrative")
+        str(slide.id): (
+            "kpi"
+            if pages[slide.outline_page_id].visual_type == "auto"
+            and (
+                pages[slide.outline_page_id].page_role == "summary"
+                or pages[slide.outline_page_id].narrative_role
+                in {"executive_summary", "summary", "decision"}
+            )
+            and pages[slide.outline_page_id].evidence_kind in {"trend", "chart"}
+            else pages[slide.outline_page_id].evidence_kind
+        )
         for slide in slides
         if slide.status == "ready" and slide.outline_page_id in pages
     }

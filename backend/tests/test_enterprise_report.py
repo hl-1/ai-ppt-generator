@@ -668,9 +668,9 @@ def test_chart_page_drops_table_and_cards():
 
     assert [block.type for block in result.blocks] == ["text", "chart", "text"]
     stage = result.layout_tree.children[1]
-    assert isinstance(stage, FlexContainer)
-    assert stage.type == "overlay"
-    assert iter_leaf_block_ids(stage) == ["chart", "insight"]
+    assert isinstance(stage, FlexLeaf)
+    assert stage.type == "block"
+    assert iter_leaf_block_ids(result.layout_tree) == ["title", "chart", "insight"]
 
 
 def test_chart_page_moves_long_support_to_speaker_notes_instead_of_fourth_band():
@@ -679,7 +679,7 @@ def test_chart_page_moves_long_support_to_speaker_notes_instead_of_fourth_band()
         "决策请求：确认下一阶段推进方向与资源安排。建议按照明确目标、盘点现状、"
         "设计方案、试点验证、规模推广五步推进，并对应 2026Q3 方向确认、"
         "2026Q4 方案设计、2027Q1 试点运行、2027Q2 加速推广的节奏。"
-    )
+    ) * 3
     blocks = [
         TextBlock(id="title", slot_id="title", text="方案比较"),
         ChartBlock(
@@ -705,12 +705,11 @@ def test_chart_page_moves_long_support_to_speaker_notes_instead_of_fourth_band()
 
     result = compose_report_slide(source, page)
 
-    assert [block.id for block in result.blocks] == ["title", "chart"]
+    assert [block.id for block in result.blocks] == ["title", "chart", "report-insights"]
     assert result.layout_tree.children[0].block_id == "title"
     stage = result.layout_tree.children[1]
-    assert isinstance(stage, FlexContainer)
-    assert stage.type == "overlay"
-    assert iter_leaf_block_ids(stage) == ["chart"]
+    assert stage.type == "block"
+    assert iter_leaf_block_ids(result.layout_tree) == ["title", "chart", "report-insights"]
     assert result.speaker_notes is not None
     assert "未放入画布的补充说明" in result.speaker_notes
     assert "决策请求" in result.speaker_notes

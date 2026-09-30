@@ -123,6 +123,7 @@ class Theme(BaseModel):
     shape: Shape
     # 氛围层：每页自动铺的装饰母题，换主题就换一套气质
     ambient: list[AmbientMotif] = []
+    visual_style: Literal["standard", "financial-tech"] = "standard"
 
     def color(self, token: str) -> str:
         # 元素覆盖可能把 color 写成 hex，渲染时透传即可

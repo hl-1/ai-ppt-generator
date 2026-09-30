@@ -329,7 +329,8 @@ class DeepSeekOutlineGenerator:
             visual_options += "、waterfall、combo_chart"
         visual_guidance = (
             "先判断数据关系再选：时间变化用 line，分类比较用 bar/column，部分占整体用 pie，"
-            "只有真实分支、判断或并行关系用 flow；线性步骤和阶段里程碑用并列卡片，timeline 禁止用箭头串联；"
+            "只有真实分支、判断或并行关系用 flow；线性步骤和阶段里程碑用并列卡片，"
+            "timeline 禁止用箭头串联；"
         )
         if "table" in self._layout_ids:
             visual_guidance += "财务明细对照用 financial_table；"
@@ -378,6 +379,10 @@ class DeepSeekOutlineGenerator:
             "timeline 节点不得用连线或箭头串联。\n"
             "12. 区分事实、推断、建议和预测；不把相关性写成因果。"
             "总结回应核心问题，并在材料支持时列出下一步或待决策事项。\n"
+            "13. 摘要页覆盖核心判断与关键结果，决策页覆盖建议、依据、取舍和决策请求；"
+            "这两类页面的 visual_type 通常为 auto，避免重复使用前文图表。"
+            "目录只列章节名和一句短说明。趋势结论涉及两个指标时，evidence 同时保留两组完整数据；"
+            "同单位可多系列折线，不同单位可用 combo_chart 或分图展示。\n"
             f"{multi_slot_rule}\n"
             f"{_VISUAL_RULE}"
         )

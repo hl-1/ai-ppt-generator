@@ -6,6 +6,7 @@ import AuthPage from '@/pages/AuthPage'
 import CreatePage from '@/pages/CreatePage'
 import ProjectDetailPage from '@/pages/ProjectDetailPage'
 import ProjectsPage from '@/pages/ProjectsPage'
+import ThemePreviewPage from '@/pages/ThemePreviewPage'
 import { RequireAuth } from '@/routes/RequireAuth'
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<AuthPage />} />
+        <Route path="/themes/:themeId" element={<ThemePreviewPage />} />
 
         <Route
           element={

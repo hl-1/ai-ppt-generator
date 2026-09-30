@@ -1,0 +1,13 @@
+{
+  "card_min_width_pt": 176,
+  "card_max_columns": 4,
+  "card_gap_pt": 16,
+  "card_padding_pt": 14,
+  "header_min_height_pt": 48,
+  "header_padding_pt": 12,
+  "header_highlight_mix": 0.26,
+  "header_shade_mix": 0.18,
+  "secondary_header_accent_mix": 0.4,
+  "node_gap_pt": 20,
+  "node_padding_pt": 12
+}

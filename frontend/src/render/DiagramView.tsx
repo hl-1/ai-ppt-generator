@@ -1,5 +1,7 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { EditableText } from '@/render/EditableText'
+import { FinancialDiagramView } from '@/render/FinancialTechViews'
+import { isFinancialTech } from '@/render/financialTech'
 import { resolveColor, pt } from '@/render/style'
 import { flowLevels, hasBranchingEdges, normalizeFlowEdges } from '@/render/diagramTopology'
 import {
@@ -194,7 +196,8 @@ export function DiagramView({
     () => normalizeFlowEdges(block.diagram_type, block.nodes, block.edges),
     [block.diagram_type, block.nodes, block.edges],
   )
-  const mermaidSource = block.diagram_type === 'timeline'
+  const financial = isFinancialTech(theme) && block.diagram_type !== 'timeline'
+  const mermaidSource = block.diagram_type === 'timeline' || financial
     ? ''
     : block.diagram_type === 'flow'
       ? generatedMermaid(block, renderEdges)
@@ -209,7 +212,7 @@ export function DiagramView({
     let cancelled = false
     setMermaidSvg(null)
     setMermaidError(false)
-    if (block.diagram_type === 'timeline') {
+    if (block.diagram_type === 'timeline' || financial) {
       setMermaidError(true)
       return () => {
         cancelled = true
@@ -245,7 +248,10 @@ export function DiagramView({
       cancelled = true
       document.getElementById(mermaidId)?.remove()
     }
-  }, [block.diagram_type, mermaidId, mermaidSource, theme])
+  }, [block.diagram_type, mermaidId, mermaidSource, theme, financial])
+
+  if (financial) return <FinancialDiagramView block={block} slot={slot} theme={theme}
+    editable={editable} onCommit={onCommit} onSelect={onSelect} edges={renderEdges} />
 
   if (!mermaidError && block.diagram_type !== 'timeline') {
     return (

@@ -1,0 +1,1861 @@
+{
+  "diagrams": [
+    {
+      "nodes": [
+        {
+          "id": "hub",
+          "title": "综合服务平台",
+          "desc": "统一客户与服务入口",
+          "status": "active"
+        },
+        {
+          "id": "wealth",
+          "title": "财富管理",
+          "desc": "资产配置与专属服务",
+          "status": "default"
+        },
+        {
+          "id": "family",
+          "title": "家族传承",
+          "desc": "家族治理与财富传承",
+          "status": "default"
+        },
+        {
+          "id": "finance",
+          "title": "企业金融",
+          "desc": "融资与结算服务",
+          "status": "default"
+        },
+        {
+          "id": "employee",
+          "title": "员工关怀",
+          "desc": "薪酬与福利服务",
+          "status": "default"
+        },
+        {
+          "id": "ecosystem",
+          "title": "生态合作",
+          "desc": "跨机构资源协同",
+          "status": "default"
+        },
+        {
+          "id": "risk",
+          "title": "风险管理",
+          "desc": "安全与合规保障",
+          "status": "default"
+        }
+      ],
+      "edges": [
+        {
+          "source": "hub",
+          "target": "wealth",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "family",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "finance",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "employee",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "ecosystem",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "risk",
+          "label": null
+        }
+      ],
+      "width": 856,
+      "height": 320,
+      "hub": "hub",
+      "rects": {
+        "hub": {
+          "x": 303.88,
+          "y": 105.0,
+          "w": 248.24,
+          "h": 110.0
+        },
+        "wealth": {
+          "x": 0.0,
+          "y": 8.0,
+          "w": 222.56,
+          "h": 88.0
+        },
+        "family": {
+          "x": 633.44,
+          "y": 8.0,
+          "w": 222.56,
+          "h": 88.0
+        },
+        "finance": {
+          "x": 0.0,
+          "y": 116.0,
+          "w": 222.56,
+          "h": 88.0
+        },
+        "employee": {
+          "x": 633.44,
+          "y": 116.0,
+          "w": 222.56,
+          "h": 88.0
+        },
+        "ecosystem": {
+          "x": 0.0,
+          "y": 224.0,
+          "w": 222.56,
+          "h": 88.0
+        },
+        "risk": {
+          "x": 633.44,
+          "y": 224.0,
+          "w": 222.56,
+          "h": 88.0
+        }
+      }
+    },
+    {
+      "nodes": [
+        {
+          "id": "hub",
+          "title": "综合服务平台",
+          "desc": "统一客户与服务入口",
+          "status": "active"
+        },
+        {
+          "id": "wealth",
+          "title": "财富管理",
+          "desc": "资产配置与专属服务",
+          "status": "default"
+        },
+        {
+          "id": "family",
+          "title": "家族传承",
+          "desc": "家族治理与财富传承",
+          "status": "default"
+        },
+        {
+          "id": "finance",
+          "title": "企业金融",
+          "desc": "融资与结算服务",
+          "status": "default"
+        },
+        {
+          "id": "employee",
+          "title": "员工关怀",
+          "desc": "薪酬与福利服务",
+          "status": "default"
+        },
+        {
+          "id": "ecosystem",
+          "title": "生态合作",
+          "desc": "跨机构资源协同",
+          "status": "default"
+        },
+        {
+          "id": "risk",
+          "title": "风险管理",
+          "desc": "安全与合规保障",
+          "status": "default"
+        }
+      ],
+      "edges": [
+        {
+          "source": "hub",
+          "target": "wealth",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "family",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "finance",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "employee",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "ecosystem",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "risk",
+          "label": null
+        }
+      ],
+      "width": 300,
+      "height": 240,
+      "hub": null,
+      "rects": {
+        "hub": {
+          "x": 0.0,
+          "y": 0.0,
+          "w": 300.0,
+          "h": 66.66666666666667
+        },
+        "wealth": {
+          "x": 0.0,
+          "y": 86.66666666666667,
+          "w": 60.0,
+          "h": 66.66666666666667
+        },
+        "family": {
+          "x": 80.0,
+          "y": 86.66666666666667,
+          "w": 60.0,
+          "h": 66.66666666666667
+        },
+        "finance": {
+          "x": 160.0,
+          "y": 86.66666666666667,
+          "w": 60.0,
+          "h": 66.66666666666667
+        },
+        "employee": {
+          "x": 240.0,
+          "y": 86.66666666666667,
+          "w": 60.0,
+          "h": 66.66666666666667
+        },
+        "ecosystem": {
+          "x": 0.0,
+          "y": 173.33333333333334,
+          "w": 140.0,
+          "h": 66.66666666666667
+        },
+        "risk": {
+          "x": 160.0,
+          "y": 173.33333333333334,
+          "w": 140.0,
+          "h": 66.66666666666667
+        }
+      }
+    },
+    {
+      "nodes": [
+        {
+          "id": "hub",
+          "title": "综合服务平台",
+          "desc": "统一客户与服务入口",
+          "status": "active"
+        },
+        {
+          "id": "wealth",
+          "title": "财富管理",
+          "desc": "资产配置与专属服务",
+          "status": "default"
+        },
+        {
+          "id": "family",
+          "title": "家族传承",
+          "desc": "家族治理与财富传承",
+          "status": "default"
+        },
+        {
+          "id": "finance",
+          "title": "企业金融",
+          "desc": "融资与结算服务",
+          "status": "default"
+        },
+        {
+          "id": "employee",
+          "title": "员工关怀",
+          "desc": "薪酬与福利服务",
+          "status": "default"
+        },
+        {
+          "id": "ecosystem",
+          "title": "生态合作",
+          "desc": "跨机构资源协同",
+          "status": "default"
+        },
+        {
+          "id": "risk",
+          "title": "风险管理",
+          "desc": "安全与合规保障",
+          "status": "default"
+        }
+      ],
+      "edges": [
+        {
+          "source": "hub",
+          "target": "wealth",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "family",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "finance",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "employee",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "ecosystem",
+          "label": null
+        },
+        {
+          "source": "hub",
+          "target": "risk",
+          "label": null
+        }
+      ],
+      "width": 650,
+      "height": 180,
+      "hub": null,
+      "rects": {
+        "hub": {
+          "x": 0.0,
+          "y": 0.0,
+          "w": 650.0,
+          "h": 46.666666666666664
+        },
+        "wealth": {
+          "x": 0.0,
+          "y": 66.66666666666666,
+          "w": 147.5,
+          "h": 46.666666666666664
+        },
+        "family": {
+          "x": 167.5,
+          "y": 66.66666666666666,
+          "w": 147.5,
+          "h": 46.666666666666664
+        },
+        "finance": {
+          "x": 335.0,
+          "y": 66.66666666666666,
+          "w": 147.5,
+          "h": 46.666666666666664
+        },
+        "employee": {
+          "x": 502.5,
+          "y": 66.66666666666666,
+          "w": 147.5,
+          "h": 46.666666666666664
+        },
+        "ecosystem": {
+          "x": 0.0,
+          "y": 133.33333333333331,
+          "w": 315.0,
+          "h": 46.666666666666664
+        },
+        "risk": {
+          "x": 335.0,
+          "y": 133.33333333333331,
+          "w": 315.0,
+          "h": 46.666666666666664
+        }
+      }
+    },
+    {
+      "nodes": [
+        {
+          "id": "entry",
+          "title": "统一服务入口",
+          "desc": "企业端 · 员工端 · 客户端",
+          "status": "active"
+        },
+        {
+          "id": "crm",
+          "title": "客户运营",
+          "desc": "客户画像与服务触达",
+          "status": "default"
+        },
+        {
+          "id": "products",
+          "title": "产品服务",
+          "desc": "产品组合与方案匹配",
+          "status": "default"
+        },
+        {
+          "id": "partners",
+          "title": "生态协同",
+          "desc": "资源连接与协同交付",
+          "status": "default"
+        },
+        {
+          "id": "data",
+          "title": "数据与风控底座",
+          "desc": "数据治理 · 统一身份 · 合规审计",
+          "status": "default"
+        }
+      ],
+      "edges": [
+        {
+          "source": "entry",
+          "target": "crm",
+          "label": null
+        },
+        {
+          "source": "entry",
+          "target": "products",
+          "label": null
+        },
+        {
+          "source": "entry",
+          "target": "partners",
+          "label": null
+        },
+        {
+          "source": "crm",
+          "target": "data",
+          "label": null
+        },
+        {
+          "source": "products",
+          "target": "data",
+          "label": null
+        },
+        {
+          "source": "partners",
+          "target": "data",
+          "label": null
+        }
+      ],
+      "width": 856,
+      "height": 320,
+      "hub": null,
+      "rects": {
+        "entry": {
+          "x": 0.0,
+          "y": 0.0,
+          "w": 856.0,
+          "h": 93.33333333333333
+        },
+        "crm": {
+          "x": 0.0,
+          "y": 113.33333333333333,
+          "w": 272.0,
+          "h": 93.33333333333333
+        },
+        "products": {
+          "x": 292.0,
+          "y": 113.33333333333333,
+          "w": 272.0,
+          "h": 93.33333333333333
+        },
+        "partners": {
+          "x": 584.0,
+          "y": 113.33333333333333,
+          "w": 272.0,
+          "h": 93.33333333333333
+        },
+        "data": {
+          "x": 0.0,
+          "y": 226.66666666666666,
+          "w": 856.0,
+          "h": 93.33333333333333
+        }
+      }
+    },
+    {
+      "nodes": [
+        {
+          "id": "entry",
+          "title": "统一服务入口",
+          "desc": "企业端 · 员工端 · 客户端",
+          "status": "active"
+        },
+        {
+          "id": "crm",
+          "title": "客户运营",
+          "desc": "客户画像与服务触达",
+          "status": "default"
+        },
+        {
+          "id": "products",
+          "title": "产品服务",
+          "desc": "产品组合与方案匹配",
+          "status": "default"
+        },
+        {
+          "id": "partners",
+          "title": "生态协同",
+          "desc": "资源连接与协同交付",
+          "status": "default"
+        },
+        {
+          "id": "data",
+          "title": "数据与风控底座",
+          "desc": "数据治理 · 统一身份 · 合规审计",
+          "status": "default"
+        }
+      ],
+      "edges": [
+        {
+          "source": "entry",
+          "target": "crm",
+          "label": null
+        },
+        {
+          "source": "entry",
+          "target": "products",
+          "label": null
+        },
+        {
+          "source": "entry",
+          "target": "partners",
+          "label": null
+        },
+        {
+          "source": "crm",
+          "target": "data",
+          "label": null
+        },
+        {
+          "source": "products",
+          "target": "data",
+          "label": null
+        },
+        {
+          "source": "partners",
+          "target": "data",
+          "label": null
+        }
+      ],
+      "width": 300,
+      "height": 240,
+      "hub": null,
+      "rects": {
+        "entry": {
+          "x": 0.0,
+          "y": 0.0,
+          "w": 300.0,
+          "h": 66.66666666666667
+        },
+        "crm": {
+          "x": 0.0,
+          "y": 86.66666666666667,
+          "w": 86.66666666666667,
+          "h": 66.66666666666667
+        },
+        "products": {
+          "x": 106.66666666666667,
+          "y": 86.66666666666667,
+          "w": 86.66666666666667,
+          "h": 66.66666666666667
+        },
+        "partners": {
+          "x": 213.33333333333334,
+          "y": 86.66666666666667,
+          "w": 86.66666666666667,
+          "h": 66.66666666666667
+        },
+        "data": {
+          "x": 0.0,
+          "y": 173.33333333333334,
+          "w": 300.0,
+          "h": 66.66666666666667
+        }
+      }
+    },
+    {
+      "nodes": [
+        {
+          "id": "entry",
+          "title": "统一服务入口",
+          "desc": "企业端 · 员工端 · 客户端",
+          "status": "active"
+        },
+        {
+          "id": "crm",
+          "title": "客户运营",
+          "desc": "客户画像与服务触达",
+          "status": "default"
+        },
+        {
+          "id": "products",
+          "title": "产品服务",
+          "desc": "产品组合与方案匹配",
+          "status": "default"
+        },
+        {
+          "id": "partners",
+          "title": "生态协同",
+          "desc": "资源连接与协同交付",
+          "status": "default"
+        },
+        {
+          "id": "data",
+          "title": "数据与风控底座",
+          "desc": "数据治理 · 统一身份 · 合规审计",
+          "status": "default"
+        }
+      ],
+      "edges": [
+        {
+          "source": "entry",
+          "target": "crm",
+          "label": null
+        },
+        {
+          "source": "entry",
+          "target": "products",
+          "label": null
+        },
+        {
+          "source": "entry",
+          "target": "partners",
+          "label": null
+        },
+        {
+          "source": "crm",
+          "target": "data",
+          "label": null
+        },
+        {
+          "source": "products",
+          "target": "data",
+          "label": null
+        },
+        {
+          "source": "partners",
+          "target": "data",
+          "label": null
+        }
+      ],
+      "width": 650,
+      "height": 180,
+      "hub": null,
+      "rects": {
+        "entry": {
+          "x": 0.0,
+          "y": 0.0,
+          "w": 650.0,
+          "h": 46.666666666666664
+        },
+        "crm": {
+          "x": 0.0,
+          "y": 66.66666666666666,
+          "w": 203.33333333333334,
+          "h": 46.666666666666664
+        },
+        "products": {
+          "x": 223.33333333333334,
+          "y": 66.66666666666666,
+          "w": 203.33333333333334,
+          "h": 46.666666666666664
+        },
+        "partners": {
+          "x": 446.6666666666667,
+          "y": 66.66666666666666,
+          "w": 203.33333333333334,
+          "h": 46.666666666666664
+        },
+        "data": {
+          "x": 0.0,
+          "y": 133.33333333333331,
+          "w": 650.0,
+          "h": 46.666666666666664
+        }
+      }
+    },
+    {
+      "nodes": [
+        {
+          "id": "0",
+          "title": "0",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "1",
+          "title": "1",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "2",
+          "title": "2",
+          "desc": "",
+          "status": "default"
+        }
+      ],
+      "edges": [
+        {
+          "source": "0",
+          "target": "1",
+          "label": null
+        },
+        {
+          "source": "0",
+          "target": "2",
+          "label": null
+        },
+        {
+          "source": "1",
+          "target": "2",
+          "label": null
+        },
+        {
+          "source": "2",
+          "target": "1",
+          "label": null
+        }
+      ],
+      "width": 856,
+      "height": 320,
+      "hub": null,
+      "rects": {
+        "0": {
+          "x": 0.0,
+          "y": 0.0,
+          "w": 272.0,
+          "h": 320.0
+        },
+        "1": {
+          "x": 292.0,
+          "y": 0.0,
+          "w": 272.0,
+          "h": 320.0
+        },
+        "2": {
+          "x": 584.0,
+          "y": 0.0,
+          "w": 272.0,
+          "h": 320.0
+        }
+      }
+    },
+    {
+      "nodes": [
+        {
+          "id": "0",
+          "title": "0",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "1",
+          "title": "1",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "2",
+          "title": "2",
+          "desc": "",
+          "status": "default"
+        }
+      ],
+      "edges": [
+        {
+          "source": "0",
+          "target": "1",
+          "label": null
+        },
+        {
+          "source": "0",
+          "target": "2",
+          "label": null
+        },
+        {
+          "source": "1",
+          "target": "2",
+          "label": null
+        },
+        {
+          "source": "2",
+          "target": "1",
+          "label": null
+        }
+      ],
+      "width": 300,
+      "height": 240,
+      "hub": null,
+      "rects": {
+        "0": {
+          "x": 0.0,
+          "y": 0.0,
+          "w": 86.66666666666667,
+          "h": 240.0
+        },
+        "1": {
+          "x": 106.66666666666667,
+          "y": 0.0,
+          "w": 86.66666666666667,
+          "h": 240.0
+        },
+        "2": {
+          "x": 213.33333333333334,
+          "y": 0.0,
+          "w": 86.66666666666667,
+          "h": 240.0
+        }
+      }
+    },
+    {
+      "nodes": [
+        {
+          "id": "0",
+          "title": "0",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "1",
+          "title": "1",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "2",
+          "title": "2",
+          "desc": "",
+          "status": "default"
+        }
+      ],
+      "edges": [
+        {
+          "source": "0",
+          "target": "1",
+          "label": null
+        },
+        {
+          "source": "0",
+          "target": "2",
+          "label": null
+        },
+        {
+          "source": "1",
+          "target": "2",
+          "label": null
+        },
+        {
+          "source": "2",
+          "target": "1",
+          "label": null
+        }
+      ],
+      "width": 650,
+      "height": 180,
+      "hub": null,
+      "rects": {
+        "0": {
+          "x": 0.0,
+          "y": 0.0,
+          "w": 203.33333333333334,
+          "h": 180.0
+        },
+        "1": {
+          "x": 223.33333333333334,
+          "y": 0.0,
+          "w": 203.33333333333334,
+          "h": 180.0
+        },
+        "2": {
+          "x": 446.6666666666667,
+          "y": 0.0,
+          "w": 203.33333333333334,
+          "h": 180.0
+        }
+      }
+    },
+    {
+      "nodes": [
+        {
+          "id": "0",
+          "title": "0",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "1",
+          "title": "1",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "2",
+          "title": "2",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "3",
+          "title": "3",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "4",
+          "title": "4",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "5",
+          "title": "5",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "6",
+          "title": "6",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "7",
+          "title": "7",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "8",
+          "title": "8",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "9",
+          "title": "9",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "10",
+          "title": "10",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "11",
+          "title": "11",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "12",
+          "title": "12",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "13",
+          "title": "13",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "14",
+          "title": "14",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "15",
+          "title": "15",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "16",
+          "title": "16",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "17",
+          "title": "17",
+          "desc": "",
+          "status": "default"
+        }
+      ],
+      "edges": [
+        {
+          "source": "0",
+          "target": "1",
+          "label": null
+        },
+        {
+          "source": "1",
+          "target": "2",
+          "label": null
+        },
+        {
+          "source": "2",
+          "target": "3",
+          "label": null
+        },
+        {
+          "source": "3",
+          "target": "4",
+          "label": null
+        },
+        {
+          "source": "4",
+          "target": "5",
+          "label": null
+        },
+        {
+          "source": "5",
+          "target": "6",
+          "label": null
+        },
+        {
+          "source": "6",
+          "target": "7",
+          "label": null
+        },
+        {
+          "source": "7",
+          "target": "8",
+          "label": null
+        },
+        {
+          "source": "8",
+          "target": "9",
+          "label": null
+        },
+        {
+          "source": "9",
+          "target": "10",
+          "label": null
+        },
+        {
+          "source": "10",
+          "target": "11",
+          "label": null
+        },
+        {
+          "source": "11",
+          "target": "12",
+          "label": null
+        },
+        {
+          "source": "12",
+          "target": "13",
+          "label": null
+        },
+        {
+          "source": "13",
+          "target": "14",
+          "label": null
+        },
+        {
+          "source": "14",
+          "target": "15",
+          "label": null
+        },
+        {
+          "source": "15",
+          "target": "16",
+          "label": null
+        },
+        {
+          "source": "16",
+          "target": "17",
+          "label": null
+        }
+      ],
+      "width": 856,
+      "height": 320,
+      "hub": null,
+      "rects": {
+        "0": {
+          "x": 0.0,
+          "y": 0.0,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "1": {
+          "x": 0.0,
+          "y": 18.271604938271604,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "2": {
+          "x": 0.0,
+          "y": 36.54320987654321,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "3": {
+          "x": 0.0,
+          "y": 54.81481481481481,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "4": {
+          "x": 0.0,
+          "y": 73.08641975308642,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "5": {
+          "x": 0.0,
+          "y": 91.35802469135803,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "6": {
+          "x": 0.0,
+          "y": 109.62962962962962,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "7": {
+          "x": 0.0,
+          "y": 127.90123456790123,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "8": {
+          "x": 0.0,
+          "y": 146.17283950617283,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "9": {
+          "x": 0.0,
+          "y": 164.44444444444443,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "10": {
+          "x": 0.0,
+          "y": 182.71604938271605,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "11": {
+          "x": 0.0,
+          "y": 200.98765432098764,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "12": {
+          "x": 0.0,
+          "y": 219.25925925925924,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "13": {
+          "x": 0.0,
+          "y": 237.53086419753086,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "14": {
+          "x": 0.0,
+          "y": 255.80246913580245,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "15": {
+          "x": 0.0,
+          "y": 274.0740740740741,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "16": {
+          "x": 0.0,
+          "y": 292.34567901234567,
+          "w": 856.0,
+          "h": 9.382716049382715
+        },
+        "17": {
+          "x": 0.0,
+          "y": 310.61728395061726,
+          "w": 856.0,
+          "h": 9.382716049382715
+        }
+      }
+    },
+    {
+      "nodes": [
+        {
+          "id": "0",
+          "title": "0",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "1",
+          "title": "1",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "2",
+          "title": "2",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "3",
+          "title": "3",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "4",
+          "title": "4",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "5",
+          "title": "5",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "6",
+          "title": "6",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "7",
+          "title": "7",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "8",
+          "title": "8",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "9",
+          "title": "9",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "10",
+          "title": "10",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "11",
+          "title": "11",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "12",
+          "title": "12",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "13",
+          "title": "13",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "14",
+          "title": "14",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "15",
+          "title": "15",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "16",
+          "title": "16",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "17",
+          "title": "17",
+          "desc": "",
+          "status": "default"
+        }
+      ],
+      "edges": [
+        {
+          "source": "0",
+          "target": "1",
+          "label": null
+        },
+        {
+          "source": "1",
+          "target": "2",
+          "label": null
+        },
+        {
+          "source": "2",
+          "target": "3",
+          "label": null
+        },
+        {
+          "source": "3",
+          "target": "4",
+          "label": null
+        },
+        {
+          "source": "4",
+          "target": "5",
+          "label": null
+        },
+        {
+          "source": "5",
+          "target": "6",
+          "label": null
+        },
+        {
+          "source": "6",
+          "target": "7",
+          "label": null
+        },
+        {
+          "source": "7",
+          "target": "8",
+          "label": null
+        },
+        {
+          "source": "8",
+          "target": "9",
+          "label": null
+        },
+        {
+          "source": "9",
+          "target": "10",
+          "label": null
+        },
+        {
+          "source": "10",
+          "target": "11",
+          "label": null
+        },
+        {
+          "source": "11",
+          "target": "12",
+          "label": null
+        },
+        {
+          "source": "12",
+          "target": "13",
+          "label": null
+        },
+        {
+          "source": "13",
+          "target": "14",
+          "label": null
+        },
+        {
+          "source": "14",
+          "target": "15",
+          "label": null
+        },
+        {
+          "source": "15",
+          "target": "16",
+          "label": null
+        },
+        {
+          "source": "16",
+          "target": "17",
+          "label": null
+        }
+      ],
+      "width": 300,
+      "height": 240,
+      "hub": null,
+      "rects": {
+        "0": {
+          "x": 0.0,
+          "y": 0.0,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "1": {
+          "x": 0.0,
+          "y": 13.703703703703702,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "2": {
+          "x": 0.0,
+          "y": 27.407407407407405,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "3": {
+          "x": 0.0,
+          "y": 41.11111111111111,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "4": {
+          "x": 0.0,
+          "y": 54.81481481481481,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "5": {
+          "x": 0.0,
+          "y": 68.5185185185185,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "6": {
+          "x": 0.0,
+          "y": 82.22222222222221,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "7": {
+          "x": 0.0,
+          "y": 95.92592592592592,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "8": {
+          "x": 0.0,
+          "y": 109.62962962962962,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "9": {
+          "x": 0.0,
+          "y": 123.33333333333331,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "10": {
+          "x": 0.0,
+          "y": 137.037037037037,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "11": {
+          "x": 0.0,
+          "y": 150.74074074074073,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "12": {
+          "x": 0.0,
+          "y": 164.44444444444443,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "13": {
+          "x": 0.0,
+          "y": 178.14814814814812,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "14": {
+          "x": 0.0,
+          "y": 191.85185185185185,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "15": {
+          "x": 0.0,
+          "y": 205.55555555555554,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "16": {
+          "x": 0.0,
+          "y": 219.25925925925924,
+          "w": 300.0,
+          "h": 7.037037037037036
+        },
+        "17": {
+          "x": 0.0,
+          "y": 232.96296296296293,
+          "w": 300.0,
+          "h": 7.037037037037036
+        }
+      }
+    },
+    {
+      "nodes": [
+        {
+          "id": "0",
+          "title": "0",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "1",
+          "title": "1",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "2",
+          "title": "2",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "3",
+          "title": "3",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "4",
+          "title": "4",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "5",
+          "title": "5",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "6",
+          "title": "6",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "7",
+          "title": "7",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "8",
+          "title": "8",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "9",
+          "title": "9",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "10",
+          "title": "10",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "11",
+          "title": "11",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "12",
+          "title": "12",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "13",
+          "title": "13",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "14",
+          "title": "14",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "15",
+          "title": "15",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "16",
+          "title": "16",
+          "desc": "",
+          "status": "default"
+        },
+        {
+          "id": "17",
+          "title": "17",
+          "desc": "",
+          "status": "default"
+        }
+      ],
+      "edges": [
+        {
+          "source": "0",
+          "target": "1",
+          "label": null
+        },
+        {
+          "source": "1",
+          "target": "2",
+          "label": null
+        },
+        {
+          "source": "2",
+          "target": "3",
+          "label": null
+        },
+        {
+          "source": "3",
+          "target": "4",
+          "label": null
+        },
+        {
+          "source": "4",
+          "target": "5",
+          "label": null
+        },
+        {
+          "source": "5",
+          "target": "6",
+          "label": null
+        },
+        {
+          "source": "6",
+          "target": "7",
+          "label": null
+        },
+        {
+          "source": "7",
+          "target": "8",
+          "label": null
+        },
+        {
+          "source": "8",
+          "target": "9",
+          "label": null
+        },
+        {
+          "source": "9",
+          "target": "10",
+          "label": null
+        },
+        {
+          "source": "10",
+          "target": "11",
+          "label": null
+        },
+        {
+          "source": "11",
+          "target": "12",
+          "label": null
+        },
+        {
+          "source": "12",
+          "target": "13",
+          "label": null
+        },
+        {
+          "source": "13",
+          "target": "14",
+          "label": null
+        },
+        {
+          "source": "14",
+          "target": "15",
+          "label": null
+        },
+        {
+          "source": "15",
+          "target": "16",
+          "label": null
+        },
+        {
+          "source": "16",
+          "target": "17",
+          "label": null
+        }
+      ],
+      "width": 650,
+      "height": 180,
+      "hub": null,
+      "rects": {
+        "0": {
+          "x": 0.0,
+          "y": 0.0,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "1": {
+          "x": 0.0,
+          "y": 10.277777777777779,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "2": {
+          "x": 0.0,
+          "y": 20.555555555555557,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "3": {
+          "x": 0.0,
+          "y": 30.833333333333336,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "4": {
+          "x": 0.0,
+          "y": 41.111111111111114,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "5": {
+          "x": 0.0,
+          "y": 51.38888888888889,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "6": {
+          "x": 0.0,
+          "y": 61.66666666666667,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "7": {
+          "x": 0.0,
+          "y": 71.94444444444446,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "8": {
+          "x": 0.0,
+          "y": 82.22222222222223,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "9": {
+          "x": 0.0,
+          "y": 92.5,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "10": {
+          "x": 0.0,
+          "y": 102.77777777777779,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "11": {
+          "x": 0.0,
+          "y": 113.05555555555557,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "12": {
+          "x": 0.0,
+          "y": 123.33333333333334,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "13": {
+          "x": 0.0,
+          "y": 133.61111111111111,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "14": {
+          "x": 0.0,
+          "y": 143.8888888888889,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "15": {
+          "x": 0.0,
+          "y": 154.16666666666669,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "16": {
+          "x": 0.0,
+          "y": 164.44444444444446,
+          "w": 650.0,
+          "h": 5.277777777777778
+        },
+        "17": {
+          "x": 0.0,
+          "y": 174.72222222222223,
+          "w": 650.0,
+          "h": 5.277777777777778
+        }
+      }
+    }
+  ],
+  "panels": [
+    {
+      "count": 1,
+      "width": 120,
+      "height": 320,
+      "expected": [
+        1,
+        120.0,
+        320.0
+      ]
+    },
+    {
+      "count": 4,
+      "width": 856,
+      "height": 320,
+      "expected": [
+        4,
+        202.0,
+        320.0
+      ]
+    },
+    {
+      "count": 6,
+      "width": 520,
+      "height": 320,
+      "expected": [
+        2,
+        252.0,
+        96.0
+      ]
+    },
+    {
+      "count": 9,
+      "width": 350,
+      "height": 320,
+      "expected": [
+        1,
+        350.0,
+        21.333333333333332
+      ]
+    }
+  ]
+}

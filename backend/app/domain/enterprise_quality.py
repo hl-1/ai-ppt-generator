@@ -8,7 +8,7 @@ from app.domain.content import Deck, Slide
 from app.domain.evidence import (
     check_evidence_conflicts,
     comparable_categories,
-    comparable_series,
+    comparable_metric_series,
     evidence_problem,
 )
 from app.domain.outline import DeckBlueprint, OutlinePage, OutlinePageDraft, ReportBrief
@@ -20,21 +20,34 @@ from app.domain.validation import StructureIssue
 def check_planned_data(slide: Slide, plan: OutlinePageDraft) -> list[StructureIssue]:
     """核对固定/灵活布局及人工改动后的结构化数据，不能只在生成时验证。"""
     issues = []
-    series = comparable_series(plan.evidence)
     categories = comparable_categories(plan.evidence)
+    metric_series = comparable_metric_series(plan.evidence)
     for block in slide.blocks:
         matches = True
         if block.type == "chart":
-            planned = series if block.chart_type == "line" else categories
-            matches = bool(planned) and (
-                block.categories
-                == [e.period if block.chart_type == "line" else e.category for e in planned]
-                and block.unit == planned[0].unit
-                and len(block.series) == 1
-                and block.series[0].name == planned[0].metric
-                and block.series[0].values
-                == [float(e.value.replace(",", "").rstrip("%％")) for e in planned]
-            )
+            if block.chart_type == "line":
+                matches = bool(block.series) and all(
+                    any(
+                        block.categories == [item.period for item in group]
+                        and block.unit == group[0].unit
+                        and chart_series.name == group[0].metric
+                        and chart_series.values
+                        == [float(item.value.rstrip("%％").replace(",", "")) for item in group]
+                        for group in metric_series
+                    )
+                    for chart_series in block.series
+                )
+            else:
+                planned = categories
+                matches = bool(planned) and (
+                    block.categories
+                    == [e.period if block.chart_type == "line" else e.category for e in planned]
+                    and block.unit == planned[0].unit
+                    and len(block.series) == 1
+                    and block.series[0].name == planned[0].metric
+                    and block.series[0].values
+                    == [float(e.value.replace(",", "").rstrip("%％")) for e in planned]
+                )
         elif block.type == "kpi":
             matches = any(
                 e.value
@@ -53,6 +66,29 @@ def check_planned_data(slide: Slide, plan: OutlinePageDraft) -> list[StructureIs
                     slot_id=block.id,
                     code="evidence_data_mismatch",
                     message="图表或指标与已绑定证据的数值、指标、单位或时间不一致，请核对后再导出",
+                )
+            )
+    if plan.evidence_kind in {"trend", "chart"} and plan.visual_type in {"auto", "line"}:
+        expected = {group[0].metric for group in metric_series}
+        displayed = {
+            series.name
+            for block in slide.blocks
+            if block.type == "chart"
+            for series in block.series
+        }
+        if plan.visual_type == "auto" and (
+            plan.page_role == "summary"
+            or plan.narrative_role in {"executive_summary", "summary", "decision"}
+        ):
+            displayed.update(block.label for block in slide.blocks if block.type == "kpi")
+        if missing := expected - displayed:
+            issues.append(
+                StructureIssue(
+                    severity="error",
+                    slide_id=slide.id,
+                    slot_id=None,
+                    code="evidence_metric_missing",
+                    message=f"大纲中的趋势指标未完整展示：{'、'.join(sorted(missing))}",
                 )
             )
     return issues

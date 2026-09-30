@@ -13,8 +13,10 @@ from app.domain.content import (
     Block,
     CardsBlock,
     ChartBlock,
+    ComboChartBlock,
     Deck,
     DiagramBlock,
+    FinancialTableBlock,
     KpiBlock,
     Slide,
     TableBlock,
@@ -255,7 +257,9 @@ def check_empty_phrases(slide: Slide) -> list[StructureIssue]:
     ]
 
 
-def check_evidence_alignment(slide: Slide, evidence_kind: str | None) -> list[StructureIssue]:
+def check_evidence_alignment(
+    slide: Slide, evidence_kind: str | None, *, summary_metrics: bool = False
+) -> list[StructureIssue]:
     """检查大纲承诺的证据形态是否真的落到了页面。
 
     这是企业汇报里很容易被忽略的一层：页面标题说“趋势”，正文却只剩一段
@@ -264,10 +268,13 @@ def check_evidence_alignment(slide: Slide, evidence_kind: str | None) -> list[St
     """
     kind = evidence_kind or "narrative"
     blocks = slide.blocks
+    chart_present = any(isinstance(block, (ChartBlock, ComboChartBlock)) for block in blocks)
+    if summary_metrics and kind in {"trend", "chart"}:
+        chart_present = chart_present or any(isinstance(block, KpiBlock) for block in blocks)
     checks: dict[str, tuple[bool, str]] = {
         "kpi": (any(isinstance(block, KpiBlock) for block in blocks), "应包含 KPI 指标块"),
-        "trend": (any(isinstance(block, ChartBlock) for block in blocks), "应包含趋势图表块"),
-        "chart": (any(isinstance(block, ChartBlock) for block in blocks), "应包含图表块"),
+        "trend": (chart_present, "应包含趋势图表块"),
+        "chart": (chart_present, "应包含图表块"),
         "composition": (
             any(
                 isinstance(block, ChartBlock) and block.chart_type in {"pie", "bar", "column"}
@@ -275,13 +282,16 @@ def check_evidence_alignment(slide: Slide, evidence_kind: str | None) -> list[St
             ),
             "应包含构成或分类比较图表",
         ),
-        "comparison": (any(isinstance(block, ChartBlock) for block in blocks), "应包含对比图表"),
+        "comparison": (chart_present, "应包含对比图表"),
         "flow": (any(isinstance(block, DiagramBlock) for block in blocks), "应包含流程图"),
         "timeline": (
             any(isinstance(block, DiagramBlock) for block in blocks),
             "应包含阶段时间轴",
         ),
-        "table": (any(isinstance(block, TableBlock) for block in blocks), "应包含结构化表格"),
+        "table": (
+            any(isinstance(block, (TableBlock, FinancialTableBlock)) for block in blocks),
+            "应包含结构化表格",
+        ),
         "actions": (
             any(isinstance(block, (TableBlock, CardsBlock)) for block in blocks),
             "应包含行动表格或行动卡片",

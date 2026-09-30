@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Check, RotateCcw } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { Button } from '@/components/ui/Button'
 import { useUpdateProjectTheme } from '@/features/projects/api'
 import type { ProjectDetail } from '@/features/projects/types'
@@ -145,6 +146,7 @@ export function ThemePanel({
         <h3 id={titleId} className="text-sm font-semibold tracking-tight">
           主题与样式
         </h3>
+        <Link to={`/themes/${themeId}`} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-accent">查看主题示例</Link>
         <p className="mt-1 text-xs leading-relaxed text-ink-muted">
           先选一套预设，再微调颜色、字体与字号；导出 PPTX 会使用相同样式
         </p>

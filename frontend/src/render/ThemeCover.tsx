@@ -1,4 +1,5 @@
 import { resolveColor, textStyleToCss } from '@/render/style'
+import { isFinancialTech, panelHeaderBackground } from '@/render/financialTech'
 import { CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, type Theme } from '@/render/types'
 
 /**
@@ -10,6 +11,26 @@ import { CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, type Theme } from '@/render/types'
 export function ThemeCover({ theme, title }: { theme: Theme; title: string }) {
   const display = textStyleToCss(theme, 'title')
   const caption = textStyleToCss(theme, 'caption')
+
+  if (isFinancialTech(theme)) {
+    return <div style={{ containerType: 'size', position: 'relative', width: '100%',
+      aspectRatio: `${CANVAS_WIDTH_PT} / ${CANVAS_HEIGHT_PT}`, background: theme.palette.background,
+      overflow: 'hidden', padding: '7% 8%', boxSizing: 'border-box' }}>
+      <div style={{ ...caption, fontSize: '3.4cqw', textAlign: 'center', marginBottom: '4cqh' }}>{theme.name}</div>
+      <div style={{ ...display, fontSize: '7cqw', lineHeight: 1.3, textAlign: 'center',
+        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+        height: '20cqh', overflowWrap: 'anywhere' }}>{title}</div>
+      <div aria-hidden style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '2cqw', height: '32cqh', marginTop: '5cqh' }}>
+        {[0, 1, 2, 3].map((index) => <div key={index} style={{ background: theme.palette.surface, border: `1px solid ${theme.palette.line}` }}>
+          <div style={{ height: '7cqh', background: panelHeaderBackground(theme, index),
+            clipPath: 'polygon(0 0, 90% 0, 100% 50%, 90% 100%, 0 100%, 10% 50%)' }} />
+          <div style={{ height: '1cqh', width: '60%', margin: '5cqh auto 0', background: theme.palette.ink_soft }} />
+          <div style={{ height: '1cqh', width: '45%', margin: '3cqh auto 0', background: theme.palette.ink_muted }} />
+        </div>)}
+      </div>
+      <div aria-hidden style={{ position: 'absolute', bottom: '7%', left: '8%', right: '8%', height: '1cqh', background: theme.palette.accent }} />
+    </div>
+  }
 
   return (
     <div

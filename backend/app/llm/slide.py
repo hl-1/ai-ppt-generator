@@ -322,6 +322,21 @@ def _page_directives(payload: SlideGenerationInput) -> str:
         "正文围绕 objective、key_message 和 key_points 展开，保留各要点的含义、数字和口径；"
         "不得替换成其他主题或其他页面的内容。"
     )
+    if payload.page_role == "toc":
+        rules.append(
+            "目录使用简短章节标题和一句说明，章节标题不超过 16 字，说明不超过 32 字；"
+            "标题置顶，目录项按编号纵向或两列排列。"
+        )
+    elif payload.narrative_role in {"executive_summary", "summary", "decision"}:
+        rules.append(
+            "本页呈现核心判断、2–3 项支撑结果和下一步；决策页明确呈现 blueprint 中的决策请求、"
+            "建议、依据与取舍。负责人、期限和资源金额只使用材料中已给定的信息。"
+        )
+    if payload.evidence_kind in {"trend", "chart", "comparison", "composition"}:
+        rules.append(
+            "图表必须覆盖本页 evidence 中与结论相关的各指标；不同单位分别成图或使用组合图。"
+            "提供 2–3 条具体解读，分别说明结果、业务影响和材料支持的下一步，使用短句。"
+        )
     if payload.visual_hint:
         rules.append(
             f"本页必须包含且仅包含一个 image 块，alt 严格写成「{payload.visual_hint}」，"

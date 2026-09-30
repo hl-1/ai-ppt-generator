@@ -24,6 +24,16 @@ class LayoutTemplate:
 
 
 _TEMPLATE_POOLS = {
+    "agenda": (
+        LayoutTemplate("agenda_list", "目录标题在顶部，下方编号清单，每项只保留短标题和一句说明"),
+    ),
+    "executive": (LayoutTemplate("executive_results", "先给核心判断，再呈现关键结果和业务影响"),),
+    "decision": (
+        LayoutTemplate("decision_close", "呈现建议、依据和明确的待决策事项，不使用无关图表"),
+    ),
+    "summary": (
+        LayoutTemplate("summary_results", "收束已证明的结论，并列结果与下一步，底部给出决策诉求"),
+    ),
     "opening": (
         LayoutTemplate("opening_stack", "封面、目录或章节页以标题为主，辅助信息纵向排列"),
         LayoutTemplate("opening_split_left", "封面、目录或章节页以标题为主，辅助信息靠左排列"),
@@ -160,6 +170,15 @@ def _fixed_layout_candidates(page: OutlinePageDraft) -> list[str]:
 
 
 def _template_group(page: OutlinePageDraft, *, topic_mode: bool = False) -> str:
+    if page.page_role == "toc":
+        return "agenda"
+    if page.visual_type == "auto" and not page.visual:
+        if page.narrative_role == "decision":
+            return "decision"
+        if page.page_role == "summary" or page.narrative_role == "summary":
+            return "summary"
+        if page.narrative_role == "executive_summary":
+            return "executive"
     if topic_mode and page.page_role in {"cover", "toc", "section"}:
         return "opening"
     if (
@@ -171,11 +190,7 @@ def _template_group(page: OutlinePageDraft, *, topic_mode: bool = False) -> str:
         return "opening"
     if page.evidence_kind == "kpi":
         return "metrics"
-    if (
-        page.visual
-        or page.visual_type != "auto"
-        or page.evidence_kind in _VISUAL_EVIDENCE_KINDS
-    ):
+    if page.visual or page.visual_type != "auto" or page.evidence_kind in _VISUAL_EVIDENCE_KINDS:
         return "visual"
     return "narrative"
 
@@ -185,11 +200,7 @@ def _template_rhythm(template: LayoutTemplate) -> str:
 
 
 TOPIC_LAYOUT_CAPACITY = len(
-    {
-        _template_rhythm(template)
-        for pool in _TEMPLATE_POOLS.values()
-        for template in pool
-    }
+    {_template_rhythm(template) for pool in _TEMPLATE_POOLS.values() for template in pool}
 )
 
 
@@ -238,12 +249,12 @@ def skeleton_hint(
     """
     if page_role in {"cover", "toc", "section"}:
         return None
-    if evidence_kind in _EVIDENCE_SKELETONS:
-        return _EVIDENCE_SKELETONS[evidence_kind]
     if narrative_role == "decision":
         return _DECISION_SKELETON
     if narrative_role == "executive_summary" or narrative_role == "summary":
         return _SUMMARY_SKELETON
+    if evidence_kind in _EVIDENCE_SKELETONS:
+        return _EVIDENCE_SKELETONS[evidence_kind]
     if page_role != "content":
         return None
     if has_visual:
