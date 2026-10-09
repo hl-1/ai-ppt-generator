@@ -81,9 +81,11 @@ async def get_preview_page(
     page_number: int,
     project: OwnedProject,
 ) -> Response:
-    if not re.fullmatch(r"[a-f0-9]{64}", fingerprint) or not 1 <= page_number <= 40:
+    if not re.fullmatch(r"[a-f0-9]{64}", fingerprint) or page_number < 1:
         raise HTTPException(status_code=404, detail="预览不存在")
     key = preview_key(project.user_id, project.id, fingerprint)
+    if page_number > load_preview_status(key).get("page_count", 0):
+        raise HTTPException(status_code=404, detail="预览不存在")
     try:
         data = get_storage().load(f"{key}/{page_number}.png")
     except FileNotFoundError as error:

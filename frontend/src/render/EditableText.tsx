@@ -291,7 +291,7 @@ export function EditableText({
         // 单行用 inline，避免表格单元格 / KPI 数值被 inline-block 撑成独立块导致跳动
         display: multiline ? 'block' : 'inline',
         whiteSpace: multiline ? 'pre-wrap' : undefined,
-        wordBreak: multiline ? 'break-word' : undefined,
+        wordBreak: style?.wordBreak ?? (multiline ? 'break-word' : undefined),
       }}
       onFocus={() => {
         focusedRef.current = true

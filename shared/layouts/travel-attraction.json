@@ -1,0 +1,11 @@
+{
+  "id": "travel-attraction", "name": "景点攻略", "usage": "官方要点、真实照片与体验建议",
+  "slots": [
+    {"id": "title", "accepts": ["text"], "text_style": "title", "rect": {"x": 0.06, "y": 0.06, "w": 0.88, "h": 0.13}},
+    {"id": "table", "accepts": ["table"], "rect": {"x": 0.06, "y": 0.22, "w": 0.58, "h": 0.64}},
+    {"id": "image", "accepts": ["image"], "rect": {"x": 0.68, "y": 0.22, "w": 0.26, "h": 0.22}},
+    {"id": "body", "accepts": ["bullets"], "text_style": "body", "rect": {"x": 0.68, "y": 0.47, "w": 0.26, "h": 0.39}},
+    {"id": "footer", "accepts": ["text"], "text_style": "caption", "rect": {"x": 0.06, "y": 0.90, "w": 0.88, "h": 0.05}}
+  ],
+  "decorations": []
+}

@@ -40,12 +40,17 @@ class DeepSeekSlideGenerator:
             raise TypeError("需要 model 或 chat")
 
     async def generate(self, payload: SlideGenerationInput) -> SlideDraft | FlexSlideDraft:
+        if payload.travel_context and payload.travel_page:
+            from app.services.travel_page_render import render_travel_page
+
+            return render_travel_page(payload)
         if payload.travel_context:
             from app.services.travel_slides import (
                 booking_slide,
                 conditions_slide,
                 is_itinerary_page,
                 itinerary_slide,
+                video_advice_slide,
             )
 
             if is_itinerary_page(payload.page_title):
@@ -54,6 +59,8 @@ class DeepSeekSlideGenerator:
                 return conditions_slide(payload)
             if payload.page_title == "预约待办与出发前核对":
                 return booking_slide(payload)
+            if payload.page_title == "住宿、餐饮与游览建议":
+                return video_advice_slide(payload)
         if (
             payload.travel_context
             and payload.page_role == "cover"

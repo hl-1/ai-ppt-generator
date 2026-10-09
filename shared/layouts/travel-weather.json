@@ -1,0 +1,10 @@
+{
+  "id": "travel-weather", "name": "旅行天气与空气质量", "usage": "对应日期预报、当前实况和准备建议",
+  "slots": [
+    {"id": "title", "accepts": ["text"], "text_style": "title", "rect": {"x": 0.06, "y": 0.06, "w": 0.88, "h": 0.12}},
+    {"id": "table", "accepts": ["table"], "rect": {"x": 0.06, "y": 0.21, "w": 0.88, "h": 0.48}},
+    {"id": "body", "accepts": ["bullets"], "text_style": "body", "required": false, "rect": {"x": 0.06, "y": 0.72, "w": 0.88, "h": 0.17}},
+    {"id": "footer", "accepts": ["text"], "text_style": "caption", "rect": {"x": 0.06, "y": 0.93, "w": 0.88, "h": 0.04}}
+  ],
+  "decorations": []
+}

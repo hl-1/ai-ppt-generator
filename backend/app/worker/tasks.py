@@ -426,6 +426,8 @@ async def _save_completed(
             raise ValueError("生成期间输入已修改，请重新生成大纲")
 
         outline.pages = [page.model_dump(mode="json") for page in pages]
+        if travel_research_id:
+            project.page_count = len(pages)
         outline.blueprint = blueprint or {}
         outline.input_signature = input_signature
         outline.travel_research_id = travel_research_id

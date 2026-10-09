@@ -53,7 +53,7 @@ async def test_projects_require_authentication(client: AsyncClient) -> None:
 async def test_page_count_outside_range_is_rejected(client: AsyncClient) -> None:
     headers = await _sign_up(client)
     response = await client.post(
-        "/api/v1/projects", json={"title": "太长了", "page_count": 40}, headers=headers
+        "/api/v1/projects", json={"title": "太长了", "page_count": 81}, headers=headers
     )
     assert response.status_code == 422
 

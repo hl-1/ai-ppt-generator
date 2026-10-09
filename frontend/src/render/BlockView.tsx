@@ -258,8 +258,13 @@ function ImageView({ block, theme }: BlockProps<ImageBlock>) {
 }
 
 function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<TableBlock>) {
-  const headerStyle = mergeTextCss(theme, 'table_header', block.style)
-  const cellStyle = mergeTextCss(theme, 'table_cell', block.style)
+  const wrapping: CSSProperties = {
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'normal',
+    overflowWrap: 'normal',
+  }
+  const headerStyle = { ...mergeTextCss(theme, 'table_header', block.style), ...wrapping }
+  const cellStyle = { ...mergeTextCss(theme, 'table_cell', block.style), ...wrapping }
   const border = `${pt(theme.shape.border_width_pt)} solid ${resolveColor(theme, 'line')}`
   const cellPadding: CSSProperties = { padding: `${pt(9)} ${pt(12)}`, textAlign: 'left' }
   if (block.style?.align) {
@@ -279,7 +284,6 @@ function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ta
                 ...cellPadding,
                 borderBottom: `${pt(1.5)} solid ${resolveColor(theme, 'accent')}`,
                 overflow: 'hidden',
-                overflowWrap: 'break-word',
               }}
             >
               {editable && onCommit ? (
@@ -311,7 +315,6 @@ function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ta
                   ...cellPadding,
                   borderBottom: border,
                   overflow: 'hidden',
-                  overflowWrap: 'break-word',
                 }}
               >
                 {editable && onCommit ? (

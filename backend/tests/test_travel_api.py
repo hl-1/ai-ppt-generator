@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import httpx
@@ -7,10 +8,14 @@ from sqlalchemy import select
 
 from app.api.deps import get_queue
 from app.core.db import async_session_factory
+from app.llm.slide import DeepSeekSlideGenerator
 from app.main import app
 from app.models.project import Project
-from app.schemas.travel import ResearchData
+from app.schemas.travel import ResearchData, TravelConditions, TravelFact, TravelPlace, TravelSource
+from app.services.travel_planning import build_travel_plan
 from app.services.travel_research import create_research, execute_research
+from app.worker.deck_tasks import generate_deck
+from app.worker.tasks import generate_outline
 
 
 @pytest.fixture
@@ -144,6 +149,72 @@ async def test_research_records_are_isolated_between_users(client):
     assert response.status_code == 404
 
 
+@pytest.mark.parametrize("page_count, expected", [(6, 1), (10, 5)])
+async def test_research_queries_only_attractions_within_page_budget(
+    client, monkeypatch, page_count, expected
+):
+    from app.core.config import Settings
+    from app.services.travel_providers import TravelProviders
+
+    monkeypatch.setattr(
+        "app.services.travel_research.get_settings",
+        lambda: Settings(
+            _env_file=None,
+            llm_api_key="",
+            amap_api_key="",
+            qweather_api_host="",
+            qweather_api_key="",
+            firecrawl_api_key="",
+        ),
+    )
+    limits = []
+
+    async def places(self, city, keyword, *, limit=8, hotel=False, near=None):
+        if hotel or near:
+            return []
+        limits.append(limit)
+        return [
+            TravelPlace(
+                id=f"p{index}", name=f"景点{index}", location="116.397,39.917", source_id="R1"
+            )
+            for index in range(limit)
+        ]
+
+    monkeypatch.setattr(TravelProviders, "places", places)
+    headers, project = await create_trip(client)
+    response = await client.patch(
+        f"/api/v1/projects/{project['id']}",
+        headers=headers,
+        json={
+            "page_count": page_count,
+            "travel_conditions": {
+                "destination": "北京",
+                "confirmed": True,
+                "video_preferences": {"enabled": False},
+            },
+        },
+    )
+    assert response.status_code == 200
+    async with async_session_factory() as session:
+        model = await session.get(Project, uuid.UUID(project["id"]))
+        research = await create_research(session, model)
+        research_id = research.id
+    await execute_research(research_id)
+    response = await client.get(
+        f"/api/v1/projects/{project['id']}/travel/research", headers=headers
+    )
+    assert limits == [expected]
+    assert len(response.json()["data"]["places"]) == expected
+    response = await client.patch(
+        f"/api/v1/projects/{project['id']}", headers=headers, json={"page_count": 8}
+    )
+    assert response.status_code == 200
+    response = await client.get(
+        f"/api/v1/projects/{project['id']}/travel/research", headers=headers
+    )
+    assert response.json()["stale"] is True
+
+
 async def test_refresh_version_invalidates_outline_signature(client):
     from app.services.outline_inputs import project_input_signature
 
@@ -159,3 +230,113 @@ async def test_refresh_version_invalidates_outline_signature(client):
         second = await create_research(session, model)
         assert second.version == first.version + 1
         assert project_input_signature(model) != signature
+
+
+async def test_travel_workers_render_compact_pages_from_saved_research(client, monkeypatch):
+    queue = AsyncMock()
+    app.dependency_overrides[get_queue] = lambda: queue
+    monkeypatch.setattr("app.api.v1.outlines.publish_outline_event", AsyncMock())
+    monkeypatch.setattr("app.worker.tasks.publish_outline_event", AsyncMock())
+    try:
+        headers, project = await create_trip(client)
+        project_id = project["id"]
+        async with async_session_factory() as session:
+            model = await session.get(Project, uuid.UUID(project_id))
+            research = await create_research(session, model)
+            data = ResearchData(
+                places=[
+                    TravelPlace(id="palace", name="故宫", source_id="R1", location="116.397,39.917")
+                ],
+                sources=[
+                    TravelSource(
+                        id="R1",
+                        service="firecrawl",
+                        title="官方规则",
+                        url="https://www.dpm.org.cn/",
+                        trust="official",
+                        retrieved_at=datetime.now(UTC),
+                    )
+                ],
+                facts=[
+                    TravelFact(
+                        place="故宫",
+                        kind="entry_process",
+                        source_id="R1",
+                        status="reference",
+                        quote="预约后携带有效证件核验入园，按预约时段进入。" * 20,
+                    )
+                ],
+            )
+            data.plan = build_travel_plan(
+                data, TravelConditions.model_validate(model.travel_conditions)
+            )
+            research.data, research.status = data.model_dump(mode="json"), "partial"
+            await session.commit()
+
+        accepted = await client.post(
+            f"/api/v1/projects/{project_id}/outline/generate", headers=headers
+        )
+        assert accepted.status_code == 202, accepted.text
+        outline_generator = AsyncMock()
+        outline_generator.generate.side_effect = AssertionError(
+            "Saved travel outline requested model generation"
+        )
+        await generate_outline(
+            {"outline_generator": outline_generator, "job_try": 1},
+            project_id,
+            accepted.json()["job_id"],
+        )
+        response = await client.get(f"/api/v1/projects/{project_id}/outline", headers=headers)
+        outline = response.json()
+        assert outline["status"] == "draft", outline
+        assert len(outline["pages"]) == 6
+        saved = (await client.get(f"/api/v1/projects/{project_id}", headers=headers)).json()
+        assert saved["page_count"] == len(outline["pages"])
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/outline/confirm",
+            headers=headers,
+            json={"revision": outline["revision"]},
+        )
+        assert response.status_code == 200, response.text
+
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/deck/generate", headers=headers, json={}
+        )
+        assert response.status_code == 202, response.text
+        slide_ids = queue.enqueue_job.call_args.args[2]
+        chat = AsyncMock()
+        chat.complete.side_effect = AssertionError("Saved travel slide requested model generation")
+        await generate_deck(
+            {"slide_generator": DeepSeekSlideGenerator(chat=chat), "redis": queue},
+            project_id,
+            slide_ids,
+        )
+        deck = (await client.get(f"/api/v1/projects/{project_id}/deck", headers=headers)).json()
+        assert deck["status"] == "ready" and deck["failed"] == 0, deck
+        assert deck["ready"] == len(outline["pages"])
+        assert deck["slides"][-1]["title"] == "消费成本汇总"
+        assert all(
+            slide["blocks"] and "旅行资料版本" in slide["speaker_notes"] for slide in deck["slides"]
+        )
+        assert not any(
+            call.args[0] == "generate_image" for call in queue.enqueue_job.call_args_list
+        )
+        chat.complete.assert_not_awaited()
+    finally:
+        app.dependency_overrides.pop(get_queue, None)
+
+
+async def test_expanded_travel_count_remains_editable_and_cannot_be_increased_arbitrarily(client):
+    headers, project = await create_trip(client)
+    async with async_session_factory() as session:
+        model = await session.get(Project, uuid.UUID(project["id"]))
+        model.page_count = 100
+        await session.commit()
+    response = await client.patch(
+        f"/api/v1/projects/{project['id']}", headers=headers, json={"page_count": 99}
+    )
+    assert response.status_code == 200, response.text
+    response = await client.patch(
+        f"/api/v1/projects/{project['id']}", headers=headers, json={"page_count": 101}
+    )
+    assert response.status_code == 422, response.text

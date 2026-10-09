@@ -337,6 +337,59 @@
           ]
         }
       ]
+    },
+    {
+      "id": "s12", "layout_id": "travel-photo", "revision": 1,
+      "blocks": [
+        {"id": "b1201", "slot_id": "title", "type": "text", "text": "北京三日旅行"},
+        {"id": "b1202", "slot_id": "image", "type": "image", "source": "placeholder", "alt": "北京景点实景"},
+        {"id": "b1203", "slot_id": "body", "type": "bullets", "items": ["上海到北京", "两位成人，三天两晚"]},
+        {"id": "b1204", "slot_id": "footer", "type": "text", "text": "示例数据，出行前需查询"}
+      ]
+    },
+    {
+      "id": "s13", "layout_id": "travel-overview", "revision": 1,
+      "blocks": [
+        {"id": "b1301", "slot_id": "title", "type": "text", "text": "路线与交通总览"},
+        {"id": "b1302", "slot_id": "image", "type": "image", "source": "placeholder", "alt": "对应坐标的路线地图"},
+        {"id": "b1303", "slot_id": "body", "type": "bullets", "items": ["首日抵达并办理入住", "第二日预约景点游览", "第三日预留返程时间"]},
+        {"id": "b1304", "slot_id": "footer", "type": "text", "text": "实际班次、票价及到达时刻待确认"}
+      ]
+    },
+    {
+      "id": "s14", "layout_id": "travel-weather", "revision": 1,
+      "blocks": [
+        {"id": "b1401", "slot_id": "title", "type": "text", "text": "天气与空气质量"},
+        {"id": "b1402", "slot_id": "table", "type": "table", "header": ["日期", "天气", "空气质量"], "rows": [["出行第一日", "暂未发布", "预报待查询"], ["出行第二日", "暂未发布", "预报待查询"]]},
+        {"id": "b1403", "slot_id": "body", "type": "bullets", "items": ["携带证件与雨具，出发前复核预报"]},
+        {"id": "b1404", "slot_id": "footer", "type": "text", "text": "当前实况不能替代未来预报"}
+      ]
+    },
+    {
+      "id": "s15", "layout_id": "travel-text", "revision": 1,
+      "blocks": [
+        {"id": "b1501", "slot_id": "title", "type": "text", "text": "住宿候选"},
+        {"id": "b1502", "slot_id": "body", "type": "bullets", "items": ["优先考虑景点附近且靠近公共交通的区域", "具体酒店、入住日期和房型待核实", "按房间数与入住晚数计算预算"]},
+        {"id": "b1503", "slot_id": "footer", "type": "text", "text": "房价、税费、库存及交通便利程度待确认"}
+      ]
+    },
+    {
+      "id": "s16", "layout_id": "travel-table", "revision": 1,
+      "blocks": [
+        {"id": "b1601", "slot_id": "title", "type": "text", "text": "消费成本汇总"},
+        {"id": "b1602", "slot_id": "table", "type": "table", "header": ["费用", "金额", "计价口径"], "rows": [["往返交通", "待确认", "两位成人往返"], ["住宿", "待确认", "一间两晚"], ["餐饮预算", "600 CNY", "100元每人每天，共三天"]]},
+        {"id": "b1603", "slot_id": "footer", "type": "text", "text": "缺价项目未按零元计入"}
+      ]
+    },
+    {
+      "id": "s17", "layout_id": "travel-attraction", "revision": 1,
+      "blocks": [
+        {"id": "b1701", "slot_id": "title", "type": "text", "text": "景点游览攻略"},
+        {"id": "b1702", "slot_id": "table", "type": "table", "header": ["开放与入园", "票价与注意事项"], "rows": [["营业：待确认", "门票：待确认"], ["预约：待确认", "证件：待确认"], ["入园：待确认", "限制：待确认"], ["闭馆：待确认", "规则出发前复核"]]},
+        {"id": "b1703", "slot_id": "image", "type": "image", "source": "placeholder", "alt": "对应景点的真实照片"},
+        {"id": "b1704", "slot_id": "body", "type": "bullets", "items": ["打卡：待确认", "踩雷：待确认", "餐饮：待确认"]},
+        {"id": "b1705", "slot_id": "footer", "type": "text", "text": "官方资料与体验参考分开保存"}
+      ]
     }
   ]
 }

@@ -75,6 +75,20 @@ def prepare_slide_input(
         sections.append(section.model_copy(update={"text": text}))
         used += len(text)
     updates = {"sections": sections}
+    if payload.travel_page and payload.layout_mode == "fixed":
+        kind = payload.travel_page.kind
+        updates["layout_id"] = (
+            "travel-attraction" if kind == "attraction"
+            else "travel-photo"
+            if kind == "cover"
+            else "travel-overview"
+            if kind == "overview"
+            else "travel-table"
+            if kind in {"weather", "budget", "cost_details"}
+            else "travel-text"
+        )
+        if kind == "weather" and payload.travel_page.offset == 0:
+            updates["layout_id"] = "travel-weather"
     if payload.travel_context and payload.layout_mode == "fixed":
         from app.services.travel_slides import is_itinerary_page
 
@@ -211,6 +225,32 @@ def build_slide_workflow(generator: SlideGenerator):
             image_plan=payload.image_plan,
         )
         slide = bind_page_image(slide, plan)
+        if payload.travel_page:
+            from app.domain.block_style import BlockStyle
+            from app.services.travel_page_render import bind_travel_assets
+
+            slide = bind_travel_assets(slide, payload)
+            slide = slide.model_copy(
+                update={
+                    "blocks": [
+                        block.model_copy(
+                            update={
+                                "style": BlockStyle(
+                                    size_pt=16
+                                    if block.type in {"table", "bullets"}
+                                    else 12
+                                    if block.slot_id == "footer"
+                                    or str(block.id).endswith("-footer")
+                                    else 28
+                                )
+                            }
+                        )
+                        if block.type in {"table", "bullets", "text"}
+                        else block
+                        for block in slide.blocks
+                    ]
+                }
+            )
         travel_budget = payload.travel_context and payload.page_title == "预算与缺价项目"
         travel_cover = payload.travel_context and payload.page_role == "cover"
         from app.services.travel_slides import CORE_TRAVEL_PAGES, is_itinerary_page
@@ -230,7 +270,10 @@ def build_slide_workflow(generator: SlideGenerator):
                 }
             )
         structured_travel = payload.travel_context and (
-            payload.page_title in CORE_TRAVEL_PAGES or travel_cover or travel_itinerary
+            payload.travel_page
+            or payload.page_title in CORE_TRAVEL_PAGES
+            or travel_cover
+            or travel_itinerary
         )
         if slide.layout_mode == "flex" and not structured_travel:
             if enterprise:
@@ -253,7 +296,11 @@ def build_slide_workflow(generator: SlideGenerator):
             )
         # 生成期先定列宽再定行高：宽度决定折行，折行决定自然高度。
         # 两步都放在校验之前，让溢出/容量告警反映的是最终版面。
-        if slide.layout_mode == "flex" and slide.layout_tree is not None:
+        if (
+            slide.layout_mode == "flex"
+            and slide.layout_tree is not None
+            and not payload.travel_page
+        ):
             widened = fit_row_widths(slide.layout_tree, slide.blocks, theme=theme)
             slide = slide.model_copy(
                 update={
@@ -280,7 +327,9 @@ def build_slide_workflow(generator: SlideGenerator):
                     code="travel_unverified_claim",
                     message=message,
                 )
-                for message in travel_claim_issues(text, payload.travel_context)
+                for message in travel_claim_issues(
+                    text, payload.travel_context, allow_cited_references=bool(payload.travel_page)
+                )
             )
         if enterprise:
             issues.extend(check_planned_data(slide, plan))

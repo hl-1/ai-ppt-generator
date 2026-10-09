@@ -14,6 +14,7 @@ from app.domain.outline import (
     OutlineDraft,
     OutlinePageDraft,
     ReportBrief,
+    TravelPageSpec,
     VisualType,
 )
 from app.domain.slide_draft import FlexSlideDraft, SlideDraft
@@ -75,6 +76,7 @@ class SlideGenerationInput(BaseModel):
     """
 
     travel_context: dict[str, Any] | None = None
+    travel_page: TravelPageSpec | None = None
     deck_title: str
     audience: str | None = None
     tone: str

@@ -20,6 +20,16 @@ class TimeWindow(BaseModel):
         return self
 
 
+class VideoPreferences(BaseModel):
+    enabled: bool = True
+    platforms: list[Literal["douyin", "bilibili"]] = Field(
+        default_factory=lambda: ["douyin", "bilibili"], min_length=1, max_length=2
+    )
+    min_likes: int = Field(default=10_000, ge=1, le=100_000_000)
+    min_favorites: int = Field(default=1_000, ge=1, le=100_000_000)
+    lookback_days: int = Field(default=180, ge=1, le=1095)
+
+
 class TravelConditions(BaseModel):
     origin: str = Field(default="", max_length=80)
     destination: str = Field(default="", max_length=80)
@@ -36,10 +46,16 @@ class TravelConditions(BaseModel):
     budget_mode: Literal["total", "per_person"] = "total"
     transport: Literal["public", "driving", "walking", "train", "flight"] = "public"
     lodging_area: str = Field(default="", max_length=120)
+    lodging_preferences: str = Field(default="", max_length=300)
+    room_count: int | None = Field(default=None, ge=1, le=50)
+    must_visit: list[str] = Field(default_factory=list, max_length=8)
+    meal_budget_per_day: Decimal = Field(default=Decimal("100"), ge=1, le=10000)
+    contingency: Decimal = Field(default=Decimal("300"), ge=0, le=1000000)
     interests: list[str] = Field(default_factory=list, max_length=12)
     pace: Literal["relaxed", "balanced", "intensive"] = "balanced"
     draft_days: int = Field(default=3, ge=1, le=14)
     confirmed: bool = False
+    video_preferences: VideoPreferences = Field(default_factory=VideoPreferences)
 
     @model_validator(mode="after")
     def validate_trip(self):
@@ -60,6 +76,7 @@ class TravelConditions(BaseModel):
         self.origin = self.origin.strip()
         self.destination = self.destination.strip()
         self.interests = list(dict.fromkeys(s.strip()[:80] for s in self.interests if s.strip()))
+        self.must_visit = list(dict.fromkeys(s.strip()[:80] for s in self.must_visit if s.strip()))
         return self
 
 
@@ -75,7 +92,7 @@ class TravelExtractResult(BaseModel):
 
 class TravelSource(BaseModel):
     id: str
-    service: Literal["qweather", "amap", "firecrawl"]
+    service: Literal["qweather", "amap", "firecrawl", "video"]
     title: str
     url: str
     retrieved_at: datetime
@@ -95,12 +112,23 @@ class TravelFact(BaseModel):
         "season",
         "internal_route",
         "checkin",
+        "identity",
+        "entry_process",
+        "restriction",
+        "pitfall",
+        "restaurant",
+        "lodging",
+        "lodging_price",
+        "transport",
     ]
     source_id: str
     quote: str = Field(min_length=1, max_length=800)
     summary: str = Field(default="", max_length=500)
     amount: Decimal | None = Field(default=None, ge=0)
     audience: str = ""
+    room_type: str = ""
+    price_unit: str = ""
+    tax_note: str = ""
     opens: time | None = None
     closes: time | None = None
     last_entry: time | None = None
@@ -145,6 +173,26 @@ class TravelPlace(BaseModel):
     area: str = ""
     source_id: str
     photos: list[dict[str, str]] = Field(default_factory=list)
+    near_place_id: str | None = None
+    business_hours: str = ""
+
+
+class TravelImage(BaseModel):
+    place_id: str
+    place_name: str
+    url: str
+    original_url: str
+    source_id: str
+    credit: str = ""
+    status: Literal["ready", "failed"] = "ready"
+
+
+class TravelMap(BaseModel):
+    url: str | None = None
+    source_id: str | None = None
+    place_ids: list[str] = Field(default_factory=list)
+    status: Literal["ready", "partial", "pending"] = "pending"
+    note: str = "路线图待查询；缺少可靠坐标时不生成位置"
 
 
 class TravelRoute(BaseModel):
@@ -158,6 +206,7 @@ class TravelRoute(BaseModel):
     cost_scope: str = ""
     source_id: str | None = None
     status: Literal["ready", "pending"] = "pending"
+    instructions: list[str] = Field(default_factory=list)
 
 
 class WeatherDay(BaseModel):
@@ -170,6 +219,24 @@ class WeatherDay(BaseModel):
     wind: str = ""
     source_id: str | None = None
     note: str = "天气待更新"
+    issued_at: datetime | None = None
+    valid_until: datetime | None = None
+
+
+class AirQualityDay(BaseModel):
+    date: Date | None = None
+    status: Literal["ready", "pending"] = "pending"
+    kind: Literal["forecast", "current"] = "forecast"
+    aqi: Decimal | None = Field(default=None, ge=0)
+    aqi_display: str = ""
+    standard: str = ""
+    category: str = ""
+    health_advice: str = ""
+    source_id: str | None = None
+    retrieved_at: datetime | None = None
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+    note: str = "暂未发布或未取得对应日期空气质量预报"
 
 
 class ServiceStatus(BaseModel):
@@ -201,6 +268,7 @@ class TravelDay(BaseModel):
     routes: list[TravelRoute] = Field(default_factory=list)
     breaks: list[str] = Field(default_factory=list)
     weather: WeatherDay = Field(default_factory=WeatherDay)
+    air_quality: AirQualityDay = Field(default_factory=AirQualityDay)
     alternatives: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
@@ -216,6 +284,11 @@ class CostItem(BaseModel):
     conditions: str = ""
     fact_refs: list[str] = Field(default_factory=list)
     source_id: str | None = None
+    category: Literal[
+        "intercity", "local_transport", "lodging", "tickets", "meals", "other", "contingency"
+    ] = "other"
+    currency: str = "CNY"
+    unit: str = "人次"
 
 
 class BookingTask(BaseModel):
@@ -232,6 +305,48 @@ class BookingUpdate(BaseModel):
     user_status: Literal["pending", "completed", "failed"]
 
 
+class VideoSegment(BaseModel):
+    start: float = Field(default=0, ge=0)
+    end: float | None = Field(default=None, ge=0)
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class TravelVideo(BaseModel):
+    id: str
+    platform: Literal["douyin", "bilibili"]
+    url: str
+    title: str = ""
+    author: str = ""
+    published_at: datetime | None = None
+    retrieved_at: datetime
+    likes: int | None = Field(default=None, ge=0)
+    favorites: int | None = Field(default=None, ge=0)
+    counts_approximate: bool = False
+    duration_seconds: float | None = Field(default=None, ge=0)
+    topics: list[str] = Field(default_factory=list)
+    selected: bool = False
+    status: Literal["candidate", "rejected", "selected", "ready", "unavailable"] = "candidate"
+    error_code: str | None = None
+    score: float = 0
+    content_kind: Literal["subtitles", "transcription", "platform_summary"] | None = None
+    content_truncated: bool = False
+    source_id: str | None = None
+    segments: list[VideoSegment] = Field(default_factory=list, max_length=1200)
+
+
+class VideoAdvice(BaseModel):
+    id: str
+    kind: Literal["lodging", "restaurant", "pitfall", "checkin", "route"]
+    place: str = Field(min_length=1, max_length=120)
+    suggestion: str = Field(min_length=1, max_length=240)
+    quote: str = Field(min_length=1, max_length=2000)
+    source_id: str
+    video_id: str
+    timestamp_seconds: float = Field(ge=0)
+    end_timestamp_seconds: float | None = Field(default=None, ge=0)
+    status: Literal["reference"] = "reference"
+
+
 class TravelPlan(BaseModel):
     draft: bool = True
     conditions: TravelConditions
@@ -241,11 +356,18 @@ class TravelPlan(BaseModel):
     cost_items: list[CostItem]
     known_subtotal: Decimal = Decimal("0")
     estimated_subtotal: Decimal = Decimal("0")
+    contingency_subtotal: Decimal = Decimal("0")
+    total: Decimal = Decimal("0")
+    per_person: Decimal = Decimal("0")
+    budget_difference: Decimal | None = None
+    total_complete: bool = False
+    preparation: list[str] = Field(default_factory=list)
     budget_limit: Decimal | None = None
     budget_exceeded: bool = False
     booking_tasks: list[BookingTask]
     unresolved_items: list[str]
     warnings: list[str] = Field(default_factory=list)
+    video_advice: list[VideoAdvice] = Field(default_factory=list)
 
 
 class ResearchIssue(BaseModel):
@@ -260,10 +382,17 @@ class ResearchData(BaseModel):
     facts: list[TravelFact] = Field(default_factory=list)
     places: list[TravelPlace] = Field(default_factory=list)
     hotels: list[TravelPlace] = Field(default_factory=list)
+    restaurants: list[TravelPlace] = Field(default_factory=list)
+    images: list[TravelImage] = Field(default_factory=list)
+    route_map: TravelMap = Field(default_factory=TravelMap)
     routes: list[TravelRoute] = Field(default_factory=list)
     weather: list[WeatherDay] = Field(default_factory=list)
+    air_quality: list[AirQualityDay] = Field(default_factory=list)
+    current_air_quality: AirQualityDay | None = None
     services: list[ServiceStatus] = Field(default_factory=list)
     issues: list[ResearchIssue] = Field(default_factory=list)
+    videos: list[TravelVideo] = Field(default_factory=list)
+    video_advice: list[VideoAdvice] = Field(default_factory=list)
     plan: TravelPlan | None = None
 
 

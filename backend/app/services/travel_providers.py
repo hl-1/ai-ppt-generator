@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 import httpx
 
 from app.core.config import Settings
 from app.schemas.travel import (
+    AirQualityDay,
     ResearchData,
     ServiceStatus,
     TravelConditions,
@@ -34,6 +37,13 @@ OFFICIAL_HOSTS = {
     "s.shbwg.net",
     "shanghaimuseum.net",
     "chinasilk.cn",
+    "12306.cn",
+    "hilton.com",
+    "marriott.com",
+    "hyatt.com",
+    "ihg.com",
+    "huazhu.com",
+    "atour.com",
 }
 OFFICIAL_PLACE_DOMAINS = {
     "故宫": "dpm.org.cn",
@@ -67,6 +77,13 @@ def official_url(url: str) -> bool:
     )
 
 
+def photo_url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme == "http":
+        value = parsed._replace(scheme="https").geturl()
+    return value if public_url(value) else ""
+
+
 def trip_dates(conditions: TravelConditions) -> list[date | None]:
     if conditions.departure_date and conditions.return_date:
         return [
@@ -82,6 +99,71 @@ def number(value) -> Decimal | None:
         return result if result.is_finite() and result >= 0 else None
     except (InvalidOperation, ValueError, TypeError):
         return None
+
+
+def coordinates(location: str) -> tuple[float, float] | None:
+    try:
+        lon, lat = map(float, location.split(","))
+        if math.isfinite(lon) and math.isfinite(lat) and -180 <= lon <= 180 and -90 <= lat <= 90:
+            return lon, lat
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return None
+
+
+def provider_time(value) -> datetime | None:
+    try:
+        result = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return result if result.tzinfo else None
+    except (ValueError, TypeError):
+        return None
+
+
+def normalize_air_quality(payload, dates, source_id, *, timezone="Asia/Shanghai", current=False):
+    now = datetime.now(UTC)
+    zone = ZoneInfo(timezone)
+    entries = [payload] if current else payload.get("days", [])
+    by_date = {}
+    for entry in entries:
+        start = provider_time(entry.get("forecastStartTime"))
+        end = provider_time(entry.get("forecastEndTime"))
+        day = (
+            now.astimezone(zone).date()
+            if current
+            else start.astimezone(zone).date()
+            if start
+            else None
+        )
+        indexes = entry.get("indexes") or []
+        index = next((item for item in indexes if item.get("code") == "cn-mee"), None)
+        index = index or next((item for item in indexes if item.get("code") != "qaqi"), None)
+        index = index or next(iter(indexes), {})
+        aqi = number(index.get("aqi"))
+        if day is None or aqi is None:
+            continue
+        advice = (index.get("health") or {}).get("advice") or {}
+        by_date[day] = AirQualityDay(
+            date=day,
+            status="ready",
+            kind="current" if current else "forecast",
+            aqi=aqi,
+            aqi_display=str(index.get("aqiDisplay", aqi)),
+            standard=str(index.get("name") or index.get("code") or "未提供标准"),
+            category=str(index.get("category") or "等级待查询"),
+            health_advice="；".join(
+                str(advice.get(key) or "") for key in ("generalPopulation", "sensitivePopulation")
+            ).strip("；"),
+            source_id=source_id,
+            retrieved_at=now,
+            valid_from=start,
+            valid_until=end,
+            note="查询时实况，仅供当前参考，不是未来预报"
+            if current
+            else "对应日期预报，出发前刷新",
+        )
+    if current:
+        return list(by_date.values())
+    return [by_date.get(day, AirQualityDay(date=day)) for day in dates]
 
 
 def normalize_weather(payload: dict, dates: list[date | None], source_id: str) -> list[WeatherDay]:
@@ -101,9 +183,7 @@ def normalize_weather(payload: dict, dates: list[date | None], source_id: str) -
     for day in dates:
         item = by_date.get(day)
         if item is None:
-            result.append(
-                WeatherDay(date=day, note="超出预报范围或尚未取得对应日期预报，天气待更新")
-            )
+            result.append(WeatherDay(date=day, note="暂未发布或未取得对应日期天气预报，出发前刷新"))
             continue
         result.append(
             WeatherDay(
@@ -111,6 +191,8 @@ def normalize_weather(payload: dict, dates: list[date | None], source_id: str) -
                 status="ready",
                 source_id=source_id,
                 note="预报可能变化，出发前请刷新",
+                issued_at=provider_time(payload.get("updateTime")),
+                valid_until=provider_time(payload.get("fxLinkExpiry")),
                 condition=str(
                     item.get("textDay") or item.get("conditions") or item.get("condition") or ""
                 ),
@@ -274,32 +356,62 @@ class TravelProviders:
     async def weather(self, conditions: TravelConditions, location: str | None):
         dates = trip_dates(conditions)
         self.data.weather = [WeatherDay(date=day) for day in dates]
+        self.data.air_quality = [AirQualityDay(date=day) for day in dates]
         base = self.weather_base()
         if not base:
             self._counts.setdefault("qweather", []).append(
                 ServiceStatus(service="qweather", status="failed", error_code="invalid_host")
             )
             return
-        if not location:
-            geo = await self.call(
-                "qweather",
-                f"{base}/geo/v2/city/lookup",
-                params={"location": conditions.destination},
-            )
-            matches = (geo or {}).get("location") or []
-            location = matches[0].get("id") if matches else None
+        geo = await self.call(
+            "qweather",
+            f"{base}/geo/v2/city/lookup",
+            params={"location": conditions.destination},
+        )
+        matches = (geo or {}).get("location") or []
+        city = matches[0] if matches else {}
+        location = city.get("id") or location
         if not location:
             return
         payload = await self.call(
             "qweather", f"{base}/v7/weather/10d", params={"location": location}
         )
-        if payload is None:
+        if payload is not None:
+            source = self.source(
+                "qweather",
+                "和风天气每日预报",
+                "https://www.qweather.com/",
+                "10 天预报；按出行日期筛选",
+            )
+            self.data.weather = normalize_weather(payload, dates, source.id)
+            source.text = "\n".join(day.model_dump_json() for day in self.data.weather)
+        point = coordinates(f"{city.get('lon')},{city.get('lat')}")
+        if not point:
             return
-        source = self.source(
-            "qweather", "和风天气每日预报", "https://www.qweather.com/", "10 天预报；按出行日期筛选"
-        )
-        self.data.weather = normalize_weather(payload, dates, source.id)
-        source.text = "\n".join(day.model_dump_json() for day in self.data.weather)
+        lon, lat = point
+        timezone = city.get("tz") or "Asia/Shanghai"
+        for kind in ("daily", "current"):
+            air = await self.call(
+                "qweather",
+                f"{base}/airquality/v1/{kind}/{lat:.2f}/{lon:.2f}",
+                params={"lang": "zh"},
+            )
+            if air is None:
+                continue
+            source = self.source(
+                "qweather",
+                f"和风空气质量{'每日预报' if kind == 'daily' else '实况'}",
+                "https://dev.qweather.com/docs/api/air-quality/air-"
+                + ("daily-forecast/" if kind == "daily" else "current/"),
+                str(air),
+            )
+            values = normalize_air_quality(
+                air, dates, source.id, timezone=timezone, current=kind == "current"
+            )
+            if kind == "daily":
+                self.data.air_quality = values
+            elif values:
+                self.data.current_air_quality = values[0]
 
     async def geocode(self, city: str) -> str | None:
         data = await self.call(
@@ -308,7 +420,9 @@ class TravelProviders:
         geocodes = (data or {}).get("geocodes") or []
         return geocodes[0].get("location") if geocodes else None
 
-    async def places(self, city: str, keywords: str, *, hotel=False, limit=5) -> list[TravelPlace]:
+    async def places(
+        self, city: str, keywords: str, *, hotel=False, limit=5, near: TravelPlace | None = None
+    ) -> list[TravelPlace]:
         params = {
             "city": city,
             "citylimit": "true",
@@ -318,9 +432,20 @@ class TravelProviders:
         }
         if hotel or keywords == "景点":
             params["types"] = "100000" if hotel else "110000"
+        if near:
+            params = {
+                "location": near.location,
+                "radius": 3000,
+                "types": "050000",
+                "offset": limit,
+                "extensions": "all",
+                "sortrule": "distance",
+            }
         payload = await self.call(
             "amap",
-            "https://restapi.amap.com/v3/place/text",
+            "https://restapi.amap.com/v3/place/around"
+            if near
+            else "https://restapi.amap.com/v3/place/text",
             params=params,
         )
         result = []
@@ -328,7 +453,14 @@ class TravelProviders:
         if not hotel and keywords != "景点":
             pois = sorted(pois, key=lambda poi: keywords not in str(poi.get("name", "")))
         for poi in pois:
-            if not poi.get("location"):
+            if not coordinates(poi.get("location")):
+                continue
+            if (
+                not hotel
+                and not near
+                and keywords != "景点"
+                and keywords not in str(poi.get("name", ""))
+            ):
                 continue
             source = self.source(
                 "amap",
@@ -347,15 +479,19 @@ class TravelProviders:
                     address=poi.get("address") if isinstance(poi.get("address"), str) else "",
                     area=poi.get("adname") or "",
                     source_id=source.id,
+                    near_place_id=near.id if near else None,
+                    business_hours=str((poi.get("business") or {}).get("opentime_week") or "")
+                    if isinstance(poi.get("business"), dict)
+                    else "",
                     photos=[
                         {
-                            "url": photo["url"],
+                            "url": photo_url(photo["url"]),
                             "title": str(photo.get("title") or ""),
                             "status": "待人工核对",
                             "source_id": source.id,
                         }
                         for photo in poi.get("photos") or []
-                        if public_url(photo.get("url", ""))
+                        if photo_url(photo.get("url", ""))
                     ][:4],
                 )
             )
@@ -363,13 +499,13 @@ class TravelProviders:
                 break
         return result
 
-    async def search(self, query: str):
+    async def search(self, query: str, *, official=False):
         official_domain = next(
             (domain for place, domain in OFFICIAL_PLACE_DOMAINS.items() if place in query), None
         )
-        if official_domain:
+        if official_domain and (official or "官网" in query):
             subject = next(place for place in OFFICIAL_PLACE_DOMAINS if place in query)
-            query = f"site:{official_domain} {subject} 门票 开放 预约"
+            query = f"site:{official_domain} {subject} 门票 开放 预约 身份证 入园 限流"
         payload = await self.call(
             "firecrawl",
             "https://api.firecrawl.dev/v2/search",
@@ -378,6 +514,7 @@ class TravelProviders:
                 "limit": 3,
                 "lang": "zh",
                 "scrapeOptions": {"formats": ["markdown"]},
+                **({"tbs": "qdr:m6"} if not official and "官网" not in query else {}),
             },
         )
         raw = (payload or {}).get("data") or {}
@@ -447,6 +584,17 @@ class TravelProviders:
             if mode == "driving"
             else Decimal("0")
         )
+        instructions = []
+        for segment in path.get("segments") or []:
+            for bus in (segment.get("bus") or {}).get("buslines") or []:
+                instructions.append(
+                    f"{bus.get('name', '线路待查询')}："
+                    f"{(bus.get('departure_stop') or {}).get('name', '')} → "
+                    f"{(bus.get('arrival_stop') or {}).get('name', '')}"
+                )
+            railway = segment.get("railway") or {}
+            if railway.get("name"):
+                instructions.append(str(railway["name"]))
         return result.model_copy(
             update={
                 "status": "ready",
@@ -460,5 +608,6 @@ class TravelProviders:
                 else "仅道路通行费，不含燃油、停车、租车"
                 if mode == "driving"
                 else "步行无需票价",
+                "instructions": instructions,
             }
         )

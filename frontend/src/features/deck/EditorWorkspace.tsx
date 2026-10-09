@@ -24,6 +24,7 @@ import { RelayoutDock } from '@/features/deck/RelayoutPanel'
 import { SlideStage } from '@/features/deck/SlideStage'
 import { useDeckProgress } from '@/features/deck/useDeckProgress'
 import type { ProjectDetail } from '@/features/projects/types'
+import { TravelResultStatus } from '@/features/travel/TravelPanel'
 import { errorMessage } from '@/lib/errors'
 import { resolveTheme, type ThemeOverrides } from '@/render/themeOverrides'
 
@@ -170,6 +171,8 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
           />
         )}
       </WorkbenchHeader>
+      {project.report_brief?.scenario === 'travel_plan' && <TravelResultStatus projectId={project.id}
+        missingImages={slides.flatMap((slide) => slide.blocks).filter((block) => block.type === 'image' && (!block.url || block.image_status === 'failed')).length} />}
 
       {actionError && (
         <p role="alert" className="bg-negative/8 px-5 py-2 text-[13px] text-negative">
@@ -177,7 +180,7 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
         </p>
       )}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
         {slides.length > 0 && (
           <Filmstrip
             projectId={project.id}
@@ -198,68 +201,70 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
           />
         )}
 
-        {slides.length === 0 ? (
-          <EmptyStage
-            pending={generate.isPending || deckQuery.isPending}
-            onGenerate={() => generate.mutate({ regenerateAll: false })}
-          />
-        ) : (
-          <SlideStage
-            projectId={project.id}
-            slides={slides}
-            activeId={activeId}
-            scrollRequest={scrollRequest}
-            theme={theme}
-            locked={generating}
-            zoom={ZOOM_STEPS[zoomIndex]}
-            canZoomOut={zoomIndex > 0}
-            canZoomIn={zoomIndex < ZOOM_STEPS.length - 1}
-            selection={selection}
-            onSelectionChange={setSelection}
-            onActiveChange={setActiveId}
-            onOpenRelayout={() => {
-              setRelayoutOpen(true)
-              setRail(null)
-            }}
-            onZoom={(delta) =>
-              setZoomIndex((current) =>
-                Math.min(Math.max(current + delta, 0), ZOOM_STEPS.length - 1),
-              )
-            }
-          />
-        )}
+        <div className="flex min-h-0 min-w-0 flex-1">
+          {slides.length === 0 ? (
+            <EmptyStage
+              pending={generate.isPending || deckQuery.isPending}
+              onGenerate={() => generate.mutate({ regenerateAll: false })}
+            />
+          ) : (
+            <SlideStage
+              projectId={project.id}
+              slides={slides}
+              activeId={activeId}
+              scrollRequest={scrollRequest}
+              theme={theme}
+              locked={generating}
+              zoom={ZOOM_STEPS[zoomIndex]}
+              canZoomOut={zoomIndex > 0}
+              canZoomIn={zoomIndex < ZOOM_STEPS.length - 1}
+              selection={selection}
+              onSelectionChange={setSelection}
+              onActiveChange={setActiveId}
+              onOpenRelayout={() => {
+                setRelayoutOpen(true)
+                setRail(null)
+              }}
+              onZoom={(delta) =>
+                setZoomIndex((current) =>
+                  Math.min(Math.max(current + delta, 0), ZOOM_STEPS.length - 1),
+                )
+              }
+            />
+          )}
 
-        {active && relayoutOpen && active.layout_mode === 'flex' && (
-          <RelayoutDock
-            projectId={project.id}
-            slide={active}
-            theme={theme}
-            open={relayoutOpen}
-            disabled={generating || active.status !== 'ready'}
-            onClose={() => setRelayoutOpen(false)}
-          />
-        )}
+          {active && relayoutOpen && active.layout_mode === 'flex' && (
+            <RelayoutDock
+              projectId={project.id}
+              slide={active}
+              theme={theme}
+              open={relayoutOpen}
+              disabled={generating || active.status !== 'ready'}
+              onClose={() => setRelayoutOpen(false)}
+            />
+          )}
 
-        {active && (
-          <EditorRail
-            project={project}
-            slide={active}
-            theme={theme}
-            tab={rail}
-            locked={generating}
-            selectedBlockId={
-              selection?.slideId === active.id ? selection.blockId : null
-            }
-            onTab={(next) => {
-              setRelayoutOpen(false)
-              setRail((current) => (current === next ? null : next))
-            }}
-            onOpenRelayout={() => {
-              setRelayoutOpen(true)
-              setRail(null)
-            }}
-          />
-        )}
+          {active && (
+            <EditorRail
+              project={project}
+              slide={active}
+              theme={theme}
+              tab={rail}
+              locked={generating}
+              selectedBlockId={
+                selection?.slideId === active.id ? selection.blockId : null
+              }
+              onTab={(next) => {
+                setRelayoutOpen(false)
+                setRail((current) => (current === next ? null : next))
+              }}
+              onOpenRelayout={() => {
+                setRelayoutOpen(true)
+                setRail(null)
+              }}
+            />
+          )}
+        </div>
       </div>
 
       {presenting && (

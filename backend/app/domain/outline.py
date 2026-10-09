@@ -81,7 +81,29 @@ class ImagePlan(BaseModel):
     purpose: Literal["cover", "subject", "support"] = "subject"
 
 
+class TravelPageSpec(BaseModel):
+    kind: Literal[
+        "cover",
+        "overview",
+        "weather",
+        "lodging",
+        "attraction",
+        "official_details",
+        "experience",
+        "schedule",
+        "transport",
+        "cost_details",
+        "budget",
+        "checklist",
+        "preparation",
+    ]
+    place_id: str | None = None
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=4, ge=1, le=8)
+
+
 class OutlinePageDraft(BaseModel):
+    travel_page: TravelPageSpec | None = None
     title: str = Field(min_length=1, max_length=100)
     objective: str = Field(min_length=1, max_length=300)
     key_points: list[str] = Field(min_length=2, max_length=5)

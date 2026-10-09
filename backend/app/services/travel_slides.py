@@ -16,7 +16,75 @@ from app.domain.slide_draft import (
 from app.llm.base import SlideGenerationInput
 from app.schemas.travel import TravelPlan
 
-CORE_TRAVEL_PAGES = {"出行条件与安排总览", "预约待办与出发前核对", "预算与缺价项目"}
+CORE_TRAVEL_PAGES = {
+    "出行条件与安排总览",
+    "预约待办与出发前核对",
+    "预算与缺价项目",
+    "住宿、餐饮与游览建议",
+}
+
+
+def video_advice_slide(payload: SlideGenerationInput) -> FlexSlideDraft | SlideDraft:
+    plan = TravelPlan.model_validate(payload.travel_context["plan"])
+    labels = {
+        "lodging": "住宿",
+        "restaurant": "餐饮",
+        "pitfall": "避坑",
+        "checkin": "打卡",
+        "route": "游览",
+    }
+    advice = []
+    for kind in labels:
+        item = next((item for item in plan.video_advice if item.kind == kind), None)
+        if item:
+            advice.append(item)
+    advice += [item for item in plan.video_advice if item not in advice]
+    advice = advice[:4]
+    items = [f"{labels[item.kind]} · {item.place}：{item.suggestion[:100]}" for item in advice]
+    sources = {source["id"]: source for source in payload.travel_context.get("sources", [])}
+    videos = {video["id"]: video for video in payload.travel_context.get("videos", [])}
+    notes = []
+    for item in plan.video_advice:
+        source = sources.get(item.source_id, {})
+        video = videos.get(item.video_id, {})
+        notes.append(
+            f"{labels[item.kind]} · {item.place}：{item.suggestion}\n"
+            f"原文 [{item.timestamp_seconds:.1f}s] {item.quote}\n"
+            f"来源 {item.source_id} {source.get('url', '')}；"
+            f"发布时间 {video.get('published_at', '未知')}；"
+            f"采集时间 {source.get('retrieved_at', '未知')}；"
+            f"点赞 {video.get('likes', '未知')}；收藏 {video.get('favorites', '未知')}；"
+            f"时长 {video.get('duration_seconds', '未知')} 秒；"
+            f"内容类型 {video.get('content_kind', '未知')}；"
+            f"{'仅包含部分内容' if video.get('content_truncated') else '已取得内容'}"
+        )
+    note = "视频体验仅供参考；房价、营业和入场规定以最新官方资料为准。"
+    if payload.layout_mode == "fixed":
+        return SlideDraft(
+            blocks=[
+                TextContent(slot_id="title", text=payload.page_title),
+                BulletsContent(slot_id="body", items=items + [note]),
+            ],
+            speaker_notes="\n\n".join(notes),
+        )
+    return FlexSlideDraft(
+        blocks=[
+            FlexTextContent(id="title", text=payload.page_title),
+            FlexBulletsContent(id="advice", items=items),
+            FlexTextContent(id="note", text=note),
+        ],
+        layout_tree=FlexContainer(
+            id="travel-video-advice",
+            type="column",
+            gap_pt=16,
+            children=[
+                FlexLeaf(id="title-leaf", block_id="title", text_style="title", grow=0.5),
+                FlexLeaf(id="advice-leaf", block_id="advice", text_style="bullet", grow=3),
+                FlexLeaf(id="note-leaf", block_id="note", text_style="caption", grow=0.4),
+            ],
+        ),
+        speaker_notes="\n\n".join(notes),
+    )
 
 
 def conditions_slide(payload: SlideGenerationInput) -> FlexSlideDraft | SlideDraft:

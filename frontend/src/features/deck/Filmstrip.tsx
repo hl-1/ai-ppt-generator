@@ -55,7 +55,7 @@ export function Filmstrip({
   return (
     <nav
       aria-label="页面列表"
-      className="scrollbar-slim flex w-46 shrink-0 flex-col gap-2 overflow-y-auto border-r border-line bg-surface p-3"
+      className="scrollbar-slim flex h-36 w-full shrink-0 gap-2 overflow-x-auto border-b border-line bg-surface p-2 sm:h-auto sm:w-46 sm:flex-col sm:overflow-x-hidden sm:overflow-y-auto sm:border-r sm:border-b-0 sm:p-3"
     >
       {slides.map((slide, index) => (
         <FilmstripItem
@@ -83,7 +83,7 @@ export function Filmstrip({
         type="button"
         disabled={locked || busy}
         onClick={() => onInsert(null)}
-        className="flex items-center justify-center gap-1.5 rounded-lg border border-line border-dashed py-2 text-[12px] text-ink-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+        className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-line border-dashed px-3 py-2 text-[12px] text-ink-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-50 sm:px-0"
       >
         <Plus className="size-3.5" />
         新增页面
@@ -130,7 +130,7 @@ function FilmstripItem({
   const edited = slide.blocks.some((block) => block.locked)
 
   return (
-    <div {...dragProps} className={cn('group relative', dragging && 'opacity-50')}>
+    <div {...dragProps} className={cn('group relative w-36 shrink-0 sm:w-auto', dragging && 'opacity-50')}>
       <button
         type="button"
         aria-current={active}
@@ -224,7 +224,7 @@ function PageMenu({
             onClick={toggle}
             className={cn(
               'grid size-6 place-items-center rounded-md bg-surface/90 text-ink-muted ring-1 ring-line transition-opacity hover:text-ink',
-              open ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+              open ? 'opacity-100' : 'opacity-100 sm:opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
             )}
           >
             <MoreVertical className="size-3.5" />

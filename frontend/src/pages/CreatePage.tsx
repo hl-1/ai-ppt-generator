@@ -64,6 +64,20 @@ export default function CreatePage() {
     && (scenario !== 'travel_plan' || (travelConditions.confirmed && !!travelConditions.destination?.trim()))
   const busy = create.isPending
   const travelPlanning = scenario === 'travel_plan'
+  const departure = Date.parse(travelConditions.departure_date ?? '')
+  const returning = Date.parse(travelConditions.return_date ?? '')
+  const travelDays = Number.isFinite(departure) && Number.isFinite(returning)
+    ? Math.max(1, Math.floor((returning - departure) / 86400000) + 1)
+    : travelConditions.draft_days ?? 3
+  const datePages = Math.max(0, Math.ceil((travelDays - 3) / 3))
+    + Math.max(0, Math.ceil((travelDays - 3) / 4))
+  const travelMinimum = Math.max(1, new Set(travelConditions.must_visit ?? []).size) + 5 + datePages
+  const dailyCapacity = travelConditions.children || travelConditions.seniors
+    ? 2 : travelConditions.pace === 'relaxed' ? 2 : travelConditions.pace === 'intensive' ? 4 : 3
+  const recommendedAttractions = Math.max(
+    travelConditions.must_visit?.length ?? 0,
+    Math.min(8, travelDays * dailyCapacity, Math.max(1, pageCount - 5 - datePages)),
+  )
 
   const submit = () => {
     if (!ready || busy) return
@@ -75,7 +89,7 @@ export default function CreatePage() {
         title: deriveTitle(mode, content, files),
         audience: audience.trim() || null,
         tone,
-        pageCount,
+        pageCount: travelPlanning ? Math.max(pageCount, travelMinimum) : pageCount,
         themeId: DEFAULT_THEME_ID,
         layoutMode,
         contentDensity,
@@ -241,6 +255,11 @@ export default function CreatePage() {
         </div>
 
         {travelPlanning && <TravelForm value={travelConditions} onChange={setTravelConditions} text={content.trim()} disabled={busy} />}
+        {travelPlanning && <p role="status" className="mt-3 text-sm text-ink-muted">
+          目标 {pageCount} 页，预计安排 {recommendedAttractions} 个景点，含 {travelConditions.must_visit?.length ?? 0} 个必去地点。
+          {pageCount < travelMinimum ? `必需内容至少 ${travelMinimum} 页，将自动调整。` : ''}
+          {datePages > 0 ? `较长行程另预留 ${datePages} 页日程与天气。` : ''}
+        </p>}
 
         <div className="mt-4 min-h-6 text-center">
           {busy && step && (

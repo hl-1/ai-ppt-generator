@@ -16,14 +16,14 @@ ProjectStatus = Literal["draft", "outline_ready", "generating", "ready"]
 SourceKind = Literal["topic", "text", "document"]
 ContentDensity = Literal["concise", "medium", "detailed"]
 
-# 页数范围与文档给出的推荐区间一致：太少不成篇，太多单次生成不可控
+# 旅行攻略需要按景点、日期和资料长度拆页。
 MIN_PAGE_COUNT = 5
-MAX_PAGE_COUNT = 20
+MAX_PAGE_COUNT = 80
 
 # 编辑器内可逐页增删，边界比创建/大纲阶段宽：那里的下限是为了让 LLM 一次生成
 # 出成篇的内容，而手工改页时用户清楚自己要什么，卡在 5 页只会挡路。
 MIN_DECK_PAGE_COUNT = 1
-MAX_DECK_PAGE_COUNT = 40
+MAX_DECK_PAGE_COUNT = 80
 
 
 LayoutMode = Literal["fixed", "flex"]
@@ -47,7 +47,7 @@ class ProjectUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     audience: str | None = Field(default=None, max_length=100)
     tone: Tone | None = None
-    page_count: int | None = Field(default=None, ge=MIN_PAGE_COUNT, le=MAX_PAGE_COUNT)
+    page_count: int | None = Field(default=None, ge=MIN_PAGE_COUNT)
     theme_id: str | None = Field(default=None, max_length=50)
     layout_mode: LayoutMode | None = None
     content_density: ContentDensity | None = None

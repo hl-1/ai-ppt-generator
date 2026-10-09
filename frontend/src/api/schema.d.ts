@@ -81,10 +81,10 @@ export interface paths {
         };
         /**
          * List Layouts
-         * @description 下发布局定义。
+         * @description �·����ֶ��塣
          *
-         *     前端本可直接读 shared/ 下的同一批文件，这个接口的作用是让两端
-         *     在运行时校验读到的是同一份数据，也让 OpenAPI 里带上布局的类型定义。
+         *     ǰ�˱���ֱ�Ӷ� shared/ �µ�ͬһ���ļ�������ӿڵ�������������
+         *     ������ʱУ���������ͬһ�����ݣ�Ҳ�� OpenAPI ����ϲ��ֵ����Ͷ��塣
          */
         get: operations["list_layouts_api_v1_design_layouts_get"];
         put?: never;
@@ -233,7 +233,7 @@ export interface paths {
         head?: never;
         /**
          * Update Project Theme
-         * @description 更新主题预设或细粒度覆盖；大纲确认后仍可用。
+         * @description ��������Ԥ���ϸ���ȸ��ǣ����ȷ�Ϻ��Կ��á�
          */
         patch: operations["update_project_theme_api_v1_projects__project_id__theme_patch"];
         trace?: never;
@@ -352,7 +352,7 @@ export interface paths {
         put?: never;
         /**
          * Fit Outline Page Evidence
-         * @description 按用户选择的图表类型，用来源材料重构一页大纲。
+         * @description ���û�ѡ���ͼ�����ͣ�����Դ�����ع�һҳ��١�
          */
         post: operations["fit_outline_page_evidence_api_v1_projects__project_id__outline_pages__page_id__fit_evidence_post"];
         delete?: never;
@@ -438,7 +438,7 @@ export interface paths {
         };
         /**
          * Get Deck Quality
-         * @description 导出前质量报告：分级 issues 与是否允许导出。检查逻辑见 build_quality_report。
+         * @description ����ǰ�������棺�ּ� issues ���Ƿ���������������߼��� build_quality_report��
          */
         get: operations["get_deck_quality_api_v1_projects__project_id__deck_quality_get"];
         put?: never;
@@ -458,7 +458,7 @@ export interface paths {
         };
         /**
          * Export Deck
-         * @description 同步导出项目 PPTX：检查 → 渲染 → 回读验证 → 返回文件流。
+         * @description ͬ��������Ŀ PPTX����� �� ��Ⱦ �� �ض���֤ �� �����ļ�����
          */
         get: operations["export_deck_api_v1_projects__project_id__deck_export_get"];
         put?: never;
@@ -605,7 +605,7 @@ export interface paths {
         head?: never;
         /**
          * Update Slide Block Style
-         * @description 更新元素级样式覆盖。不置 locked：改颜色不该挡住 AI 改写文字。
+         * @description ����Ԫ�ؼ���ʽ���ǡ����� locked������ɫ���õ�ס AI ��д���֡�
          */
         patch: operations["update_slide_block_style_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__style_patch"];
         trace?: never;
@@ -739,7 +739,7 @@ export interface paths {
         get?: never;
         /**
          * Update Flex State
-         * @description 原子写回 blocks + layout_tree，供撤销/重做恢复整页结构。
+         * @description ԭ��д�� blocks + layout_tree��������/�����ָ���ҳ�ṹ��
          */
         put: operations["update_flex_state_api_v1_projects__project_id__deck_slides__slide_id__flex_state_put"];
         post?: never;
@@ -828,7 +828,7 @@ export interface paths {
         put?: never;
         /**
          * Insert Slide
-         * @description 插入一张空白页，内容在本地生成，无需再跑一遍 AI。
+         * @description ����һ�ſհ�ҳ�������ڱ������ɣ���������һ�� AI��
          */
         post: operations["insert_slide_api_v1_projects__project_id__deck_slides_post"];
         delete?: never;
@@ -1141,6 +1141,58 @@ export interface components {
             /** History */
             history?: components["schemas"]["AiEditHistoryTurn"][];
         };
+        /** AirQualityDay */
+        AirQualityDay: {
+            /** Date */
+            date?: string | null;
+            /**
+             * Status
+             * @default pending
+             * @enum {string}
+             */
+            status: "ready" | "pending";
+            /**
+             * Kind
+             * @default forecast
+             * @enum {string}
+             */
+            kind: "forecast" | "current";
+            /** Aqi */
+            aqi?: string | null;
+            /**
+             * Aqi Display
+             * @default
+             */
+            aqi_display: string;
+            /**
+             * Standard
+             * @default
+             */
+            standard: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Health Advice
+             * @default
+             */
+            health_advice: string;
+            /** Source Id */
+            source_id?: string | null;
+            /** Retrieved At */
+            retrieved_at?: string | null;
+            /** Valid From */
+            valid_from?: string | null;
+            /** Valid Until */
+            valid_until?: string | null;
+            /**
+             * Note
+             * @default ��δ������δȡ�ö�Ӧ���ڿ�������Ԥ��
+             */
+            note: string;
+        };
         /** BlockCreateRequest */
         BlockCreateRequest: {
             /** Revision */
@@ -1165,7 +1217,7 @@ export interface components {
         };
         /**
          * BlockStyle
-         * @description 单个元素相对主题的样式覆盖。
+         * @description ����Ԫ������������ʽ���ǡ�
          */
         BlockStyle: {
             /** Size Pt */
@@ -1191,7 +1243,7 @@ export interface components {
         };
         /**
          * BlockStyleUpdate
-         * @description 元素级样式覆盖；style 为 null 表示清除该元素的全部微调。
+         * @description Ԫ�ؼ���ʽ���ǣ�style Ϊ null ��ʾ�����Ԫ�ص�ȫ��΢����
          */
         BlockStyleUpdate: {
             /** Revision */
@@ -1224,7 +1276,7 @@ export interface components {
             rule_status: "verified" | "pending";
             /**
              * Rule
-             * @default 预约规则待核实
+             * @default ԤԼ�������ʵ
              */
             rule: string;
             /** Fact Refs */
@@ -1530,7 +1582,7 @@ export interface components {
         };
         /**
          * CornerBracket
-         * @description 角部 L 形几何，由两条细矩形拼成。
+         * @description �ǲ� L �μ��Σ�������ϸ����ƴ�ɡ�
          */
         CornerBracket: {
             /** Scope */
@@ -1612,13 +1664,29 @@ export interface components {
             fact_refs?: string[];
             /** Source Id */
             source_id?: string | null;
+            /**
+             * Category
+             * @default other
+             * @enum {string}
+             */
+            category: "intercity" | "local_transport" | "lodging" | "tickets" | "meals" | "other" | "contingency";
+            /**
+             * Currency
+             * @default CNY
+             */
+            currency: string;
+            /**
+             * Unit
+             * @default �˴�
+             */
+            unit: string;
         };
         /**
          * Deck
-         * @description PPT 的统一内容模型。
+         * @description PPT ��ͳһ����ģ�͡�
          *
-         *     内容、布局、主题三者分离：这里描述页面块内容；
-         *     fixed 页几何来自布局槽位，flex 页几何来自 layout_tree，视觉表现来自主题。
+         *     ���ݡ����֡��������߷��룺��������ҳ������ݣ�
+         *     fixed ҳ�������Բ��ֲ�λ��flex ҳ�������� layout_tree���Ӿ������������⡣
          */
         "Deck-Input": {
             /** Id */
@@ -1632,10 +1700,10 @@ export interface components {
         };
         /**
          * Deck
-         * @description PPT 的统一内容模型。
+         * @description PPT ��ͳһ����ģ�͡�
          *
-         *     内容、布局、主题三者分离：这里描述页面块内容；
-         *     fixed 页几何来自布局槽位，flex 页几何来自 layout_tree，视觉表现来自主题。
+         *     ���ݡ����֡��������߷��룺��������ҳ������ݣ�
+         *     fixed ҳ�������Բ��ֲ�λ��flex ҳ�������� layout_tree���Ӿ������������⡣
          */
         "Deck-Output": {
             /** Id */
@@ -1687,10 +1755,10 @@ export interface components {
         };
         /**
          * DeckPageResult
-         * @description 整页增删复制的结果。
+         * @description ��ҳ��ɾ���ƵĽ����
          *
-         *     增删都会改动多页 position，返回整份 deck 让前端一次换掉缓存；slide_id 是
-         *     操作后应当选中的页（新页，或删除后的邻页）。
+         *     ��ɾ����Ķ���ҳ position���������� deck ��ǰ��һ�λ������棻slide_id ��
+         *     ������Ӧ��ѡ�е�ҳ����ҳ����ɾ�������ҳ����
          */
         DeckPageResult: {
             deck: components["schemas"]["DeckPublic"];
@@ -1724,7 +1792,7 @@ export interface components {
         };
         /**
          * Decoration
-         * @description 纯装饰图形，不承载内容，两端渲染器按同一份声明绘制
+         * @description ��װ��ͼ�Σ����������ݣ�������Ⱦ����ͬһ����������
          */
         Decoration: {
             /**
@@ -1849,7 +1917,7 @@ export interface components {
         };
         /**
          * EdgeBand
-         * @description 贴着画布某条边的细色带。
+         * @description ���Ż���ĳ���ߵ�ϸɫ����
          */
         EdgeBand: {
             /** Scope */
@@ -1898,7 +1966,7 @@ export interface components {
         };
         /**
          * EvidenceItem
-         * @description 来源原句与数据口径；仅表示可追溯性，不代表来源已获独立核实。
+         * @description ��Դԭ�������ݿھ�������ʾ��׷���ԣ���������Դ�ѻ������ʵ��
          */
         EvidenceItem: {
             /** Source Ref */
@@ -1938,7 +2006,7 @@ export interface components {
         };
         /**
          * ExportCheckReport
-         * @description 导出前分级报告。
+         * @description ����ǰ�ּ����档
          */
         ExportCheckReport: {
             /** Issues */
@@ -2088,7 +2156,7 @@ export interface components {
         };
         /**
          * FlexStateUpdateRequest
-         * @description 整页恢复灵活布局状态（撤销/重做增删块与换排布用）。
+         * @description ��ҳ�ָ�����״̬������/������ɾ���뻻�Ų��ã���
          */
         FlexStateUpdateRequest: {
             /** Revision */
@@ -2099,10 +2167,10 @@ export interface components {
         };
         /**
          * FontFamily
-         * @description Web 与 PPTX 分别声明字体名。
+         * @description Web �� PPTX �ֱ�������������
          *
-         *     浏览器可用 webfont，而 PPTX 只能引用观众机器上已安装的字体，
-         *     两者无法统一，因此显式分开声明，而不是让某一端将就另一端。
+         *     ��������� webfont���� PPTX ֻ�����ù��ڻ������Ѱ�װ�����壬
+         *     �����޷�ͳһ�������ʽ�ֿ���������������ĳһ�˽�����һ�ˡ�
          */
         FontFamily: {
             /** Web */
@@ -2127,7 +2195,7 @@ export interface components {
         };
         /**
          * Glow
-         * @description 光晕：同心椭圆逐层加深，越靠中心越浓，用实色台阶逼近径向渐变。
+         * @description ���Σ�ͬ����Բ�����Խ������ԽŨ����ʵɫ̨�ױƽ����򽥱䡣
          */
         Glow: {
             /** Scope */
@@ -2180,7 +2248,7 @@ export interface components {
         };
         /**
          * HairlineGrid
-         * @description 细网格：区域内等分的竖线与横线，只画内部分隔线。
+         * @description ϸ���������ڵȷֵ���������ߣ�ֻ���ڲ��ָ��ߡ�
          */
         HairlineGrid: {
             /** Scope */
@@ -2224,8 +2292,8 @@ export interface components {
         };
         /**
          * HealthResponse
-         * @description 显式声明响应模型，让 OpenAPI 产出带字段的 schema。
-         *     前端类型由 OpenAPI 生成，接口若只返回裸 dict，生成结果会退化为 object。
+         * @description ��ʽ������Ӧģ�ͣ��� OpenAPI �������ֶε� schema��
+         *     ǰ�������� OpenAPI ���ɣ��ӿ���ֻ������ dict�����ɽ�����˻�Ϊ object��
          */
         HealthResponse: {
             /**
@@ -2250,7 +2318,7 @@ export interface components {
             revision: number;
             /**
              * Subject
-             * @default 配图
+             * @default ��ͼ
              */
             subject: string;
         };
@@ -2345,7 +2413,7 @@ export interface components {
             download_location?: string | null;
             /**
              * Match Reason
-             * @default 待人工确认主体
+             * @default ���˹�ȷ������
              */
             match_reason: string;
             /**
@@ -2639,6 +2707,7 @@ export interface components {
         };
         /** OutlinePage */
         OutlinePage: {
+            travel_page?: components["schemas"]["TravelPageSpec"] | null;
             /** Title */
             title: string;
             /** Objective */
@@ -2767,7 +2836,7 @@ export interface components {
             status: "pending" | "started" | "succeeded" | "partial" | "retrying" | "failed" | "cancelled";
             /**
              * Message
-             * @default 等待执行
+             * @default �ȴ�ִ��
              */
             message: string;
             /** Started At */
@@ -2984,7 +3053,7 @@ export interface components {
         };
         /**
          * ProjectThemeUpdate
-         * @description 样式专用更新：不受大纲 confirmed 锁定。
+         * @description ��ʽר�ø��£����ܴ�� confirmed ������
          */
         ProjectThemeUpdate: {
             /** Theme Id */
@@ -3012,10 +3081,10 @@ export interface components {
         };
         /**
          * Rect
-         * @description 归一化矩形，取值 0–1，相对基准画布。
+         * @description ��һ�����Σ�ȡֵ 0�C1����Ի�׼������
          *
-         *     用归一化而非绝对坐标，是为了让缩略图、全屏预览和导出三者
-         *     共用同一份几何定义，换算只发生在各自的渲染边界上。
+         *     �ù�һ�����Ǿ������꣬��Ϊ��������ͼ��ȫ��Ԥ���͵�������
+         *     ����ͬһ�ݼ��ζ��壬����ֻ�����ڸ��Ե���Ⱦ�߽��ϡ�
          */
         Rect: {
             /** X */
@@ -3090,14 +3159,26 @@ export interface components {
             places?: components["schemas"]["TravelPlace"][];
             /** Hotels */
             hotels?: components["schemas"]["TravelPlace"][];
+            /** Restaurants */
+            restaurants?: components["schemas"]["TravelPlace"][];
+            /** Images */
+            images?: components["schemas"]["TravelImage"][];
+            route_map?: components["schemas"]["TravelMap"];
             /** Routes */
             routes?: components["schemas"]["TravelRoute"][];
             /** Weather */
             weather?: components["schemas"]["WeatherDay"][];
+            /** Air Quality */
+            air_quality?: components["schemas"]["AirQualityDay"][];
+            current_air_quality?: components["schemas"]["AirQualityDay"] | null;
             /** Services */
             services?: components["schemas"]["ServiceStatus"][];
             /** Issues */
             issues?: components["schemas"]["ResearchIssue"][];
+            /** Videos */
+            videos?: components["schemas"]["TravelVideo"][];
+            /** Video Advice */
+            video_advice?: components["schemas"]["VideoAdvice"][];
             plan?: components["schemas"]["TravelPlan"] | null;
         };
         /** ResearchIssue */
@@ -3204,7 +3285,7 @@ export interface components {
         };
         /**
          * SlideInsertRequest
-         * @description 在指定页之后插入空白页；null 表示追加到末尾。
+         * @description ��ָ��ҳ֮�����հ�ҳ��null ��ʾ׷�ӵ�ĩβ��
          */
         SlideInsertRequest: {
             /** After Slide Id */
@@ -3280,11 +3361,11 @@ export interface components {
         };
         /**
          * SlotCapacity
-         * @description 布局对内容长度的声明式约束。
+         * @description ���ֶ����ݳ��ȵ�����ʽԼ����
          *
-         *     它有两个用途：作为提示词里的硬指标约束模型生成长度，
-         *     以及在字体度量之前做一次廉价的快速筛查。
-         *     最终是否溢出仍以真实字体度量为准。
+         *     ����������;����Ϊ��ʾ�����Ӳָ��Լ��ģ�����ɳ��ȣ�
+         *     �Լ����������֮ǰ��һ�����۵Ŀ���ɸ�顣
+         *     �����Ƿ����������ʵ�������Ϊ׼��
          */
         SlotCapacity: {
             /** Max Lines */
@@ -3338,10 +3419,10 @@ export interface components {
         };
         /**
          * SourceSection
-         * @description 输入材料的一个章节。
+         * @description ������ϵ�һ���½ڡ�
          *
-         *     保留标题层级而非拍平成纯文本，是因为大纲规划本质上是结构提炼：
-         *     原文档已有的结构信息如果丢掉，等于让模型再猜一遍。
+         *     ��������㼶������ƽ�ɴ��ı�������Ϊ��ٹ滮�������ǽṹ������
+         *     ԭ�ĵ����еĽṹ��Ϣ���������������ģ���ٲ�һ�顣
          */
         SourceSection: {
             /** Level */
@@ -3355,11 +3436,11 @@ export interface components {
         };
         /**
          * StructureIssue
-         * @description 结构问题。
+         * @description �ṹ���⡣
          *
-         *     error 表示内容与布局的契约被破坏，必须阻断导出；
-         *     warning 表示内容偏长可能观感不佳，允许继续。
-         *     code 用于生成 repair 分流：overflow/capacity 不触发砍块重写。
+         *     error ��ʾ�����벼�ֵ���Լ���ƻ���������ϵ�����
+         *     warning ��ʾ����ƫ�����ܹ۸в��ѣ�����������
+         *     code �������� repair ������overflow/capacity ������������д��
          */
         StructureIssue: {
             /**
@@ -3537,7 +3618,7 @@ export interface components {
         };
         /**
          * ThemeOverrides
-         * @description 相对预设主题的安全子集覆盖。
+         * @description ���Ԥ������İ�ȫ�Ӽ����ǡ�
          */
         ThemeOverrides: {
             palette?: components["schemas"]["PaletteOverride"] | null;
@@ -3622,6 +3703,25 @@ export interface components {
              * @default
              */
             lodging_area: string;
+            /**
+             * Lodging Preferences
+             * @default
+             */
+            lodging_preferences: string;
+            /** Room Count */
+            room_count?: number | null;
+            /** Must Visit */
+            must_visit?: string[];
+            /**
+             * Meal Budget Per Day
+             * @default 100
+             */
+            meal_budget_per_day: number | string;
+            /**
+             * Contingency
+             * @default 300
+             */
+            contingency: number | string;
             /** Interests */
             interests?: string[];
             /**
@@ -3640,6 +3740,7 @@ export interface components {
              * @default false
              */
             confirmed: boolean;
+            video_preferences?: components["schemas"]["VideoPreferences"];
         };
         /** TravelConditions */
         "TravelConditions-Output": {
@@ -3697,6 +3798,25 @@ export interface components {
              * @default
              */
             lodging_area: string;
+            /**
+             * Lodging Preferences
+             * @default
+             */
+            lodging_preferences: string;
+            /** Room Count */
+            room_count?: number | null;
+            /** Must Visit */
+            must_visit?: string[];
+            /**
+             * Meal Budget Per Day
+             * @default 100
+             */
+            meal_budget_per_day: string;
+            /**
+             * Contingency
+             * @default 300
+             */
+            contingency: string;
             /** Interests */
             interests?: string[];
             /**
@@ -3715,6 +3835,7 @@ export interface components {
              * @default false
              */
             confirmed: boolean;
+            video_preferences?: components["schemas"]["VideoPreferences"];
         };
         /** TravelDay */
         TravelDay: {
@@ -3729,6 +3850,7 @@ export interface components {
             /** Breaks */
             breaks?: string[];
             weather?: components["schemas"]["WeatherDay"];
+            air_quality?: components["schemas"]["AirQualityDay"];
             /** Alternatives */
             alternatives?: string[];
             /** Warnings */
@@ -3760,7 +3882,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "price" | "hours" | "entry_cutoff" | "closure" | "booking" | "season" | "internal_route" | "checkin";
+            kind: "price" | "hours" | "entry_cutoff" | "closure" | "booking" | "season" | "internal_route" | "checkin" | "identity" | "entry_process" | "restriction" | "pitfall" | "restaurant" | "lodging" | "lodging_price" | "transport";
             /** Source Id */
             source_id: string;
             /** Quote */
@@ -3777,6 +3899,21 @@ export interface components {
              * @default
              */
             audience: string;
+            /**
+             * Room Type
+             * @default
+             */
+            room_type: string;
+            /**
+             * Price Unit
+             * @default
+             */
+            price_unit: string;
+            /**
+             * Tax Note
+             * @default
+             */
+            tax_note: string;
             /** Opens */
             opens?: string | null;
             /** Closes */
@@ -3797,6 +3934,70 @@ export interface components {
              * @enum {string}
              */
             status: "verified" | "reference" | "outdated" | "unverified";
+        };
+        /** TravelImage */
+        TravelImage: {
+            /** Place Id */
+            place_id: string;
+            /** Place Name */
+            place_name: string;
+            /** Url */
+            url: string;
+            /** Original Url */
+            original_url: string;
+            /** Source Id */
+            source_id: string;
+            /**
+             * Credit
+             * @default
+             */
+            credit: string;
+            /**
+             * Status
+             * @default ready
+             * @enum {string}
+             */
+            status: "ready" | "failed";
+        };
+        /** TravelMap */
+        TravelMap: {
+            /** Url */
+            url?: string | null;
+            /** Source Id */
+            source_id?: string | null;
+            /** Place Ids */
+            place_ids?: string[];
+            /**
+             * Status
+             * @default pending
+             * @enum {string}
+             */
+            status: "ready" | "partial" | "pending";
+            /**
+             * Note
+             * @default ·��ͼ����ѯ��ȱ�ٿɿ�����ʱ������λ��
+             */
+            note: string;
+        };
+        /** TravelPageSpec */
+        TravelPageSpec: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cover" | "overview" | "weather" | "lodging" | "attraction" | "official_details" | "experience" | "schedule" | "transport" | "cost_details" | "budget" | "checklist" | "preparation";
+            /** Place Id */
+            place_id?: string | null;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /**
+             * Limit
+             * @default 4
+             */
+            limit: number;
         };
         /** TravelPlace */
         TravelPlace: {
@@ -3822,6 +4023,13 @@ export interface components {
             photos?: {
                 [key: string]: string;
             }[];
+            /** Near Place Id */
+            near_place_id?: string | null;
+            /**
+             * Business Hours
+             * @default
+             */
+            business_hours: string;
         };
         /** TravelPlan */
         TravelPlan: {
@@ -3849,6 +4057,30 @@ export interface components {
              * @default 0
              */
             estimated_subtotal: string;
+            /**
+             * Contingency Subtotal
+             * @default 0
+             */
+            contingency_subtotal: string;
+            /**
+             * Total
+             * @default 0
+             */
+            total: string;
+            /**
+             * Per Person
+             * @default 0
+             */
+            per_person: string;
+            /** Budget Difference */
+            budget_difference?: string | null;
+            /**
+             * Total Complete
+             * @default false
+             */
+            total_complete: boolean;
+            /** Preparation */
+            preparation?: string[];
             /** Budget Limit */
             budget_limit?: string | null;
             /**
@@ -3862,6 +4094,8 @@ export interface components {
             unresolved_items: string[];
             /** Warnings */
             warnings?: string[];
+            /** Video Advice */
+            video_advice?: components["schemas"]["VideoAdvice"][];
         };
         /** TravelResearchAccepted */
         TravelResearchAccepted: {
@@ -3938,6 +4172,8 @@ export interface components {
              * @enum {string}
              */
             status: "ready" | "pending";
+            /** Instructions */
+            instructions?: string[];
         };
         /** TravelSource */
         TravelSource: {
@@ -3947,7 +4183,7 @@ export interface components {
              * Service
              * @enum {string}
              */
-            service: "qweather" | "amap" | "firecrawl";
+            service: "qweather" | "amap" | "firecrawl" | "video";
             /** Title */
             title: string;
             /** Url */
@@ -3996,6 +4232,77 @@ export interface components {
             /** Checkin Spots */
             checkin_spots?: string[];
         };
+        /** TravelVideo */
+        TravelVideo: {
+            /** Id */
+            id: string;
+            /**
+             * Platform
+             * @enum {string}
+             */
+            platform: "douyin" | "bilibili";
+            /** Url */
+            url: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /** Published At */
+            published_at?: string | null;
+            /**
+             * Retrieved At
+             * Format: date-time
+             */
+            retrieved_at: string;
+            /** Likes */
+            likes?: number | null;
+            /** Favorites */
+            favorites?: number | null;
+            /**
+             * Counts Approximate
+             * @default false
+             */
+            counts_approximate: boolean;
+            /** Duration Seconds */
+            duration_seconds?: number | null;
+            /** Topics */
+            topics?: string[];
+            /**
+             * Selected
+             * @default false
+             */
+            selected: boolean;
+            /**
+             * Status
+             * @default candidate
+             * @enum {string}
+             */
+            status: "candidate" | "rejected" | "selected" | "ready" | "unavailable";
+            /** Error Code */
+            error_code?: string | null;
+            /**
+             * Score
+             * @default 0
+             */
+            score: number;
+            /** Content Kind */
+            content_kind?: ("subtitles" | "transcription" | "platform_summary") | null;
+            /**
+             * Content Truncated
+             * @default false
+             */
+            content_truncated: boolean;
+            /** Source Id */
+            source_id?: string | null;
+            /** Segments */
+            segments?: components["schemas"]["VideoSegment"][];
+        };
         /** UnlockFlexRequest */
         UnlockFlexRequest: {
             /** Revision */
@@ -4031,6 +4338,73 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VideoAdvice */
+        VideoAdvice: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "lodging" | "restaurant" | "pitfall" | "checkin" | "route";
+            /** Place */
+            place: string;
+            /** Suggestion */
+            suggestion: string;
+            /** Quote */
+            quote: string;
+            /** Source Id */
+            source_id: string;
+            /** Video Id */
+            video_id: string;
+            /** Timestamp Seconds */
+            timestamp_seconds: number;
+            /** End Timestamp Seconds */
+            end_timestamp_seconds?: number | null;
+            /**
+             * Status
+             * @default reference
+             * @constant
+             */
+            status: "reference";
+        };
+        /** VideoPreferences */
+        VideoPreferences: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Platforms */
+            platforms?: ("douyin" | "bilibili")[];
+            /**
+             * Min Likes
+             * @default 10000
+             */
+            min_likes: number;
+            /**
+             * Min Favorites
+             * @default 1000
+             */
+            min_favorites: number;
+            /**
+             * Lookback Days
+             * @default 180
+             */
+            lookback_days: number;
+        };
+        /** VideoSegment */
+        VideoSegment: {
+            /**
+             * Start
+             * @default 0
+             */
+            start: number;
+            /** End */
+            end?: number | null;
+            /** Text */
+            text: string;
         };
         /** WaterfallBlock */
         WaterfallBlock: {
@@ -4084,7 +4458,7 @@ export interface components {
         };
         /**
          * Watermark
-         * @description 巨字水印。text 留空时用页码（01、02……）。
+         * @description ����ˮӡ��text ����ʱ��ҳ�루01��02��������
          */
         Watermark: {
             /** Scope */
@@ -4179,9 +4553,13 @@ export interface components {
             source_id?: string | null;
             /**
              * Note
-             * @default 天气待更新
+             * @default ����������
              */
             note: string;
+            /** Issued At */
+            issued_at?: string | null;
+            /** Valid Until */
+            valid_until?: string | null;
         };
         /** FlexContainer */
         FlexContainer: {
@@ -4234,10 +4612,10 @@ export interface components {
         };
         /**
          * Deck
-         * @description PPT 的统一内容模型。
+         * @description PPT ��ͳһ����ģ�͡�
          *
-         *     内容、布局、主题三者分离：这里描述页面块内容；
-         *     fixed 页几何来自布局槽位，flex 页几何来自 layout_tree，视觉表现来自主题。
+         *     ���ݡ����֡��������߷��룺��������ҳ������ݣ�
+         *     fixed ҳ�������Բ��ֲ�λ��flex ҳ�������� layout_tree���Ӿ������������⡣
          */
         Deck: {
             /** Id */

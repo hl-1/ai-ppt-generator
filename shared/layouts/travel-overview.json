@@ -1,0 +1,10 @@
+{
+  "id": "travel-overview", "name": "旅行路线总览", "usage": "真实地图、逐日安排与往返交通",
+  "slots": [
+    {"id": "title", "accepts": ["text"], "text_style": "title", "rect": {"x": 0.06, "y": 0.06, "w": 0.88, "h": 0.13}},
+    {"id": "image", "accepts": ["image"], "rect": {"x": 0.06, "y": 0.22, "w": 0.36, "h": 0.48}},
+    {"id": "body", "accepts": ["bullets"], "text_style": "body", "rect": {"x": 0.46, "y": 0.22, "w": 0.48, "h": 0.48}},
+    {"id": "footer", "accepts": ["text"], "text_style": "caption", "rect": {"x": 0.06, "y": 0.75, "w": 0.88, "h": 0.20}}
+  ],
+  "decorations": []
+}

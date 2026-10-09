@@ -40,7 +40,7 @@ from app.services.outline_progress import (
     publish_outline_event,
 )
 from app.services.sources import refresh_topic_sources
-from app.services.travel_planning import travel_sections
+from app.services.travel_planning import travel_context, travel_sections
 from app.services.travel_research import current_research, is_travel
 from app.worker.context import create_outline_generator
 from app.worker.retry import MAX_TRIES
@@ -72,6 +72,11 @@ def _ensure_draft(outline: ProjectOutline) -> None:
 
 
 async def _validate_pages(project: Project, pages: list, session: AsyncSession) -> None:
+    from app.schemas.project import MAX_PAGE_COUNT
+
+    limit = max(MAX_PAGE_COUNT, project.page_count if is_travel(project) else 0)
+    if len(pages) > limit:
+        raise HTTPException(422, f"大纲页数不能超过 {limit} 页")
     sources = {
         f"S{i}:{j}": section.get("text", "")
         for i, source in enumerate(project.sources, 1)
@@ -87,6 +92,11 @@ async def _validate_pages(project: Project, pages: list, session: AsyncSession) 
         ):
             raise HTTPException(409, "旅行资料已更新或失效，请重新生成大纲")
         sources.update({section.ref: section.text for section in travel_sections(research)})
+        from app.services.travel_outline import travel_coverage_issues
+
+        problems = travel_coverage_issues(pages, travel_context(research))
+        if problems:
+            raise HTTPException(422, "；".join(problems))
     for page in pages:
         if any(ref not in sources for ref in page.source_refs):
             raise HTTPException(status_code=422, detail=f"{page.title}：引用的来源不存在")

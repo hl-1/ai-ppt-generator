@@ -1,0 +1,10 @@
+{
+  "id": "travel-table", "name": "旅行数据汇总", "usage": "天气空气质量或完整费用计算",
+  "slots": [
+    {"id": "title", "accepts": ["text"], "text_style": "title", "rect": {"x": 0.06, "y": 0.06, "w": 0.88, "h": 0.12}},
+    {"id": "table", "accepts": ["table"], "rect": {"x": 0.06, "y": 0.21, "w": 0.88, "h": 0.60}},
+    {"id": "body", "accepts": ["bullets"], "text_style": "body", "required": false, "rect": {"x": 0.06, "y": 0.84, "w": 0.88, "h": 0.07}},
+    {"id": "footer", "accepts": ["text"], "text_style": "caption", "rect": {"x": 0.06, "y": 0.93, "w": 0.88, "h": 0.04}}
+  ],
+  "decorations": []
+}

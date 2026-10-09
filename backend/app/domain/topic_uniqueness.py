@@ -31,10 +31,7 @@ def find_duplicate_topic_layouts(slides: list[Slide]) -> list[tuple[str, str]]:
 
 
 def _layout_signature(slide: Slide) -> str:
-    block_roles = {
-        block.id: _layout_block_role(block.type)
-        for block in slide.blocks
-    }
+    block_roles = {block.id: _layout_block_role(block.type) for block in slide.blocks}
 
     def visit(node: FlexNode):
         if isinstance(node, FlexLeaf):
@@ -107,6 +104,10 @@ def _duplicate_reason(
     left: OutlinePageDraft, right: OutlinePageDraft, *, travel_mode: bool = False
 ) -> str | None:
     if travel_mode:
+        if left.travel_page and right.travel_page:
+            if left.travel_page != right.travel_page:
+                return None
+            return "重复承载同一组旅行资料"
         left_scope = _itinerary_scope(left)
         right_scope = _itinerary_scope(right)
         if left_scope and right_scope and left_scope.isdisjoint(right_scope):
@@ -137,9 +138,7 @@ def _duplicate_reason(
         return "页面目标或核心判断重复"
     if point_overlap >= 0.5:
         return "多数支撑要点重复"
-    if (
-        is_process_pair and point_overlap >= 0.4
-    ):
+    if is_process_pair and point_overlap >= 0.4:
         return "流程步骤与阶段内容高度重合"
 
     left_evidence = _evidence_signatures(left)

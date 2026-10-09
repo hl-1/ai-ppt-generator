@@ -49,7 +49,7 @@ export function SlideStage({
   return (
     <main className="bg-stage flex min-w-0 flex-1 flex-col">
       <div ref={scrollerRef} className="scrollbar-slim flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-[96rem] flex-col items-center gap-10 px-8 py-8">
+        <div className="mx-auto flex w-full max-w-[96rem] flex-col items-center gap-6 px-3 py-4 sm:gap-10 sm:px-8 sm:py-8">
           {slides.map((slide, index) => (
             <SlidePage
               key={slide.id}
@@ -82,7 +82,7 @@ export function SlideStage({
           onZoom={onZoom}
         />
 
-        <span className="text-xs text-ink-muted">
+        <span className="hidden text-xs text-ink-muted sm:inline">
           {locked
             ? '生成中暂不可编辑'
             : active?.status === 'ready'

@@ -700,10 +700,14 @@ class PptxRenderer:
         cell.vertical_anchor = MSO_ANCHOR.MIDDLE
         set_cell_borders(cell, bottom)
 
-        paragraph = cell.text_frame.paragraphs[0]
-        run = paragraph.add_run()
-        run.text = content
-        apply_text_style(run, self.theme, style)
+        frame = cell.text_frame
+        frame.word_wrap = True
+        frame._bodyPr.set("latinLnBrk", "0")
+        paragraph = frame.paragraphs[0]
+        for index, line in enumerate(content.replace("\r\n", "\n").replace("\r", "\n").split("\n")):
+            if index:
+                paragraph.add_line_break()
+            write_paragraph(paragraph, line, self.theme, style)
         self._apply_align(paragraph, align)
 
     def _apply_image_border(self, picture, style: BlockStyle | None) -> None:

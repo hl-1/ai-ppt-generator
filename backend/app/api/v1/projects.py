@@ -19,6 +19,7 @@ from app.ingest.upload import UploadRejected
 from app.models.project import Project, ProjectSource
 from app.models.user import User
 from app.schemas.project import (
+    MAX_PAGE_COUNT,
     ProjectCreate,
     ProjectDetail,
     ProjectPublic,
@@ -29,7 +30,7 @@ from app.schemas.project import (
 )
 from app.services.deck import load_slides, refresh_slide_issues
 from app.services.sources import add_document_source, add_text_source, delete_source
-from app.services.travel_research import invalidate_travel_research
+from app.services.travel_research import invalidate_travel_research, is_travel
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -112,9 +113,12 @@ async def update_project(
     _ensure_known_theme(body.theme_id)
 
     data = body.model_dump(exclude_unset=True, mode="json")
+    limit = max(MAX_PAGE_COUNT, project.page_count if is_travel(project) else 0)
+    if body.page_count is not None and body.page_count > limit:
+        raise HTTPException(422, f"页数不能超过 {limit} 页")
     travel_changed = any(
         field in data and data[field] != getattr(project, field)
-        for field in ("travel_conditions", "title", "report_brief")
+        for field in ("travel_conditions", "title", "report_brief", "page_count")
     )
     if travel_changed:
         await invalidate_travel_research(session, project)

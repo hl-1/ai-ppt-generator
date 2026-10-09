@@ -199,7 +199,7 @@ export function SlidePage({
       <div className="flex w-full max-w-[76rem] items-center gap-2 px-1">
         <span
           className={cn(
-            'text-[11px] font-medium tabular-nums',
+            'shrink-0 whitespace-nowrap text-[11px] font-medium tabular-nums',
             active ? 'text-accent' : 'text-ink-muted',
           )}
         >
@@ -211,7 +211,7 @@ export function SlidePage({
           <button
             type="button"
             onClick={onOpenRelayout}
-            className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-ink-soft transition-colors hover:bg-surface-soft hover:text-ink"
+            className="ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2 py-1 text-[11px] font-medium text-ink-soft transition-colors hover:bg-surface-soft hover:text-ink"
           >
             <RefreshCw className="size-3" />
             换排布

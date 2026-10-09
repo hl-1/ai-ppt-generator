@@ -104,7 +104,7 @@ class OutlineGenerateAccepted(BaseModel):
 class OutlineUpdate(BaseModel):
     blueprint: DeckBlueprint | None = None
     revision: int = Field(ge=1)
-    pages: list[OutlinePage] = Field(min_length=1, max_length=20)
+    pages: list[OutlinePage] = Field(min_length=1)
 
 
 class OutlinePageEvidenceFitRequest(BaseModel):

@@ -138,15 +138,6 @@
   },
   "ambient": [
     {
-      "motif": "glow",
-      "color": "accent_soft",
-      "strength": 0.35,
-      "cx": 0.9,
-      "cy": 0.14,
-      "radius_pt": 260,
-      "layers": 4
-    },
-    {
       "motif": "hairline_grid",
       "color": "line_strong",
       "strength": 0.4,

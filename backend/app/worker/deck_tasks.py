@@ -121,6 +121,7 @@ async def _generate_one(
         topic_mode=context.topic_mode,
         topic_request=context.topic_request,
         travel_context=context.travel_context,
+        travel_page=plan.travel_page,
         key_message=page.page.key_message,
         evidence=page.page.evidence,
         blueprint=context.blueprint,
@@ -161,7 +162,14 @@ async def _generate_one(
     await _publish(project_id, "slide_completed", f"第 {page.position} 页已完成", slide_id, page)
     if queue is None:
         return
-    image_ids = [b.id for b in slide.blocks if b.type == "image" and not b.url and not b.locked]
+    image_ids = [
+        b.id
+        for b in slide.blocks
+        if b.type == "image"
+        and not b.url
+        and not b.locked
+        and not (context.travel_context and plan.travel_page)
+    ]
     if image_ids:
         try:
             async with async_session_factory() as session:

@@ -16,5 +16,5 @@ export const TONE_LABEL: Record<NonNullable<Tone>, string> = {
   punchy: '简洁有力',
 }
 
-export const PAGE_COUNT_RANGE = { min: 5, max: 20 } as const
+export const PAGE_COUNT_RANGE = { min: 5, max: 80 } as const
 export const ACCEPTED_UPLOAD = '.pdf,.docx,.md,.markdown,.txt'

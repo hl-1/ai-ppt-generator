@@ -168,8 +168,8 @@ def test_every_preset_theme_keeps_flat_shapes_in_canvas() -> None:
 
 def test_export_verify_allows_bleeding_ambient() -> None:
     """装饰出血是有意行为，导出校验不该把它判成越界。"""
-    deck = load_sample_deck().model_copy(update={"theme_id": "obsidian"})
-    theme = get_theme("obsidian")
+    deck = load_sample_deck().model_copy(update={"theme_id": "midnight"})
+    theme = _theme_with(Glow(motif="glow", cx=1.0, cy=0.0, radius_pt=400, layers=3))
     payload = PptxRenderer(theme).render(deck).getvalue()
 
     presentation = Presentation(BytesIO(payload))
@@ -179,7 +179,7 @@ def test_export_verify_allows_bleeding_ambient() -> None:
         if shape.name.startswith(AMBIENT_SHAPE_PREFIX)
         and (int(shape.left) < 0 or int(shape.left) + int(shape.width) > Pt(CANVAS_WIDTH_PT))
     ]
-    assert bleeding, "obsidian 的光晕本来就该越出画布"
+    assert bleeding, "测试光晕应越出画布以验证装饰裁切"
 
     report = verify_pptx(payload, deck)
     assert report.passed is True, [issue.message for issue in report.issues]

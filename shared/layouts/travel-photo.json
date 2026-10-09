@@ -1,0 +1,10 @@
+{
+  "id": "travel-photo", "name": "旅行图文", "usage": "真实景点照片与分组旅行资料",
+  "slots": [
+    {"id": "title", "accepts": ["text"], "text_style": "title", "rect": {"x": 0.06, "y": 0.06, "w": 0.88, "h": 0.13}},
+    {"id": "image", "accepts": ["image"], "rect": {"x": 0.06, "y": 0.22, "w": 0.30, "h": 0.60}},
+    {"id": "body", "accepts": ["bullets"], "text_style": "body", "rect": {"x": 0.40, "y": 0.22, "w": 0.54, "h": 0.60}},
+    {"id": "footer", "accepts": ["text"], "text_style": "caption", "rect": {"x": 0.06, "y": 0.87, "w": 0.88, "h": 0.08}}
+  ],
+  "decorations": []
+}

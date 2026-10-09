@@ -1,0 +1,9 @@
+{
+  "id": "travel-text", "name": "旅行详细资料", "usage": "住宿、体验、交通与完整日程",
+  "slots": [
+    {"id": "title", "accepts": ["text"], "text_style": "title", "rect": {"x": 0.06, "y": 0.06, "w": 0.88, "h": 0.13}},
+    {"id": "body", "accepts": ["bullets"], "text_style": "body", "rect": {"x": 0.06, "y": 0.22, "w": 0.88, "h": 0.61}},
+    {"id": "footer", "accepts": ["text"], "text_style": "caption", "rect": {"x": 0.06, "y": 0.88, "w": 0.88, "h": 0.07}}
+  ],
+  "decorations": []
+}

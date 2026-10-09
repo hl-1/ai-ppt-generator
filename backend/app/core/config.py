@@ -57,6 +57,17 @@ class Settings(BaseSettings):
     travel_service_timeout_seconds: float = 15
     travel_total_timeout_seconds: float = 120
     travel_service_retries: int = 1
+    travel_video_max_candidates: int = 12
+    travel_video_max_selected: int = 4
+    travel_video_timeout_seconds: float = 240
+    travel_video_item_timeout_seconds: float = 40
+    travel_video_max_duration_seconds: int = 900
+    travel_video_max_download_mb: int = 100
+    travel_video_cookie_file: str = ""
+    travel_video_asr_enabled: bool = True
+    travel_video_asr_model: str = "small"
+    travel_video_asr_threads: int = 4
+    travel_video_asr_timeout_seconds: float = 120
     image_timeout_seconds: float = 60
 
     storage_driver: Literal["local", "cos"] = "local"

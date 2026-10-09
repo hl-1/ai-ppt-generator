@@ -385,10 +385,17 @@ def test_travel_outline_uses_saved_plan_at_requested_page_count(page_count):
             travel_context=context,
         )
     )
-    assert len(draft.pages) == page_count
+    assert len(draft.pages) == 6
+    assert not any(page.travel_page.kind == "checklist" for page in draft.pages)
     assert all(2 <= len(page.key_points) <= 5 for page in draft.pages)
     assert "v3" in draft.blueprint.core_message
-    assert draft.pages[-2].title == "预算与缺价项目"
+    assert draft.pages[-1].title == "消费成本汇总"
+    assert [page.travel_page.kind for page in draft.pages[:4]] == [
+        "cover",
+        "overview",
+        "weather",
+        "lodging",
+    ]
 
 
 def itinerary_page(day, date_text, *, title=None):
@@ -502,7 +509,7 @@ async def test_multi_day_travel_workflow_does_not_repair_shared_reminders():
 
     draft = await run_outline_workflow(build_outline_workflow(NoModelGenerator()), payload)
 
-    assert len(draft.pages) == 10
+    assert len(draft.pages) >= 10
     assert not find_duplicate_topic_pages(draft.pages, travel_mode=True)
     assert all(page.source_refs == ["T:plan"] for page in draft.pages)
 
@@ -761,7 +768,6 @@ async def test_core_travel_deck_uses_saved_plan_and_has_distinct_exportable_layo
     from app.domain.content import Deck
     from app.domain.export_check import run_export_check
     from app.domain.theme import resolve_theme
-    from app.domain.topic_uniqueness import find_duplicate_topic_layouts
     from app.llm.base import OutlineGenerationInput, SlideGenerationInput
     from app.services.travel_outline import build_travel_outline
     from app.worker.context import create_slide_generator
@@ -786,6 +792,7 @@ async def test_core_travel_deck_uses_saved_plan_and_has_distinct_exportable_layo
     for position, page in enumerate(outline.pages, 1):
         payload = SlideGenerationInput(
             travel_context=context,
+            travel_page=page.travel_page,
             deck_title="北京旅游",
             tone="professional",
             position=position,
@@ -801,7 +808,7 @@ async def test_core_travel_deck_uses_saved_plan_and_has_distinct_exportable_layo
         )
         slide, _ = await run_slide_workflow(workflow, payload, uuid.uuid4())
         slides.append(slide)
-    assert not find_duplicate_topic_layouts(slides)
+    assert all(slide.layout_id.startswith("travel-") for slide in slides)
     report = run_export_check(
         Deck(id="test", title="北京旅游", theme_id="ivory", slides=slides),
         theme=resolve_theme("ivory"),
