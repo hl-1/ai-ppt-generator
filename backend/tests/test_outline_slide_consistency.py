@@ -78,17 +78,15 @@ async def test_worker_uses_confirmed_page_without_replanning(monkeypatch):
         pages={slide_id: deck_tasks.SlideTarget(1, confirmed)},
         ordered_titles=[confirmed.title],
         topic_mode=True,
+        topic_request="春节去北京旅游规划，重点是景点预约与交通安排。",
     )
     monkeypatch.setattr(deck_tasks, "_mark_generating", AsyncMock(return_value=True))
     monkeypatch.setattr(deck_tasks, "_publish", AsyncMock())
     workflow = AsyncMock(return_value=(SimpleNamespace(), []))
     monkeypatch.setattr(deck_tasks, "run_slide_workflow", workflow)
-    monkeypatch.setattr(
-        deck_tasks, "resolve_slide_images", AsyncMock(return_value=SimpleNamespace())
-    )
     monkeypatch.setattr(deck_tasks, "_save_ready", AsyncMock())
 
-    await deck_tasks._generate_one(uuid.uuid4(), slide_id, context, None, None)
+    await deck_tasks._generate_one(uuid.uuid4(), slide_id, context, None)
     payload = workflow.call_args.args[1]
 
     assert payload.page_title == confirmed.title
@@ -96,3 +94,4 @@ async def test_worker_uses_confirmed_page_without_replanning(monkeypatch):
     assert payload.visual_type == "auto"
     assert payload.evidence_kind == "narrative"
     assert payload.evidence == []
+    assert payload.topic_request == context.topic_request

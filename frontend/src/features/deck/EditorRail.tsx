@@ -38,9 +38,9 @@ export function EditorRail({
   const panelOpen = Boolean(tab)
 
   return (
-    <div className="flex shrink-0">
+    <div className="relative z-20 flex shrink-0">
       {panelOpen && (
-        <aside className="scrollbar-slim w-80 overflow-y-auto border-l border-line bg-surface px-4 py-4">
+        <aside className="scrollbar-slim absolute inset-y-0 right-13 w-[min(20rem,calc(100vw-3.25rem))] overflow-y-auto border-l border-line bg-surface px-4 py-4 shadow-xl sm:static sm:w-80 sm:shadow-none">
           {tab === 'ai' && <AiEditPanel projectId={project.id} slide={slide} />}
           {tab === 'theme' && <ThemePanel project={project} disabled={locked} />}
           {tab === 'layout' && (
@@ -54,7 +54,7 @@ export function EditorRail({
             />
           )}
           {tab === 'image' && (
-            <ImagePanel projectId={project.id} slide={slide} disabled={locked} />
+            <ImagePanel projectId={project.id} slide={slide} disabled={locked || slide.status !== 'ready'} />
           )}
         </aside>
       )}

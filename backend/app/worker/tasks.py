@@ -21,6 +21,7 @@ from app.models.project import Project
 from app.schemas.outline import OutlineErrorCode, OutlineEvent, OutlineStage
 from app.services.outline_inputs import project_input_signature
 from app.services.outline_progress import publish_outline_event
+from app.services.topic_material import topic_request_from_sections
 from app.worker.context import create_outline_generator
 from app.worker.retry import retry_after_failure
 from app.workflows.outline import build_outline_workflow, run_outline_workflow
@@ -40,6 +41,20 @@ async def generate_outline(ctx: dict[str, Any], project_id: str, job_id: str) ->
             "load_input",
             10,
             "正在读取输入材料",
+        )
+        from app.services.travel_research import ensure_project_research
+
+        async def research_progress(value: int, message: str):
+            await _progress(
+                project_uuid,
+                10 + value // 10,
+                message,
+                stage="travel_research",
+                stage_status="started",
+            )
+
+        await ensure_project_research(
+            project_uuid, model=ctx.get("chat_model"), progress=research_progress
         )
         loaded = await _load_generation_input(project_uuid, job_id)
         if loaded is None:
@@ -112,6 +127,9 @@ async def generate_outline(ctx: dict[str, Any], project_id: str, job_id: str) ->
             input_signature,
             expected_revision,
             blueprint=draft.blueprint.model_dump(mode="json"),
+            travel_research_id=uuid.UUID(payload.travel_context["research_id"])
+            if payload.travel_context
+            else None,
         )
         if revision is None:
             logger.warning(
@@ -213,8 +231,17 @@ async def _load_generation_input(
             for section_index, section in enumerate(source.sections, start=1)
         ]
         from app.domain.content_density import normalize_density
+        from app.services.travel_planning import travel_context, travel_sections
+        from app.services.travel_research import current_research, is_travel
+
+        research = await current_research(session, project) if is_travel(project) else None
+        travel = travel_context(research, project.travel_booking_states)
+        if is_travel(project) and travel is None:
+            raise ValueError("旅行资料已失效，请刷新后重新生成")
+        sections.extend(travel_sections(research))
 
         payload = OutlineGenerationInput(
+            travel_context=travel,
             report_brief=getattr(project, "report_brief", None) or {},
             title=project.title,
             audience=project.audience,
@@ -222,6 +249,12 @@ async def _load_generation_input(
             page_count=project.page_count,
             content_density=normalize_density(getattr(project, "content_density", None)),
             topic_mode=any(source.kind == "topic" for source in project.sources),
+            topic_request="\n\n".join(
+                topic_request_from_sections(source.sections, fallback=project.title)
+                for source in project.sources
+                if source.kind == "topic"
+            )
+            or None,
             sections=sections,
         )
         return payload, project_input_signature(project), project.outline.revision
@@ -235,6 +268,7 @@ async def _save_completed(
     expected_revision: int,
     *,
     blueprint: dict | None = None,
+    travel_research_id: uuid.UUID | None = None,
 ) -> int | None:
     async with async_session_factory() as session:
         result = await session.execute(
@@ -254,9 +288,13 @@ async def _save_completed(
             # 用户已经启动了更新任务时，迟到结果必须丢弃，不能覆盖新状态。
             return None
 
+        if project_input_signature(project) != input_signature:
+            raise ValueError("生成期间输入已修改，请重新生成大纲")
+
         outline.pages = [page.model_dump(mode="json") for page in pages]
         outline.blueprint = blueprint or {}
         outline.input_signature = input_signature
+        outline.travel_research_id = travel_research_id
         outline.status = "draft"
         outline.error = None
         outline.revision += 1
@@ -365,8 +403,7 @@ async def _stage_failed(
     retrying: bool,
 ) -> None:
     logger.warning(
-        "outline stage failed project_id=%s job_id=%s stage=%s "
-        "error_code=%s retrying=%s",
+        "outline stage failed project_id=%s job_id=%s stage=%s error_code=%s retrying=%s",
         project_id,
         job_id,
         stage,

@@ -1,10 +1,8 @@
 from typing import Any
 
-import httpx
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from app.core.config import get_settings
-from app.images.pipeline import create_image_pipeline
 from app.llm.base import OutlineGenerator, SlideEditGenerator, SlideGenerator
 from app.llm.client import create_chat_model
 from app.llm.deepseek import DeepSeekOutlineGenerator
@@ -52,10 +50,6 @@ async def startup(ctx: dict[str, Any]) -> None:
     ctx["outline_generator"] = create_outline_generator(model)
     ctx["slide_generator"] = create_slide_generator(model)
 
-    http_client = httpx.AsyncClient(trust_env=False, proxy=None)
-    ctx["http_client"] = http_client
-    ctx["image_pipeline"] = create_image_pipeline(http_client)
-
 
 async def shutdown(ctx: dict[str, Any]) -> None:
     model = ctx.get("chat_model")
@@ -64,7 +58,3 @@ async def shutdown(ctx: dict[str, Any]) -> None:
         close = getattr(client, "close", None)
         if close is not None:
             await close()
-
-    http_client = ctx.get("http_client")
-    if http_client is not None:
-        await http_client.aclose()

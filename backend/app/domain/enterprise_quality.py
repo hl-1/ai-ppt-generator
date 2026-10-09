@@ -169,7 +169,9 @@ def check_report_quality(
         )
 
     active = [plans[s.id] for s in deck.slides if s.id in plans]
-    enterprise = brief.scenario != "general" or bool(blueprint.core_message)
+    enterprise = brief.scenario != "travel_plan" and (
+        brief.scenario != "general" or bool(blueprint.core_message)
+    )
     if enterprise and len(active) >= 5:
         roles = {p.narrative_role for p in active}
         if "executive_summary" not in roles:

@@ -7,7 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.domain.outline import DeckBlueprint, OutlinePage
 
 OutlineStatus = Literal["generating", "draft", "confirmed", "failed"]
-OutlineStage = Literal["queue", "load_input", "plan_structure", "validate", "save"]
+OutlineStage = Literal[
+    "queue", "load_input", "travel_research", "plan_structure", "validate", "save"
+]
 OutlineStageStatus = Literal["started", "succeeded", "failed"]
 OutlineErrorCode = Literal[
     "queue_unavailable",

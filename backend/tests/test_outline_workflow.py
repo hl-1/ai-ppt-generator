@@ -272,14 +272,214 @@ def test_create_chat_model_enables_thinking() -> None:
 
 
 @pytest.mark.asyncio
-async def test_deepseek_rejects_illegal_layout() -> None:
+async def test_deepseek_falls_back_from_illegal_layout_without_regenerating() -> None:
+    chat = SequenceChat([_valid_outline_json(layout_id="not-a-layout")])
     generator = DeepSeekOutlineGenerator(
-        chat=FakeChat(_valid_outline_json(layout_id="not-a-layout")),
+        chat=chat,
         layout_ids=frozenset({"bullets", "cover"}),
     )
 
-    with pytest.raises(InvalidOutlineOutputError, match="非法 layout_id"):
-        await generator.generate(_input(page_count=2))
+    draft = await generator.generate(_input(page_count=2))
+
+    assert len(chat.system_prompts) == 1
+    assert [page.layout_id for page in draft.pages] == ["bullets", "bullets"]
+    assert [page.model_dump(exclude={"layout_id"}) for page in draft.pages] == [
+        page.model_dump(exclude={"layout_id"}) for page in _draft_pages(2, refs=["S1:1"])
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("layout_id", ["two_column", "TwoColumn", "TWO-COLUMN", " two columns "])
+async def test_deepseek_normalizes_layout_names(layout_id: str) -> None:
+    generator = DeepSeekOutlineGenerator(
+        chat=FakeChat(_valid_outline_json(layout_id=layout_id)),
+        layout_ids=frozenset({"bullets", "two-column"}),
+    )
+
+    draft = await generator.generate(_input(page_count=2))
+
+    assert [page.layout_id for page in draft.pages] == ["two-column", "two-column"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("page_role", ["cover", "toc", "section", "summary"])
+async def test_deepseek_layout_fallback_respects_page_role(page_role: str) -> None:
+    response = json.loads(_valid_outline_json(page_count=1, layout_id="unknown"))
+    response["pages"][0]["page_role"] = page_role
+    generator = DeepSeekOutlineGenerator(
+        chat=FakeChat(json.dumps(response)),
+        layout_ids=frozenset({"bullets", page_role}),
+    )
+
+    draft = await generator.generate(_input(page_count=1))
+
+    assert draft.pages[0].layout_id == page_role
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("layout_id", ["two_column", None])
+async def test_deepseek_fallback_only_uses_installed_layouts(layout_id: str | None) -> None:
+    response = json.loads(_valid_outline_json(page_count=1))
+    response["pages"][0]["layout_id"] = layout_id
+    generator = DeepSeekOutlineGenerator(
+        chat=FakeChat(json.dumps(response)),
+        layout_ids=frozenset({"bullets"}),
+    )
+
+    draft = await generator.generate(_input(page_count=1))
+
+    assert draft.pages[0].layout_id == "bullets"
+
+
+@pytest.mark.asyncio
+async def test_deepseek_normalizes_model_field_types_and_names() -> None:
+    response = {
+        "blueprint": {"coreMessage": None, "narrative": "Overview\nConclusion"},
+        "pages": [
+            {
+                "title": "Revenue",
+                "objective": "Review growth",
+                "keyPoints": "Revenue grew\nGrowth continued",
+                "sourceRefs": "S1:1",
+                "layoutId": "two_column",
+                "pageRole": "BODY",
+                "narrativeRole": "executive-summary",
+                "evidenceKind": "TREND",
+                "visualType": "line_chart",
+                "keyMessage": None,
+                "planningNotes": None,
+                "evidence": [
+                    {
+                        "sourceRef": "S1:1",
+                        "quote": "2024 revenue: 100",
+                        "value": 100,
+                        "period": 2024,
+                        "metric": None,
+                    }
+                ],
+            }
+        ],
+    }
+    generator = DeepSeekOutlineGenerator(
+        chat=FakeChat(json.dumps(response)),
+        layout_ids=frozenset({"bullets", "two-column"}),
+    )
+
+    draft = await generator.generate(_input(page_count=1))
+
+    assert draft.blueprint.core_message == ""
+    assert draft.blueprint.narrative == ["Overview", "Conclusion"]
+    page = draft.pages[0]
+    assert page.key_points == ["Revenue grew", "Growth continued"]
+    assert page.source_refs == ["S1:1"]
+    assert page.page_role == "content"
+    assert page.narrative_role == "executive_summary"
+    assert page.evidence_kind == "trend"
+    assert page.visual_type == "line"
+    assert page.key_message == ""
+    assert page.planning_notes == []
+    assert page.evidence[0].value == "100"
+    assert page.evidence[0].period == "2024"
+    assert page.evidence[0].quote == "2024 revenue: 100"
+
+
+@pytest.mark.asyncio
+async def test_deepseek_accepts_pages_array_and_optional_nulls() -> None:
+    pages = json.loads(_valid_outline_json(page_count=1))["pages"]
+    pages[0].update(source_refs=None, evidence=None, visual_type=None)
+    pages[0].pop("layout_id")
+    generator = DeepSeekOutlineGenerator(
+        chat=FakeChat(json.dumps(pages)),
+        layout_ids=frozenset({"bullets"}),
+    )
+
+    draft = await generator.generate(_input(page_count=1))
+
+    assert draft.pages[0].source_refs == []
+    assert draft.pages[0].evidence == []
+    assert draft.pages[0].visual_type == "auto"
+    assert draft.pages[0].layout_id == "bullets"
+
+
+@pytest.mark.asyncio
+async def test_deepseek_repair_receives_specific_field_errors() -> None:
+    response = json.loads(_valid_outline_json(page_count=1))
+    response["pages"][0].pop("objective")
+    chat = SequenceChat([json.dumps(response), _valid_outline_json(page_count=1)])
+    generator = DeepSeekOutlineGenerator(chat=chat, layout_ids=frozenset({"bullets"}))
+
+    draft = await generator.generate(_input(page_count=1))
+
+    assert len(draft.pages) == 1
+    assert len(chat.system_prompts) == 2
+    assert "pages.0.objective: missing" in chat.system_prompts[1]
+
+
+@pytest.mark.asyncio
+async def test_deepseek_repair_receives_invalid_reference() -> None:
+    chat = SequenceChat(
+        [
+            _valid_outline_json(page_count=1, ref="S9:9"),
+            _valid_outline_json(page_count=1),
+        ]
+    )
+    generator = DeepSeekOutlineGenerator(chat=chat, layout_ids=frozenset({"bullets"}))
+
+    draft = await generator.generate(_input(page_count=1))
+
+    assert draft.pages[0].source_refs == ["S1:1"]
+    assert len(chat.system_prompts) == 2
+    assert "S9:9" in chat.system_prompts[1]
+
+
+@pytest.mark.asyncio
+async def test_deepseek_does_not_invent_missing_content() -> None:
+    response = json.loads(_valid_outline_json(page_count=1))
+    response["pages"][0]["key_points"] = []
+    generator = DeepSeekOutlineGenerator(
+        chat=FakeChat(json.dumps(response)),
+        layout_ids=frozenset({"bullets"}),
+    )
+
+    with pytest.raises(InvalidOutlineOutputError):
+        await generator.generate(_input(page_count=1))
+
+
+@pytest.mark.asyncio
+async def test_deepseek_refit_uses_same_normalization_and_preserves_page_role() -> None:
+    response = {
+        "title": "Revenue trend",
+        "objective": "Explain growth",
+        "keyPoints": "Revenue grew\nGrowth continued",
+        "sourceRefs": "S1:1",
+        "layoutId": "line_chart",
+        "pageRole": "BODY",
+        "narrativeRole": "supporting",
+        "evidenceKind": "TREND",
+        "visualType": "line_chart",
+        "evidence": [{"sourceRef": "S1:1", "quote": "Revenue: 100", "value": 100}],
+    }
+    generator = DeepSeekOutlineGenerator(
+        chat=FakeChat(json.dumps(response)),
+        layout_ids=frozenset({"bullets", "chart"}),
+    )
+    page = OutlinePageDraft(
+        title="Revenue",
+        objective="Explain growth",
+        key_points=["Growth", "Next steps"],
+        layout_id="bullets",
+        page_role="summary",
+        narrative_role="summary",
+    )
+
+    fitted = await generator.refit_page(page, "trend", [_section("S1:1", "Revenue: 100")])
+
+    assert fitted.page_role == "summary"
+    assert fitted.narrative_role == "summary"
+    assert fitted.layout_id == "chart"
+    assert fitted.evidence_kind == "trend"
+    assert fitted.evidence[0].value == "100"
+    assert fitted.evidence[0].source_ref == "S1:1"
 
 
 @pytest.mark.asyncio

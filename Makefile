@@ -42,7 +42,7 @@ migration:
 # 前端接口类型由后端 OpenAPI 生成，两端类型不会各写一份而分叉。
 # 直接从应用对象导出 schema，因此不需要先把服务跑起来。
 gen-api:
-	cd backend && uv run python -c "import json; from app.main import app; print(json.dumps(app.openapi(), ensure_ascii=False))" > ../frontend/openapi.json
+	cd backend && uv run python -m scripts.export_openapi > ../frontend/openapi.json
 	cd frontend && npx openapi-typescript openapi.json -o src/api/schema.d.ts
 
 test:

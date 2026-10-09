@@ -9,10 +9,12 @@ from app.domain.outline import (
     DeckBlueprint,
     EvidenceItem,
     EvidenceKind,
+    ImagePlan,
     NarrativeRole,
     OutlineDraft,
     OutlinePageDraft,
     ReportBrief,
+    VisualType,
 )
 from app.domain.slide_draft import FlexSlideDraft, SlideDraft
 from app.domain.slide_patch import BlockPatch
@@ -37,6 +39,7 @@ class OutlineSourceSection(BaseModel):
 
 
 class OutlineGenerationInput(BaseModel):
+    travel_context: dict[str, Any] | None = None
     report_brief: ReportBrief = Field(default_factory=ReportBrief)
     title: str = Field(min_length=1, max_length=200)
     audience: str | None = Field(default=None, max_length=100)
@@ -45,6 +48,7 @@ class OutlineGenerationInput(BaseModel):
     page_count: int = Field(ge=1, le=MAX_DECK_PAGE_COUNT)
     content_density: ContentDensity = DEFAULT_CONTENT_DENSITY
     topic_mode: bool = False
+    topic_request: str | None = None
     sections: list[OutlineSourceSection] = Field(default_factory=list)
     issues: list[str] = Field(default_factory=list)
     previous_draft: dict[str, Any] | None = None
@@ -70,6 +74,7 @@ class SlideGenerationInput(BaseModel):
     以及本页引用到的来源片段。页面之间因此互不依赖，可以并发生成。
     """
 
+    travel_context: dict[str, Any] | None = None
     deck_title: str
     audience: str | None = None
     tone: str
@@ -85,19 +90,9 @@ class SlideGenerationInput(BaseModel):
     page_role: PageRole = DEFAULT_PAGE_ROLE
     narrative_role: NarrativeRole = "supporting"
     evidence_kind: EvidenceKind = "narrative"
-    visual_type: Literal[
-        "auto",
-        "line",
-        "column",
-        "bar",
-        "pie",
-        "flow",
-        "timeline",
-        "financial_table",
-        "waterfall",
-        "combo_chart",
-    ] = "auto"
+    visual_type: VisualType = "auto"
     topic_mode: bool = False
+    topic_request: str | None = None
     key_message: str = ""
     evidence: list[EvidenceItem] = Field(default_factory=list)
     blueprint: DeckBlueprint = Field(default_factory=DeckBlueprint)
@@ -108,6 +103,7 @@ class SlideGenerationInput(BaseModel):
     other_page_briefs: list[dict[str, Any]] = Field(default_factory=list)
     # 大纲给的配图意图，非空时本页必须产出一个 image 块并以它作 alt
     visual_hint: str | None = Field(default=None, max_length=120)
+    image_plan: ImagePlan | None = None
     # 版式骨架与 callout 配额由编排层按页序分配，见 domain/page_rhythm
     layout_template: str | None = Field(default=None, max_length=40)
     skeleton_hint: str | None = Field(default=None, max_length=200)

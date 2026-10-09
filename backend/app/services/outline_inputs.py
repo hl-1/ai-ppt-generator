@@ -28,6 +28,10 @@ def _core_payload(project: Project) -> dict:
     brief = ReportBrief.model_validate(getattr(project, "report_brief", None) or {})
     if brief != ReportBrief():
         payload["report_brief"] = brief.model_dump()
+    if brief.scenario == "travel_plan":
+        payload["travel_conditions"] = getattr(project, "travel_conditions", None)
+        research_id = getattr(project, "travel_research_id", None)
+        payload["travel_research_id"] = str(research_id) if research_id else None
     return payload
 
 

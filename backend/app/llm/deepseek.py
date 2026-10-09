@@ -1,19 +1,22 @@
 from __future__ import annotations
 
 import json
-from typing import get_args
+import logging
+from typing import Any, get_args
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.domain.content_density import PAGE_ROLES, outline_density_hint
 from app.domain.layout import load_layouts
 from app.domain.outline import (
     DeckBlueprint,
+    EvidenceItem,
     EvidenceKind,
     NarrativeRole,
     OutlineDraft,
     OutlinePageDraft,
+    VisualType,
 )
 from app.llm.base import OutlineGenerationInput, OutlineSourceSection
 from app.llm.client import StructuredChatClient
@@ -22,6 +25,14 @@ from app.llm.errors import (
     InvalidOutlineOutputError,
     LLMNotConfiguredError,
 )
+from app.llm.normalization import (
+    model_output_feedback,
+    normalize_choice,
+    normalize_layout_id,
+    normalize_model_fields,
+    normalize_string_list,
+)
+from app.llm.topic import TOPIC_SCOPE_RULES
 
 __all__ = [
     "DeepSeekOutlineGenerator",
@@ -30,10 +41,16 @@ __all__ = [
 ]
 
 _PREFERRED_MULTI_SLOT = ("two-column", "kpi", "image-left", "image-right", "chart", "table")
+logger = logging.getLogger(__name__)
 
 _VISUAL_RULE = (
-    "配图规则：visual 只描述与本页观点直接相关的业务画面；没有表达价值时留 null。"
-    "数据分析页优先展示证据，不强制配图库照片；封面/目录/章节页留 null。"
+    "配图规则：根据主题规划与本页直接相关的画面，没有表达价值时 visual/image_plan 留 null。"
+    "旅游、景点、建筑、产品与人物优先真实照片，visual_type=photo；抽象概念可用 illustration。"
+    "图片页填写 visual 为具体对象，同时填写 image_plan：subject（具体对象）、"
+    "queries（1-3 个简短英文检索词，保留地名和对象名）、source（stock/generated/auto）、"
+    "require_real（真实对象为 true）、purpose（cover/subject/support）。"
+    "旅游封面及景点介绍页应规划照片；行程使用时间线，预算使用表格。"
+    "数据页优先图表，目录通常不配图；不能用生成图片冒充真实景点或产品。\n"
 )
 _NARRATIVE_ROLES = frozenset(get_args(NarrativeRole))
 _EVIDENCE_ROLE_FALLBACKS = {
@@ -47,16 +64,98 @@ _EVIDENCE_ROLE_FALLBACKS = {
     "timeline": "action",
     "actions": "action",
 }
+_PAGE_ROLE_ALIASES = {
+    "title": "cover",
+    "title_slide": "cover",
+    "agenda": "toc",
+    "table_of_contents": "toc",
+    "chapter": "section",
+    "body": "content",
+    "conclusion": "summary",
+    "closing": "summary",
+}
+_VISUAL_ALIASES = {
+    "line_chart": "line",
+    "bar_chart": "bar",
+    "column_chart": "column",
+    "pie_chart": "pie",
+    "table": "financial_table",
+    "flowchart": "flow",
+}
+
+
+class _ModelEvidenceItem(EvidenceItem):
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_fields(cls, value: Any) -> Any:
+        value = normalize_model_fields(value, cls.model_fields)
+        if isinstance(value, dict):
+            for name in ("value", "period"):
+                if isinstance(value.get(name), (int, float)) and not isinstance(value[name], bool):
+                    value[name] = str(value[name])
+        return value
+
+
+class _ModelDeckBlueprint(DeckBlueprint):
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_fields(cls, value: Any) -> Any:
+        value = normalize_model_fields(value, cls.model_fields)
+        if isinstance(value, dict) and "narrative" in value:
+            value["narrative"] = normalize_string_list(value["narrative"])
+        return value
 
 
 class _ModelOutlinePageDraft(OutlinePageDraft):
     # 模型偶尔会把 evidence_kind 的合法值误填到 narrative_role。
     narrative_role: NarrativeRole | EvidenceKind = "supporting"
+    layout_id: str = ""
+    evidence: list[_ModelEvidenceItem] = Field(default_factory=list, max_length=12)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_fields(cls, value: Any) -> Any:
+        value = normalize_model_fields(value, cls.model_fields)
+        if not isinstance(value, dict):
+            return value
+        for name in ("key_points", "source_refs", "planning_notes"):
+            if name in value:
+                value[name] = normalize_string_list(value[name])
+        value["page_role"] = normalize_choice(
+            value.get("page_role", value.get("layout_id", "content")),
+            PAGE_ROLES,
+            default="content",
+            aliases=_PAGE_ROLE_ALIASES,
+        )
+        value["narrative_role"] = normalize_choice(
+            value.get("narrative_role", "supporting"),
+            (*get_args(NarrativeRole), *get_args(EvidenceKind)),
+            default="supporting",
+        )
+        value["evidence_kind"] = normalize_choice(
+            value.get("evidence_kind", "narrative"),
+            get_args(EvidenceKind),
+            default="narrative",
+        )
+        value["visual_type"] = normalize_choice(
+            value.get("visual_type", "auto"),
+            get_args(VisualType),
+            default="auto",
+            aliases=_VISUAL_ALIASES,
+        )
+        return value
 
 
 class _ModelOutlineDraft(BaseModel):
     pages: list[_ModelOutlinePageDraft]
-    blueprint: DeckBlueprint = Field(default_factory=DeckBlueprint)
+    blueprint: _ModelDeckBlueprint = Field(default_factory=_ModelDeckBlueprint)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_fields(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            value = {"pages": value}
+        return normalize_model_fields(value, cls.model_fields)
 
 
 class DeepSeekOutlineGenerator:
@@ -94,13 +193,14 @@ class DeepSeekOutlineGenerator:
                 "上一轮输出未通过服务端结构校验。请重新生成完整 JSON，不要解释；"
                 f"pages 必须恰好包含 {payload.page_count} 页，逐页检查所有字段均符合给定结构，"
                 "并确保 narrative_role 使用叙事职责、evidence_kind 使用证据形态。\n"
+                f"具体问题：{model_output_feedback(last_error) if last_error else ''}\n"
                 if attempt
                 else ""
             )
             try:
                 model_draft = await self._chat.complete(
                     _ModelOutlineDraft,
-                    system=self._system_prompt() + correction,
+                    system=self._system_prompt(payload) + correction,
                     user=self._user_prompt(payload),
                     purpose="生成大纲",
                 )
@@ -137,11 +237,14 @@ class DeepSeekOutlineGenerator:
                 "字段必须符合给定结构。narrative_role 表示叙事职责，只能使用 cover、"
                 "executive_summary、performance、driver、risk、action、decision、supporting、"
                 "summary；evidence_kind 表示证据形态，两者不能混用。"
-                "只引用给定来源，不得编造数字、日期或事实。"
+                "引用只能来自给定来源，不得编造数字、日期或来源事实。"
             )
+            if payload.topic_mode:
+                page_system += TOPIC_SCOPE_RULES
             page_user = json.dumps(
                 {
                     "deck_title": payload.title,
+                    "topic_request": payload.topic_request,
                     "audience": payload.audience,
                     "tone": payload.tone,
                     "report_brief": payload.report_brief.model_dump(),
@@ -209,13 +312,15 @@ class DeepSeekOutlineGenerator:
 
         try:
             result = await self._chat.complete(
-                OutlinePageDraft,
+                _ModelOutlinePageDraft,
                 system=self._refit_system_prompt(desired_evidence_kind),
                 user=self._refit_user_prompt(page, desired_evidence_kind, sections),
                 purpose="按图表重构页面",
             )
         except (InvalidModelOutputError, ValidationError) as error:
             raise InvalidOutlineOutputError("模型返回的图表页面 JSON 不符合约定结构") from error
+
+        result = self._normalize_model_draft(_ModelOutlineDraft(pages=[result])).pages[0]
 
         # 页面职责仍由用户当前页面决定，模型只负责重写内容与证据表达。
         layout_id = "chart" if "chart" in self._layout_ids else page.layout_id
@@ -274,7 +379,7 @@ class DeepSeekOutlineGenerator:
             body, ensure_ascii=False
         )
 
-    def _system_prompt(self) -> str:
+    def _system_prompt(self, payload: OutlineGenerationInput | None = None) -> str:
         layout_list = ", ".join(sorted(self._layout_ids))
         roles = ", ".join(PAGE_ROLES)
         evidence_options = [
@@ -322,7 +427,12 @@ class DeepSeekOutlineGenerator:
                 }
             ],
         }
-        visual_options = "auto、line、column、bar、pie、flow、timeline"
+        if payload is not None and payload.topic_mode:
+            example["blueprint"].update(
+                narrative=["主题背景", "核心内容", "总结建议"],
+                decision_request="",
+            )
+        visual_options = "auto、photo、illustration、line、column、bar、pie、flow、timeline"
         if "table" in self._layout_ids:
             visual_options += "、financial_table"
         if "chart" in self._layout_ids:
@@ -365,7 +475,10 @@ class DeepSeekOutlineGenerator:
             f"7. visual_type 表示具体视觉形式，可选 {visual_options}。{visual_guidance}\n"
             "8. 先规划 blueprint，再安排页面。经营复盘用摘要、表现、原因、风险、行动；"
             "项目汇报突出进度、阻碍、里程碑；提案突出问题、选项、取舍、资源和决策；"
-            "战略汇报突出判断、机会、取舍和路径。一般主题按受众组织，不强凑企业业绩。\n"
+            "战略汇报突出判断、机会、取舍和路径。旅游规划按出行条件、路线总览、逐日行程、"
+            "天气、景点与预约、住宿交通、预算和待办组织；"
+            "具体天气、价格与开放时间须有来源支持，缺失时注明待查询或待核实。"
+            "一般主题按受众组织，不强凑企业业绩。\n"
             "9. 内容页 key_message 只表达一个核心判断。分析页 title 优先体现有证据的结论；"
             "封面、目录、章节和定义页保留主题标题。摘要可先于证据，但每个判断须有后续支撑。\n"
             "10. evidence 从来源逐字摘录，每项包含 source_ref、quote；数据项另填 metric、"
@@ -385,12 +498,12 @@ class DeepSeekOutlineGenerator:
             "同单位可多系列折线，不同单位可用 combo_chart 或分图展示。\n"
             f"{multi_slot_rule}\n"
             f"{_VISUAL_RULE}"
+            + (TOPIC_SCOPE_RULES if payload is not None and payload.topic_mode else "")
         )
 
-    @staticmethod
-    def _normalize_model_draft(draft: _ModelOutlineDraft) -> OutlineDraft:
+    def _normalize_model_draft(self, draft: _ModelOutlineDraft) -> OutlineDraft:
         pages: list[OutlinePageDraft] = []
-        for page in draft.pages:
+        for index, page in enumerate(draft.pages, start=1):
             narrative_role = page.narrative_role
             if narrative_role not in _NARRATIVE_ROLES:
                 if page.page_role == "cover":
@@ -402,12 +515,25 @@ class DeepSeekOutlineGenerator:
                         page.evidence_kind,
                         "supporting",
                     )
+            layout_id, fallback = normalize_layout_id(
+                page.layout_id,
+                available=self._layout_ids,
+                page_role=page.page_role,
+                evidence_kind=page.evidence_kind,
+            )
+            if fallback:
+                logger.warning(
+                    "outline layout fallback page=%s layout=%r fallback=%s",
+                    index,
+                    page.layout_id[:80],
+                    layout_id,
+                )
             pages.append(
                 OutlinePageDraft.model_validate(
-                    page.model_dump() | {"narrative_role": narrative_role}
+                    page.model_dump() | {"narrative_role": narrative_role, "layout_id": layout_id}
                 )
             )
-        return OutlineDraft(pages=pages, blueprint=draft.blueprint)
+        return OutlineDraft(pages=pages, blueprint=draft.blueprint.model_dump())
 
     def _user_prompt(self, payload: OutlineGenerationInput) -> str:
         sections_payload = [
@@ -427,17 +553,20 @@ class DeepSeekOutlineGenerator:
             "page_count": payload.page_count,
             "content_density": payload.content_density,
             "topic_mode": payload.topic_mode,
+            "topic_request": (
+                payload.topic_request or "\n\n".join(s.text for s in payload.sections)
+                if payload.topic_mode
+                else None
+            ),
             "report_brief": payload.report_brief.model_dump(),
+            "travel_context": payload.travel_context,
             "sections": sections_payload,
         }
-        topic_hint = (
-            "当前为主题样稿模式：允许使用模拟素材，但必须尊重 visual_type；"
-            "同一套大纲中不要重复绑定同一组数据。每页必须覆盖不同的主题子问题；"
-            "流程页表达判断、分流和回路，路线图表达带时间的阶段与交付物，行动页表达责任动作；"
-            "三者不得复用同一组事件或只改写标题。\n"
-            if payload.topic_mode
-            else ""
-        )
+        topic_hint = TOPIC_SCOPE_RULES if payload.topic_mode else ""
+        if payload.travel_context:
+            from app.services.travel_planning import TRAVEL_WRITING_RULES
+
+            topic_hint += TRAVEL_WRITING_RULES
         if payload.issues:
             body["revision_feedback"] = payload.issues
             body["previous_draft"] = payload.previous_draft
@@ -472,4 +601,4 @@ class DeepSeekOutlineGenerator:
                 raise InvalidOutlineOutputError(f"第 {index} 页使用了非法 page_role")
             for ref in page.source_refs:
                 if ref not in allowed_refs:
-                    raise InvalidOutlineOutputError(f"第 {index} 页包含未知来源引用")
+                    raise InvalidOutlineOutputError(f"第 {index} 页包含未知来源引用：{ref}")

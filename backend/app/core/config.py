@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from typing import Literal
 
@@ -7,7 +8,12 @@ from app.core.paths import REPO_ROOT
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=REPO_ROOT / "backend" / (
+            ".env.production" if os.getenv("APP_ENV") == "production" else ".env"
+        ),
+        extra="ignore",
+    )
 
     app_env: str = "development"
     # 端口统一使用 39xxx 段，避开各服务默认端口，防止与本机已装的
@@ -44,6 +50,13 @@ class Settings(BaseSettings):
     # 百炼业务空间 ID：填写后使用专属域名，覆盖 image_base_url
     image_workspace_id: str = ""
     unsplash_access_key: str = ""
+    qweather_api_host: str = ""
+    qweather_api_key: str = ""
+    amap_api_key: str = ""
+    firecrawl_api_key: str = ""
+    travel_service_timeout_seconds: float = 15
+    travel_total_timeout_seconds: float = 120
+    travel_service_retries: int = 1
     image_timeout_seconds: float = 60
 
     storage_driver: Literal["local", "cos"] = "local"

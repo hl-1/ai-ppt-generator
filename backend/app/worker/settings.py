@@ -1,15 +1,23 @@
 from arq.connections import RedisSettings
 
 from app.core.config import get_settings
+from app.services.travel_research import generate_travel_research
 from app.worker.context import shutdown, startup
 from app.worker.deck_tasks import generate_deck
+from app.worker.image_tasks import generate_slide_images
 from app.worker.preview_tasks import generate_preview
 from app.worker.retry import MAX_TRIES
 from app.worker.tasks import generate_outline
 
 
 class WorkerSettings:
-    functions = [generate_outline, generate_deck, generate_preview]
+    functions = [
+        generate_outline,
+        generate_deck,
+        generate_preview,
+        generate_slide_images,
+        generate_travel_research,
+    ]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)

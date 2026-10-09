@@ -8,7 +8,7 @@ export type OutlineUpdate = Schemas['OutlineUpdate']
 export type OutlineGenerateAccepted = Schemas['OutlineGenerateAccepted']
 
 export type OutlineErrorCode = NonNullable<Schemas['OutlinePublic']['error_code']>
-export type OutlineStage = 'queue' | 'load_input' | 'plan_structure' | 'validate' | 'save'
+export type OutlineStage = 'queue' | 'load_input' | 'travel_research' | 'plan_structure' | 'validate' | 'save'
 
 export interface OutlineProgressEvent {
   type: 'snapshot' | 'progress' | 'completed' | 'failed'

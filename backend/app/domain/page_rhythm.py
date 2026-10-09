@@ -148,6 +148,8 @@ def assign_fixed_layouts(
 
 
 def _fixed_layout_candidates(page: OutlinePageDraft) -> list[str]:
+    if page.image_plan or page.visual_type in {"photo", "illustration"}:
+        return ["image-left", "image-right"]
     if page.page_role == "cover":
         return ["cover"]
     if page.page_role == "toc":
@@ -170,6 +172,8 @@ def _fixed_layout_candidates(page: OutlinePageDraft) -> list[str]:
 
 
 def _template_group(page: OutlinePageDraft, *, topic_mode: bool = False) -> str:
+    if page.image_plan or page.visual_type in {"photo", "illustration"}:
+        return "visual"
     if page.page_role == "toc":
         return "agenda"
     if page.visual_type == "auto" and not page.visual:

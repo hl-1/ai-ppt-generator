@@ -104,6 +104,10 @@ def prepare_page_plan(
     topic_mode: bool = False,
 ) -> OutlinePageDraft:
     """无充分证据时回退到定性表达，把缺口留给大纲编辑端。"""
+    from app.domain.image_planning import IMAGE_VISUAL_TYPES, plan_page_image
+
+    if page.visual_type in IMAGE_VISUAL_TYPES:
+        page = plan_page_image(page)
     if topic_mode:
         page = normalize_topic_page(page, sources)
     notes: list[str] = []
@@ -132,24 +136,23 @@ def prepare_page_plan(
     numeric = [e for e in valid if e.value and e.metric and e.unit]
     categories = comparable_categories(valid)
     metric_series = comparable_metric_series(valid)
-    if kind == "trend" and (not metric_series or conflicts) and not topic_mode:
+    if kind == "trend" and (not metric_series or conflicts):
         notes.append("可比数据不足，已改为定性分析；补齐同指标、单位、时间与范围后可使用趋势图")
         kind = "narrative"
-    if kind == "chart" and conflicts and not topic_mode:
+    if kind == "chart" and conflicts:
         notes.append("图表数据存在口径冲突，已改为定性分析；请核对来源数据后再使用图表")
         kind = "narrative"
-    if kind == "chart" and not metric_series and not categories and not topic_mode:
+    if kind == "chart" and not metric_series and not categories:
         notes.append("可比数据不足，已改为定性分析；补齐时间序列或分类数据后可使用图表")
         kind = "narrative"
     if (
         kind in {"composition", "comparison"}
         and page.visual_type != "combo_chart"
         and (not categories or conflicts)
-        and not topic_mode
     ):
         notes.append("缺少可比较的分类数据，已改为定性分析；补齐分类、指标、单位与范围后可使用图表")
         kind = "narrative"
-    if page.visual_type == "combo_chart" and not topic_mode:
+    if page.visual_type == "combo_chart":
         metrics = {e.metric for e in valid if e.metric and e.period and e.value}
         periods = {e.period for e in valid if e.metric and e.period and e.value}
         if len(metrics) < 2 or len(periods) < 2 or conflicts:
@@ -182,7 +185,7 @@ def prepare_page_plan(
     if kind == "narrative" and layout in {"chart", "kpi"}:
         layout = "bullets"
     visual_type = page.visual_type
-    if kind == "narrative" and not topic_mode:
+    if kind == "narrative" and visual_type not in IMAGE_VISUAL_TYPES:
         visual_type = "auto"
     return page.model_copy(
         update={

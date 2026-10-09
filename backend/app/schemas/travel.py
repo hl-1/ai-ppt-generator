@@ -1,0 +1,281 @@
+from __future__ import annotations
+
+import uuid
+from datetime import date as Date
+from datetime import datetime, time
+from decimal import Decimal
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+
+
+class TimeWindow(BaseModel):
+    earliest: time | None = None
+    latest: time | None = None
+
+    @model_validator(mode="after")
+    def ordered(self):
+        if self.earliest and self.latest and self.earliest > self.latest:
+            raise ValueError("可接受时段的结束时间须晚于开始时间")
+        return self
+
+
+class TravelConditions(BaseModel):
+    origin: str = Field(default="", max_length=80)
+    destination: str = Field(default="", max_length=80)
+    departure_date: Date | None = None
+    return_date: Date | None = None
+    departure_window: TimeWindow = Field(default_factory=TimeWindow)
+    return_window: TimeWindow = Field(default_factory=TimeWindow)
+    adults: int = Field(default=1, ge=0, le=50)
+    children: int = Field(default=0, ge=0, le=20)
+    seniors: int = Field(default=0, ge=0, le=20)
+    child_ages: list[int] = Field(default_factory=list, max_length=20)
+    senior_ages: list[int] = Field(default_factory=list, max_length=20)
+    budget: Decimal | None = Field(default=None, gt=0, le=10_000_000)
+    budget_mode: Literal["total", "per_person"] = "total"
+    transport: Literal["public", "driving", "walking", "train", "flight"] = "public"
+    lodging_area: str = Field(default="", max_length=120)
+    interests: list[str] = Field(default_factory=list, max_length=12)
+    pace: Literal["relaxed", "balanced", "intensive"] = "balanced"
+    draft_days: int = Field(default=3, ge=1, le=14)
+    confirmed: bool = False
+
+    @model_validator(mode="after")
+    def validate_trip(self):
+        if self.departure_date and self.return_date:
+            days = (self.return_date - self.departure_date).days
+            if not 0 <= days <= 29:
+                raise ValueError("返程日期须不早于出发日期，单次规划最多 30 天")
+        if self.adults + self.children + self.seniors < 1:
+            raise ValueError("请至少填写一位出行人员")
+        if len(self.child_ages) > self.children or any(
+            not 0 <= age <= 17 for age in self.child_ages
+        ):
+            raise ValueError("儿童年龄须为 0 至 17 岁，数量不能超过儿童人数")
+        if len(self.senior_ages) > self.seniors or any(
+            not 50 <= age <= 120 for age in self.senior_ages
+        ):
+            raise ValueError("老人年龄须为 50 至 120 岁，数量不能超过老人人数")
+        self.origin = self.origin.strip()
+        self.destination = self.destination.strip()
+        self.interests = list(dict.fromkeys(s.strip()[:80] for s in self.interests if s.strip()))
+        return self
+
+
+class TravelExtractRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=20_000)
+
+
+class TravelExtractResult(BaseModel):
+    conditions: TravelConditions
+    missing_fields: list[str]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class TravelSource(BaseModel):
+    id: str
+    service: Literal["qweather", "amap", "firecrawl"]
+    title: str
+    url: str
+    retrieved_at: datetime
+    trust: Literal["official", "provider", "unverified"] = "unverified"
+    text: str = ""
+
+
+class TravelFact(BaseModel):
+    id: str = ""
+    place: str = Field(min_length=1, max_length=120)
+    kind: Literal[
+        "price",
+        "hours",
+        "entry_cutoff",
+        "closure",
+        "booking",
+        "season",
+        "internal_route",
+        "checkin",
+    ]
+    source_id: str
+    quote: str = Field(min_length=1, max_length=800)
+    summary: str = Field(default="", max_length=500)
+    amount: Decimal | None = Field(default=None, ge=0)
+    audience: str = ""
+    opens: time | None = None
+    closes: time | None = None
+    last_entry: time | None = None
+    closed_weekdays: list[int] = Field(default_factory=list, max_length=7)
+    valid_from: Date | None = None
+    valid_to: Date | None = None
+    applicable_year: int | None = Field(default=None, ge=2000, le=2100)
+    status: Literal["verified", "reference", "outdated", "unverified"] = "unverified"
+
+
+class FactExtraction(BaseModel):
+    facts: list[TravelFact] = Field(default_factory=list, max_length=50)
+
+    @model_validator(mode="before")
+    @classmethod
+    def keep_valid_items(cls, value):
+        if isinstance(value, list):
+            value = {"facts": value}
+        if not isinstance(value, dict) or not isinstance(value.get("facts"), list):
+            return value
+        facts = []
+        for item in value["facts"][:50]:
+            if not isinstance(item, dict):
+                continue
+            item = dict(item)
+            for field in ("summary", "audience", "id"):
+                if item.get(field) is None:
+                    item[field] = ""
+            item["status"] = "unverified"
+            try:
+                facts.append(TravelFact.model_validate(item))
+            except ValidationError:
+                continue
+        return {"facts": facts}
+
+
+class TravelPlace(BaseModel):
+    id: str
+    name: str
+    location: str
+    address: str = ""
+    area: str = ""
+    source_id: str
+    photos: list[dict[str, str]] = Field(default_factory=list)
+
+
+class TravelRoute(BaseModel):
+    origin_id: str
+    destination_id: str
+    mode: str
+    distance_m: int | None = None
+    duration_minutes: int | None = None
+    cost: Decimal | None = None
+    cost_kind: Literal["supplier_quote", "estimate", "pending"] = "pending"
+    cost_scope: str = ""
+    source_id: str | None = None
+    status: Literal["ready", "pending"] = "pending"
+
+
+class WeatherDay(BaseModel):
+    date: Date | None = None
+    status: Literal["ready", "pending"] = "pending"
+    condition: str = ""
+    temp_min: str = ""
+    temp_max: str = ""
+    precipitation: str = ""
+    wind: str = ""
+    source_id: str | None = None
+    note: str = "天气待更新"
+
+
+class ServiceStatus(BaseModel):
+    service: str
+    status: Literal["ready", "partial", "failed", "not_configured", "pending"]
+    count: int = 0
+    error_code: str | None = None
+    duration_ms: int = 0
+
+
+class TravelStop(BaseModel):
+    place_id: str
+    name: str
+    start: time
+    end: time
+    suggested_duration_minutes: int
+    fact_refs: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    internal_route: list[str] = Field(default_factory=list)
+    checkin_spots: list[str] = Field(default_factory=list)
+
+
+class TravelDay(BaseModel):
+    day: int
+    date: Date | None
+    stops: list[TravelStop] = Field(default_factory=list)
+    routes: list[TravelRoute] = Field(default_factory=list)
+    breaks: list[str] = Field(default_factory=list)
+    weather: WeatherDay = Field(default_factory=WeatherDay)
+    alternatives: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CostItem(BaseModel):
+    id: str
+    label: str
+    kind: Literal["official_rule", "supplier_quote", "estimate", "pending"] = "pending"
+    unit_price: Decimal | None = Field(default=None, ge=0)
+    quantity: int = Field(default=1, ge=1)
+    days: int = Field(default=1, ge=1)
+    subtotal: Decimal | None = None
+    conditions: str = ""
+    fact_refs: list[str] = Field(default_factory=list)
+    source_id: str | None = None
+
+
+class BookingTask(BaseModel):
+    id: str
+    title: str
+    rule_status: Literal["verified", "pending"] = "pending"
+    rule: str = "预约规则待核实"
+    fact_refs: list[str] = Field(default_factory=list)
+    url: str | None = None
+    user_status: Literal["pending", "completed", "failed"] = "pending"
+
+
+class BookingUpdate(BaseModel):
+    user_status: Literal["pending", "completed", "failed"]
+
+
+class TravelPlan(BaseModel):
+    draft: bool = True
+    conditions: TravelConditions
+    days: list[TravelDay]
+    transport: list[str]
+    lodging: list[str]
+    cost_items: list[CostItem]
+    known_subtotal: Decimal = Decimal("0")
+    estimated_subtotal: Decimal = Decimal("0")
+    budget_limit: Decimal | None = None
+    budget_exceeded: bool = False
+    booking_tasks: list[BookingTask]
+    unresolved_items: list[str]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ResearchData(BaseModel):
+    sources: list[TravelSource] = Field(default_factory=list)
+    facts: list[TravelFact] = Field(default_factory=list)
+    places: list[TravelPlace] = Field(default_factory=list)
+    hotels: list[TravelPlace] = Field(default_factory=list)
+    routes: list[TravelRoute] = Field(default_factory=list)
+    weather: list[WeatherDay] = Field(default_factory=list)
+    services: list[ServiceStatus] = Field(default_factory=list)
+    plan: TravelPlan | None = None
+
+
+class TravelResearchPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    version: int
+    status: Literal["queued", "researching", "ready", "partial", "failed"]
+    stale: bool
+    progress: int
+    stage: str
+    error_code: str | None
+    conditions: TravelConditions
+    data: ResearchData
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class TravelResearchAccepted(BaseModel):
+    job_id: str
+    research_id: uuid.UUID
+
+
+class ConnectivityResult(BaseModel):
+    services: list[ServiceStatus]

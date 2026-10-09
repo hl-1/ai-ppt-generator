@@ -163,6 +163,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/design/themes/{theme_id}/preview.pptx": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Theme Preview */
+        get: operations["export_theme_preview_api_v1_design_themes__theme_id__preview_pptx_get"];
+        put?: never;
+        /** Export Edited Theme Preview */
+        post: operations["export_edited_theme_preview_api_v1_design_themes__theme_id__preview_pptx_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -592,6 +610,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/deck/images/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search Images */
+        post: operations["search_images_api_v1_projects__project_id__deck_images_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/blocks/{block_id}/image/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Image */
+        post: operations["apply_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/blocks/{block_id}/image/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Image */
+        post: operations["generate_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/blocks/{block_id}/image/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Lock Image */
+        patch: operations["lock_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_lock_patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deck/slides/{slide_id}/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Image */
+        post: operations["add_image_api_v1_projects__project_id__deck_slides__slide_id__images_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/deck/slides/{slide_id}/flex-layout": {
         parameters: {
             query?: never;
@@ -853,6 +956,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/travel/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Extract */
+        post: operations["extract_api_v1_travel_extract_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/travel/connectivity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connectivity */
+        get: operations["connectivity_api_v1_travel_connectivity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/travel/research": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Research */
+        get: operations["get_research_api_v1_projects__project_id__travel_research_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/travel/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh */
+        post: operations["refresh_api_v1_projects__project_id__travel_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/travel/bookings/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Booking */
+        patch: operations["update_booking_api_v1_projects__project_id__travel_bookings__task_id__patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1004,6 +1192,42 @@ export interface components {
         Body_upload_source_api_v1_projects__project_id__sources_upload_post: {
             /** File */
             file: string;
+        };
+        /** BookingTask */
+        BookingTask: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /**
+             * Rule Status
+             * @default pending
+             * @enum {string}
+             */
+            rule_status: "verified" | "pending";
+            /**
+             * Rule
+             * @default ԤԼ�������ʵ
+             */
+            rule: string;
+            /** Fact Refs */
+            fact_refs?: string[];
+            /** Url */
+            url?: string | null;
+            /**
+             * User Status
+             * @default pending
+             * @enum {string}
+             */
+            user_status: "pending" | "completed" | "failed";
+        };
+        /** BookingUpdate */
+        BookingUpdate: {
+            /**
+             * User Status
+             * @enum {string}
+             */
+            user_status: "pending" | "completed" | "failed";
         };
         /** BulletsBlock */
         BulletsBlock: {
@@ -1282,6 +1506,11 @@ export interface components {
             /** Annotations */
             annotations?: string[];
         };
+        /** ConnectivityResult */
+        ConnectivityResult: {
+            /** Services */
+            services: components["schemas"]["ServiceStatus"][];
+        };
         /**
          * CornerBracket
          * @description �ǲ� L �μ��Σ�������ϸ����ƴ�ɡ�
@@ -1331,6 +1560,42 @@ export interface components {
              */
             inset_pt: number;
         };
+        /** CostItem */
+        CostItem: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Kind
+             * @default pending
+             * @enum {string}
+             */
+            kind: "official_rule" | "supplier_quote" | "estimate" | "pending";
+            /** Unit Price */
+            unit_price?: string | null;
+            /**
+             * Quantity
+             * @default 1
+             */
+            quantity: number;
+            /**
+             * Days
+             * @default 1
+             */
+            days: number;
+            /** Subtotal */
+            subtotal?: string | null;
+            /**
+             * Conditions
+             * @default
+             */
+            conditions: string;
+            /** Fact Refs */
+            fact_refs?: string[];
+            /** Source Id */
+            source_id?: string | null;
+        };
         /**
          * Deck
          * @description PPT ��ͳһ����ģ�͡�
@@ -1338,7 +1603,7 @@ export interface components {
          *     ���ݡ����֡��������߷��룺��������ҳ������ݣ�
          *     fixed ҳ�������Բ��ֲ�λ��flex ҳ�������� layout_tree���Ӿ������������⡣
          */
-        Deck: {
+        "Deck-Input": {
             /** Id */
             id: string;
             /** Title */
@@ -1346,7 +1611,24 @@ export interface components {
             /** Theme Id */
             theme_id: string;
             /** Slides */
-            slides: components["schemas"]["Slide"][];
+            slides: components["schemas"]["Slide-Input"][];
+        };
+        /**
+         * Deck
+         * @description PPT ��ͳһ����ģ�͡�
+         *
+         *     ���ݡ����֡��������߷��룺��������ҳ������ݣ�
+         *     fixed ҳ�������Բ��ֲ�λ��flex ҳ�������� layout_tree���Ӿ������������⡣
+         */
+        "Deck-Output": {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Theme Id */
+            theme_id: string;
+            /** Slides */
+            slides: components["schemas"]["Slide-Output"][];
         };
         /** DeckBlueprint */
         DeckBlueprint: {
@@ -1945,6 +2227,25 @@ export interface components {
              */
             redis: "ok" | "down";
         };
+        /** ImageAddRequest */
+        ImageAddRequest: {
+            /** Revision */
+            revision: number;
+            /**
+             * Subject
+             * @default ��ͼ
+             */
+            subject: string;
+        };
+        /** ImageApplyRequest */
+        ImageApplyRequest: {
+            /** Revision */
+            revision: number;
+            /** Search Id */
+            search_id: string;
+            /** Candidate Id */
+            candidate_id: string;
+        };
         /** ImageBlock */
         ImageBlock: {
             /** Id */
@@ -1973,6 +2274,134 @@ export interface components {
             source: "generated" | "stock" | "upload" | "placeholder";
             /** Credit */
             credit?: string | null;
+            /** Credit Url */
+            credit_url?: string | null;
+            image_plan?: components["schemas"]["ImagePlan"] | null;
+            /**
+             * Image Status
+             * @default idle
+             * @enum {string}
+             */
+            image_status: "idle" | "queued" | "ready" | "failed";
+            /** Image Error */
+            image_error?: string | null;
+            /** Image Job Id */
+            image_job_id?: string | null;
+            /** Image Job Started At */
+            image_job_started_at?: number | null;
+            /** Image Asset Id */
+            image_asset_id?: string | null;
+        };
+        /** ImageCandidate */
+        ImageCandidate: {
+            /** Id */
+            id: string;
+            /** Url */
+            url: string;
+            /** Thumbnail Url */
+            thumbnail_url: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Width
+             * @default 0
+             */
+            width: number;
+            /**
+             * Height
+             * @default 0
+             */
+            height: number;
+            /** Credit */
+            credit: string;
+            /** Credit Url */
+            credit_url: string;
+            /**
+             * Author Url
+             * @default
+             */
+            author_url: string;
+            /** Download Location */
+            download_location?: string | null;
+            /**
+             * Match Reason
+             * @default ���˹�ȷ������
+             */
+            match_reason: string;
+            /**
+             * Metadata Matched
+             * @default false
+             */
+            metadata_matched: boolean;
+        };
+        /** ImageGenerateRequest */
+        ImageGenerateRequest: {
+            /** Revision */
+            revision: number;
+            /**
+             * Query
+             * @default
+             */
+            query: string;
+            /**
+             * Source
+             * @default auto
+             * @enum {string}
+             */
+            source: "auto" | "stock" | "generated";
+        };
+        /** ImageLockRequest */
+        ImageLockRequest: {
+            /** Revision */
+            revision: number;
+            /** Locked */
+            locked: boolean;
+        };
+        /** ImagePlan */
+        ImagePlan: {
+            /** Subject */
+            subject: string;
+            /** Queries */
+            queries?: string[];
+            /**
+             * Source
+             * @default auto
+             * @enum {string}
+             */
+            source: "auto" | "stock" | "generated";
+            /**
+             * Require Real
+             * @default false
+             */
+            require_real: boolean;
+            /**
+             * Purpose
+             * @default subject
+             * @enum {string}
+             */
+            purpose: "cover" | "subject" | "support";
+        };
+        /** ImageSearchPublic */
+        ImageSearchPublic: {
+            /** Search Id */
+            search_id: string;
+            /** Candidates */
+            candidates: components["schemas"]["ImageCandidate"][];
+            /** Queries */
+            queries: string[];
+        };
+        /** ImageSearchRequest */
+        ImageSearchRequest: {
+            /** Query */
+            query: string;
+            /**
+             * Aspect Ratio
+             * @default 1.777
+             */
+            aspect_ratio: number;
         };
         /** KpiBlock */
         KpiBlock: {
@@ -2127,7 +2556,7 @@ export interface components {
              * @default auto
              * @enum {string}
              */
-            visual_type: "auto" | "line" | "column" | "bar" | "pie" | "flow" | "timeline" | "financial_table" | "waterfall" | "combo_chart";
+            visual_type: "auto" | "photo" | "illustration" | "line" | "column" | "bar" | "pie" | "flow" | "timeline" | "financial_table" | "waterfall" | "combo_chart";
             /**
              * Key Message
              * @default
@@ -2139,6 +2568,7 @@ export interface components {
             planning_notes?: string[];
             /** Visual */
             visual?: string | null;
+            image_plan?: components["schemas"]["ImagePlan"] | null;
             /**
              * Id
              * Format: uuid
@@ -2259,6 +2689,7 @@ export interface components {
         };
         /** ProjectCreate */
         ProjectCreate: {
+            travel_conditions?: components["schemas"]["TravelConditions-Input"] | null;
             report_brief?: components["schemas"]["ReportBrief"];
             /** Title */
             title: string;
@@ -2345,6 +2776,7 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            travel_conditions?: components["schemas"]["TravelConditions-Output"] | null;
             /** Sources */
             sources: components["schemas"]["SourcePublic"][];
         };
@@ -2412,6 +2844,7 @@ export interface components {
         };
         /** ProjectUpdate */
         ProjectUpdate: {
+            travel_conditions?: components["schemas"]["TravelConditions-Input"] | null;
             report_brief?: components["schemas"]["ReportBrief"];
             /** Title */
             title?: string | null;
@@ -2486,7 +2919,7 @@ export interface components {
              * @default general
              * @enum {string}
              */
-            scenario: "general" | "business_review" | "project_review" | "proposal" | "strategy";
+            scenario: "general" | "travel_plan" | "business_review" | "project_review" | "proposal" | "strategy";
             /**
              * Goal
              * @default
@@ -2497,6 +2930,46 @@ export interface components {
              * @default
              */
             decision_request: string;
+        };
+        /** ResearchData */
+        ResearchData: {
+            /** Sources */
+            sources?: components["schemas"]["TravelSource"][];
+            /** Facts */
+            facts?: components["schemas"]["TravelFact"][];
+            /** Places */
+            places?: components["schemas"]["TravelPlace"][];
+            /** Hotels */
+            hotels?: components["schemas"]["TravelPlace"][];
+            /** Routes */
+            routes?: components["schemas"]["TravelRoute"][];
+            /** Weather */
+            weather?: components["schemas"]["WeatherDay"][];
+            /** Services */
+            services?: components["schemas"]["ServiceStatus"][];
+            plan?: components["schemas"]["TravelPlan"] | null;
+        };
+        /** ServiceStatus */
+        ServiceStatus: {
+            /** Service */
+            service: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "partial" | "failed" | "not_configured" | "pending";
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /** Error Code */
+            error_code?: string | null;
+            /**
+             * Duration Ms
+             * @default 0
+             */
+            duration_ms: number;
         };
         /** Shape */
         Shape: {
@@ -2518,7 +2991,30 @@ export interface components {
             bullet_marker?: ("rule" | "dot" | "index") | null;
         };
         /** Slide */
-        Slide: {
+        "Slide-Input": {
+            /** Id */
+            id: string;
+            /** Layout Id */
+            layout_id: string;
+            /** Blocks */
+            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["FinancialTableBlock"] | components["schemas"]["WaterfallBlock"] | components["schemas"]["ComboChartBlock"] | components["schemas"]["DiagramBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"] | components["schemas"]["CardsBlock"] | components["schemas"]["CalloutBlock"])[];
+            /** Speaker Notes */
+            speaker_notes?: string | null;
+            /**
+             * Revision
+             * @default 1
+             */
+            revision: number;
+            /**
+             * Layout Mode
+             * @default fixed
+             * @enum {string}
+             */
+            layout_mode: "fixed" | "flex";
+            layout_tree?: components["schemas"]["FlexContainer-Input"] | null;
+        };
+        /** Slide */
+        "Slide-Output": {
             /** Id */
             id: string;
             /** Layout Id */
@@ -2866,6 +3362,12 @@ export interface components {
              * @default []
              */
             ambient: (components["schemas"]["EdgeBand"] | components["schemas"]["CornerBracket"] | components["schemas"]["HairlineGrid"] | components["schemas"]["Glow"] | components["schemas"]["Watermark"])[];
+            /**
+             * Visual Style
+             * @default standard
+             * @enum {string}
+             */
+            visual_style: "standard" | "financial-tech";
         };
         /**
          * ThemeOverrides
@@ -2880,6 +3382,13 @@ export interface components {
             } | null;
             shape?: components["schemas"]["ShapeOverride"] | null;
         };
+        /** TimeWindow */
+        TimeWindow: {
+            /** Earliest */
+            earliest?: string | null;
+            /** Latest */
+            latest?: string | null;
+        };
         /** TokenResponse */
         TokenResponse: {
             /** Access Token */
@@ -2890,6 +3399,436 @@ export interface components {
              */
             token_type: string;
             user: components["schemas"]["UserPublic"];
+        };
+        /** TravelConditions */
+        "TravelConditions-Input": {
+            /**
+             * Origin
+             * @default
+             */
+            origin: string;
+            /**
+             * Destination
+             * @default
+             */
+            destination: string;
+            /** Departure Date */
+            departure_date?: string | null;
+            /** Return Date */
+            return_date?: string | null;
+            departure_window?: components["schemas"]["TimeWindow"];
+            return_window?: components["schemas"]["TimeWindow"];
+            /**
+             * Adults
+             * @default 1
+             */
+            adults: number;
+            /**
+             * Children
+             * @default 0
+             */
+            children: number;
+            /**
+             * Seniors
+             * @default 0
+             */
+            seniors: number;
+            /** Child Ages */
+            child_ages?: number[];
+            /** Senior Ages */
+            senior_ages?: number[];
+            /** Budget */
+            budget?: number | string | null;
+            /**
+             * Budget Mode
+             * @default total
+             * @enum {string}
+             */
+            budget_mode: "total" | "per_person";
+            /**
+             * Transport
+             * @default public
+             * @enum {string}
+             */
+            transport: "public" | "driving" | "walking" | "train" | "flight";
+            /**
+             * Lodging Area
+             * @default
+             */
+            lodging_area: string;
+            /** Interests */
+            interests?: string[];
+            /**
+             * Pace
+             * @default balanced
+             * @enum {string}
+             */
+            pace: "relaxed" | "balanced" | "intensive";
+            /**
+             * Draft Days
+             * @default 3
+             */
+            draft_days: number;
+            /**
+             * Confirmed
+             * @default false
+             */
+            confirmed: boolean;
+        };
+        /** TravelConditions */
+        "TravelConditions-Output": {
+            /**
+             * Origin
+             * @default
+             */
+            origin: string;
+            /**
+             * Destination
+             * @default
+             */
+            destination: string;
+            /** Departure Date */
+            departure_date?: string | null;
+            /** Return Date */
+            return_date?: string | null;
+            departure_window?: components["schemas"]["TimeWindow"];
+            return_window?: components["schemas"]["TimeWindow"];
+            /**
+             * Adults
+             * @default 1
+             */
+            adults: number;
+            /**
+             * Children
+             * @default 0
+             */
+            children: number;
+            /**
+             * Seniors
+             * @default 0
+             */
+            seniors: number;
+            /** Child Ages */
+            child_ages?: number[];
+            /** Senior Ages */
+            senior_ages?: number[];
+            /** Budget */
+            budget?: string | null;
+            /**
+             * Budget Mode
+             * @default total
+             * @enum {string}
+             */
+            budget_mode: "total" | "per_person";
+            /**
+             * Transport
+             * @default public
+             * @enum {string}
+             */
+            transport: "public" | "driving" | "walking" | "train" | "flight";
+            /**
+             * Lodging Area
+             * @default
+             */
+            lodging_area: string;
+            /** Interests */
+            interests?: string[];
+            /**
+             * Pace
+             * @default balanced
+             * @enum {string}
+             */
+            pace: "relaxed" | "balanced" | "intensive";
+            /**
+             * Draft Days
+             * @default 3
+             */
+            draft_days: number;
+            /**
+             * Confirmed
+             * @default false
+             */
+            confirmed: boolean;
+        };
+        /** TravelDay */
+        TravelDay: {
+            /** Day */
+            day: number;
+            /** Date */
+            date: string | null;
+            /** Stops */
+            stops?: components["schemas"]["TravelStop"][];
+            /** Routes */
+            routes?: components["schemas"]["TravelRoute"][];
+            /** Breaks */
+            breaks?: string[];
+            weather?: components["schemas"]["WeatherDay"];
+            /** Alternatives */
+            alternatives?: string[];
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** TravelExtractRequest */
+        TravelExtractRequest: {
+            /** Text */
+            text: string;
+        };
+        /** TravelExtractResult */
+        TravelExtractResult: {
+            conditions: components["schemas"]["TravelConditions-Output"];
+            /** Missing Fields */
+            missing_fields: string[];
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** TravelFact */
+        TravelFact: {
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /** Place */
+            place: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "price" | "hours" | "entry_cutoff" | "closure" | "booking" | "season" | "internal_route" | "checkin";
+            /** Source Id */
+            source_id: string;
+            /** Quote */
+            quote: string;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Amount */
+            amount?: string | null;
+            /**
+             * Audience
+             * @default
+             */
+            audience: string;
+            /** Opens */
+            opens?: string | null;
+            /** Closes */
+            closes?: string | null;
+            /** Last Entry */
+            last_entry?: string | null;
+            /** Closed Weekdays */
+            closed_weekdays?: number[];
+            /** Valid From */
+            valid_from?: string | null;
+            /** Valid To */
+            valid_to?: string | null;
+            /** Applicable Year */
+            applicable_year?: number | null;
+            /**
+             * Status
+             * @default unverified
+             * @enum {string}
+             */
+            status: "verified" | "reference" | "outdated" | "unverified";
+        };
+        /** TravelPlace */
+        TravelPlace: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Location */
+            location: string;
+            /**
+             * Address
+             * @default
+             */
+            address: string;
+            /**
+             * Area
+             * @default
+             */
+            area: string;
+            /** Source Id */
+            source_id: string;
+            /** Photos */
+            photos?: {
+                [key: string]: string;
+            }[];
+        };
+        /** TravelPlan */
+        TravelPlan: {
+            /**
+             * Draft
+             * @default true
+             */
+            draft: boolean;
+            conditions: components["schemas"]["TravelConditions-Output"];
+            /** Days */
+            days: components["schemas"]["TravelDay"][];
+            /** Transport */
+            transport: string[];
+            /** Lodging */
+            lodging: string[];
+            /** Cost Items */
+            cost_items: components["schemas"]["CostItem"][];
+            /**
+             * Known Subtotal
+             * @default 0
+             */
+            known_subtotal: string;
+            /**
+             * Estimated Subtotal
+             * @default 0
+             */
+            estimated_subtotal: string;
+            /** Budget Limit */
+            budget_limit?: string | null;
+            /**
+             * Budget Exceeded
+             * @default false
+             */
+            budget_exceeded: boolean;
+            /** Booking Tasks */
+            booking_tasks: components["schemas"]["BookingTask"][];
+            /** Unresolved Items */
+            unresolved_items: string[];
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** TravelResearchAccepted */
+        TravelResearchAccepted: {
+            /** Job Id */
+            job_id: string;
+            /**
+             * Research Id
+             * Format: uuid
+             */
+            research_id: string;
+        };
+        /** TravelResearchPublic */
+        TravelResearchPublic: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "researching" | "ready" | "partial" | "failed";
+            /** Stale */
+            stale: boolean;
+            /** Progress */
+            progress: number;
+            /** Stage */
+            stage: string;
+            /** Error Code */
+            error_code: string | null;
+            conditions: components["schemas"]["TravelConditions-Output"];
+            data: components["schemas"]["ResearchData"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Completed At */
+            completed_at: string | null;
+        };
+        /** TravelRoute */
+        TravelRoute: {
+            /** Origin Id */
+            origin_id: string;
+            /** Destination Id */
+            destination_id: string;
+            /** Mode */
+            mode: string;
+            /** Distance M */
+            distance_m?: number | null;
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+            /** Cost */
+            cost?: string | null;
+            /**
+             * Cost Kind
+             * @default pending
+             * @enum {string}
+             */
+            cost_kind: "supplier_quote" | "estimate" | "pending";
+            /**
+             * Cost Scope
+             * @default
+             */
+            cost_scope: string;
+            /** Source Id */
+            source_id?: string | null;
+            /**
+             * Status
+             * @default pending
+             * @enum {string}
+             */
+            status: "ready" | "pending";
+        };
+        /** TravelSource */
+        TravelSource: {
+            /** Id */
+            id: string;
+            /**
+             * Service
+             * @enum {string}
+             */
+            service: "qweather" | "amap" | "firecrawl";
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /**
+             * Retrieved At
+             * Format: date-time
+             */
+            retrieved_at: string;
+            /**
+             * Trust
+             * @default unverified
+             * @enum {string}
+             */
+            trust: "official" | "provider" | "unverified";
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+        };
+        /** TravelStop */
+        TravelStop: {
+            /** Place Id */
+            place_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Start
+             * Format: time
+             */
+            start: string;
+            /**
+             * End
+             * Format: time
+             */
+            end: string;
+            /** Suggested Duration Minutes */
+            suggested_duration_minutes: number;
+            /** Fact Refs */
+            fact_refs?: string[];
+            /** Warnings */
+            warnings?: string[];
+            /** Internal Route */
+            internal_route?: string[];
+            /** Checkin Spots */
+            checkin_spots?: string[];
         };
         /** UnlockFlexRequest */
         UnlockFlexRequest: {
@@ -3034,6 +3973,115 @@ export interface components {
              * @enum {string}
              */
             align: "left" | "center" | "right";
+        };
+        /** WeatherDay */
+        WeatherDay: {
+            /** Date */
+            date?: string | null;
+            /**
+             * Status
+             * @default pending
+             * @enum {string}
+             */
+            status: "ready" | "pending";
+            /**
+             * Condition
+             * @default
+             */
+            condition: string;
+            /**
+             * Temp Min
+             * @default
+             */
+            temp_min: string;
+            /**
+             * Temp Max
+             * @default
+             */
+            temp_max: string;
+            /**
+             * Precipitation
+             * @default
+             */
+            precipitation: string;
+            /**
+             * Wind
+             * @default
+             */
+            wind: string;
+            /** Source Id */
+            source_id?: string | null;
+            /**
+             * Note
+             * @default ����������
+             */
+            note: string;
+        };
+        /** FlexContainer */
+        FlexContainer: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "column" | "overlay" | "row";
+            /** Id */
+            id: string;
+            /** Children */
+            children: (components["schemas"]["FlexContainer"] | components["schemas"]["FlexLeaf"])[];
+            /**
+             * Gap Pt
+             * @default 16
+             */
+            gap_pt: number;
+            /** Ratios */
+            ratios?: number[] | null;
+            /** Preset */
+            preset?: ("solid_boxes" | "outline_boxes" | "side_line" | "numbered_steps" | "timeline") | null;
+            /**
+             * Grow
+             * @default 1
+             */
+            grow: number;
+        };
+        /** Slide */
+        Slide: {
+            /** Id */
+            id: string;
+            /** Layout Id */
+            layout_id: string;
+            /** Blocks */
+            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["BulletsBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ChartBlock"] | components["schemas"]["FinancialTableBlock"] | components["schemas"]["WaterfallBlock"] | components["schemas"]["ComboChartBlock"] | components["schemas"]["DiagramBlock"] | components["schemas"]["TableBlock"] | components["schemas"]["KpiBlock"] | components["schemas"]["CardsBlock"] | components["schemas"]["CalloutBlock"])[];
+            /** Speaker Notes */
+            speaker_notes?: string | null;
+            /**
+             * Revision
+             * @default 1
+             */
+            revision: number;
+            /**
+             * Layout Mode
+             * @default fixed
+             * @enum {string}
+             */
+            layout_mode: "fixed" | "flex";
+            layout_tree?: components["schemas"]["FlexContainer"] | null;
+        };
+        /**
+         * Deck
+         * @description PPT ��ͳһ����ģ�͡�
+         *
+         *     ���ݡ����֡��������߷��룺��������ҳ������ݣ�
+         *     fixed ҳ�������Բ��ֲ�λ��flex ҳ�������� layout_tree���Ӿ������������⡣
+         */
+        Deck: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Theme Id */
+            theme_id: string;
+            /** Slides */
+            slides: components["schemas"]["Slide"][];
         };
     };
     responses: never;
@@ -3207,7 +4255,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Deck"];
+                    "application/json": components["schemas"]["Deck-Output"];
                 };
             };
             /** @description Validation Error */
@@ -3251,6 +4299,72 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_theme_preview_api_v1_design_themes__theme_id__preview_pptx_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_edited_theme_preview_api_v1_design_themes__theme_id__preview_pptx_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Deck-Input"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -4263,6 +5377,188 @@ export interface operations {
             };
         };
     };
+    search_images_api_v1_projects__project_id__deck_images_search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImageSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageSearchPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                block_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImageApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                block_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImageGenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lock_image_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__image_lock_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                block_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImageLockRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_image_api_v1_projects__project_id__deck_slides__slide_id__images_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slide_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImageAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlidePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_flex_layout_api_v1_projects__project_id__deck_slides__slide_id__flex_layout_put: {
         parameters: {
             query?: never;
@@ -4766,6 +6062,157 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extract_api_v1_travel_extract_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TravelExtractRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TravelExtractResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connectivity_api_v1_travel_connectivity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectivityResult"];
+                };
+            };
+        };
+    };
+    get_research_api_v1_projects__project_id__travel_research_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TravelResearchPublic"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_api_v1_projects__project_id__travel_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TravelResearchAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_booking_api_v1_projects__project_id__travel_bookings__task_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TravelResearchPublic"];
                 };
             };
             /** @description Validation Error */

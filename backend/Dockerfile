@@ -6,9 +6,15 @@ WORKDIR /app
 RUN pip install --no-cache-dir -i https://mirrors.cloud.tencent.com/pypi/simple/ uv==0.12.13
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --index-url https://mirrors.cloud.tencent.com/pypi/simple/
+# Keep locked versions and hashes, but resolve package files through the mirror.
+RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt --output-file /tmp/requirements.lock \
+    && uv venv /app/.venv \
+    && uv pip sync --python /app/.venv/bin/python --require-hashes \
+        --default-index https://mirrors.cloud.tencent.com/pypi/simple/ /tmp/requirements.lock
 
 COPY . .
+RUN uv pip install --python /app/.venv/bin/python --no-deps --editable . \
+    --default-index https://mirrors.cloud.tencent.com/pypi/simple/
 # 字体下载失败就直接构建失败；直接调用 venv 避免 uv run 再同步 dev 依赖。
 RUN /app/.venv/bin/python scripts/fetch_fonts.py
 

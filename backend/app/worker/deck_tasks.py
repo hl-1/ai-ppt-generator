@@ -1,8 +1,8 @@
 import asyncio
+import logging
 import uuid
 from typing import Any
 
-import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -17,9 +17,14 @@ from app.domain.page_rhythm import (
     assign_layout_templates,
 )
 from app.domain.validation import StructureIssue
-from app.images.pipeline import ImagePipeline, create_image_pipeline
 from app.llm.base import OutlineSourceSection, SlideGenerationInput, SlideGenerator
-from app.llm.errors import LLMNotConfiguredError
+from app.llm.errors import (
+    InvalidModelOutputError,
+    LLMNotConfiguredError,
+    LLMTimeoutError,
+    LLMUnavailableError,
+    safe_error_details,
+)
 from app.models.project import Project
 from app.models.slide import Slide
 from app.schemas.deck import DeckEvent
@@ -31,9 +36,12 @@ from app.services.deck import (
     load_slides,
     outline_pages,
 )
-from app.services.slide_images import resolve_slide_images
+from app.services.image_jobs import lock_slide, queue_image_job
+from app.services.topic_material import topic_request_from_sections
 from app.worker.context import create_slide_generator
 from app.workflows.slide import build_slide_workflow, run_slide_workflow
+
+logger = logging.getLogger(__name__)
 
 
 async def generate_deck(ctx: dict[str, Any], project_id: str, slide_ids: list[str]) -> None:
@@ -50,11 +58,6 @@ async def generate_deck(ctx: dict[str, Any], project_id: str, slide_ids: list[st
 
     generator: SlideGenerator = ctx.get("slide_generator") or create_slide_generator()
     workflow = build_slide_workflow(generator)
-    owned_client: httpx.AsyncClient | None = None
-    pipeline: ImagePipeline | None = ctx.get("image_pipeline")
-    if pipeline is None:
-        owned_client = httpx.AsyncClient(trust_env=False, proxy=None)
-        pipeline = create_image_pipeline(owned_client)
     semaphore = asyncio.Semaphore(get_settings().slide_concurrency)
     cancelled = False
 
@@ -66,13 +69,9 @@ async def generate_deck(ctx: dict[str, Any], project_id: str, slide_ids: list[st
             if cancelled or await is_cancelled(project_uuid):
                 cancelled = True
                 return
-            await _generate_one(project_uuid, slide_id, context, workflow, pipeline)
+            await _generate_one(project_uuid, slide_id, context, workflow, queue=ctx.get("redis"))
 
-    try:
-        await asyncio.gather(*(run_one(slide_id) for slide_id in targets))
-    finally:
-        if owned_client is not None:
-            await owned_client.aclose()
+    await asyncio.gather(*(run_one(slide_id) for slide_id in targets))
     await _finish(project_uuid, cancelled=cancelled)
 
 
@@ -81,7 +80,8 @@ async def _generate_one(
     slide_id: uuid.UUID,
     context: "DeckContext",
     workflow,
-    pipeline: ImagePipeline,
+    *,
+    queue=None,
 ) -> None:
     page = context.pages.get(slide_id)
     if page is None:
@@ -119,6 +119,8 @@ async def _generate_one(
         evidence_kind=getattr(page.page, "evidence_kind", None) or "narrative",
         visual_type=getattr(page.page, "visual_type", None) or "auto",
         topic_mode=context.topic_mode,
+        topic_request=context.topic_request,
+        travel_context=context.travel_context,
         key_message=page.page.key_message,
         evidence=page.page.evidence,
         blueprint=context.blueprint,
@@ -128,6 +130,7 @@ async def _generate_one(
         neighbor_titles=context.neighbor_titles(page.position),
         other_page_briefs=context.other_page_briefs(page.position),
         visual_hint=visual_hint,
+        image_plan=plan.image_plan,
         # 跨页多样性必须提前分配：各页并发生成，看不到彼此的版式
         layout_template=assigned_template.id if assigned_template else None,
         skeleton_hint=assigned_template.hint if assigned_template else None,
@@ -143,20 +146,30 @@ async def _generate_one(
             theme_overrides=context.theme_overrides,
         )
     except Exception as error:
+        logger.error(
+            "slide generation failed project_id=%s slide_id=%s position=%s details=%s",
+            project_id,
+            slide_id,
+            page.position,
+            safe_error_details(error),
+        )
         await _save_failed(slide_id, _public_error(error))
         await _publish(project_id, "slide_failed", f"第 {page.position} 页生成失败", slide_id, page)
         return
 
-    slide = await resolve_slide_images(
-        pipeline,
-        user_id=context.user_id,
-        project_id=project_id,
-        deck_title=context.title,
-        page_title=page.page.title,
-        slide=slide,
-    )
     await _save_ready(slide_id, slide, issues, intended_mode=context.layout_mode)
     await _publish(project_id, "slide_completed", f"第 {page.position} 页已完成", slide_id, page)
+    if queue is None:
+        return
+    image_ids = [b.id for b in slide.blocks if b.type == "image" and not b.url and not b.locked]
+    if image_ids:
+        try:
+            async with async_session_factory() as session:
+                current = await lock_slide(session, project_id, slide_id)
+                if current and current.status == "ready":
+                    await queue_image_job(session, queue, current, image_ids)
+        except Exception as error:
+            logger.warning("automatic image enqueue failed type=%s", type(error).__name__)
 
 
 class DeckContext:
@@ -178,6 +191,8 @@ class DeckContext:
         ordered_titles: list[str],
         blueprint: DeckBlueprint | None = None,
         topic_mode: bool = False,
+        topic_request: str | None = None,
+        travel_context: dict | None = None,
     ) -> None:
         from app.domain.content_density import normalize_density
 
@@ -195,6 +210,8 @@ class DeckContext:
         self._ordered_titles = ordered_titles
         self.blueprint = blueprint or DeckBlueprint()
         self.topic_mode = topic_mode
+        self.topic_request = topic_request
+        self.travel_context = travel_context
         ordered_pages = sorted(pages.values(), key=lambda target: target.position)
         self._layout_templates = (
             assign_layout_templates(
@@ -281,8 +298,19 @@ async def _load_context(project_id: uuid.UUID) -> DeckContext | None:
             for source_index, source in enumerate(project.sources, start=1)
             for section_index, section in enumerate(source.sections, start=1)
         }
+        from app.services.travel_planning import travel_context, travel_sections
+        from app.services.travel_research import current_research, is_travel
+
+        research = await current_research(session, project) if is_travel(project) else None
+        travel = travel_context(research, project.travel_booking_states)
+        if is_travel(project) and (
+            travel is None or research.id != project.outline.travel_research_id
+        ):
+            raise ValueError("旅行资料版本与已确认大纲不一致")
+        sections.update({section.ref: section for section in travel_sections(research)})
 
         return DeckContext(
+            travel_context=travel,
             user_id=project.user_id,
             title=project.title,
             audience=project.audience,
@@ -296,6 +324,12 @@ async def _load_context(project_id: uuid.UUID) -> DeckContext | None:
             ordered_titles=[page.title for page in pages],
             blueprint=DeckBlueprint.model_validate(project.outline.blueprint or {}),
             topic_mode=any(source.kind == "topic" for source in project.sources),
+            topic_request="\n\n".join(
+                topic_request_from_sections(source.sections, fallback=project.title)
+                for source in project.sources
+                if source.kind == "topic"
+            )
+            or None,
         )
 
 
@@ -431,5 +465,11 @@ async def _finish(project_id: uuid.UUID, *, cancelled: bool) -> None:
 def _public_error(error: Exception) -> str:
     if isinstance(error, LLMNotConfiguredError):
         return str(error)
+    if isinstance(error, LLMTimeoutError):
+        return "模型请求超时，自动重试后仍未成功，请稍后重试"
+    if isinstance(error, LLMUnavailableError):
+        return "模型服务暂不可用，自动重试后仍未成功，请稍后重试"
+    if isinstance(error, InvalidModelOutputError):
+        return "模型返回内容格式不正确，自动重试后仍未成功，请重试这一页"
     # 不把供应商响应或输入材料落库，避免错误信息成为敏感数据旁路
     return "页面生成失败，请重试"

@@ -29,6 +29,7 @@ from app.schemas.project import (
 )
 from app.services.deck import load_slides, refresh_slide_issues
 from app.services.sources import add_document_source, add_text_source, delete_source
+from app.services.travel_research import invalidate_travel_research
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -81,7 +82,7 @@ async def create_project(
 ) -> Project:
     _ensure_known_theme(body.theme_id)
 
-    project = Project(user_id=current_user.id, **body.model_dump())
+    project = Project(user_id=current_user.id, **body.model_dump(mode="json"))
     session.add(project)
     await session.commit()
     await session.refresh(project)
@@ -110,7 +111,15 @@ async def update_project(
     _ensure_outline_unlocked(project)
     _ensure_known_theme(body.theme_id)
 
-    data = body.model_dump(exclude_unset=True)
+    data = body.model_dump(exclude_unset=True, mode="json")
+    travel_changed = any(
+        field in data and data[field] != getattr(project, field)
+        for field in ("travel_conditions", "title", "report_brief")
+    )
+    if travel_changed:
+        await invalidate_travel_research(session, project)
+    if "travel_conditions" in data and data["travel_conditions"] != project.travel_conditions:
+        project.travel_booking_states = {}
     if "theme_id" in data and data["theme_id"] != project.theme_id:
         project.theme_overrides = empty_overrides()
     for field, value in data.items():

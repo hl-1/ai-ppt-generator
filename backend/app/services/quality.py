@@ -33,7 +33,7 @@ def project_to_content_deck(project: Project, slides: list[Slide]) -> ContentDec
 
 
 def _section_index(project: Project) -> dict[str, OutlineSourceSection]:
-    return {
+    sections = {
         f"S{source_index}:{section_index}": OutlineSourceSection(
             ref=f"S{source_index}:{section_index}",
             heading=section.get("heading"),
@@ -44,6 +44,15 @@ def _section_index(project: Project) -> dict[str, OutlineSourceSection]:
         for source_index, source in enumerate(project.sources, start=1)
         for section_index, section in enumerate(source.sections, start=1)
     }
+    from app.services.travel_planning import travel_sections
+
+    sections.update(
+        {
+            section.ref: section
+            for section in travel_sections(getattr(project, "travel_research", None))
+        }
+    )
+    return sections
 
 
 def _page_by_outline_id(project: Project) -> dict[uuid.UUID, OutlinePage]:

@@ -79,6 +79,7 @@ export interface DraftInput {
   layoutMode?: 'fixed' | 'flex'
   contentDensity?: 'concise' | 'medium' | 'detailed'
   reportBrief?: ProjectCreate['report_brief']
+  travelConditions?: ProjectCreate['travel_conditions']
   onStep?: (step: string) => void
 }
 
@@ -98,6 +99,7 @@ export function useCreateDraft() {
         method: 'POST',
         body: JSON.stringify({
           title: input.title,
+          travel_conditions: input.travelConditions,
           audience: input.audience,
           tone: input.tone,
           page_count: input.pageCount,
@@ -120,7 +122,7 @@ export function useCreateDraft() {
             })
           }
         } else {
-          input.onStep?.(input.mode === 'topic' ? '正在生成主题样稿素材…' : '正在整理内容…')
+          input.onStep?.(input.mode === 'topic' ? '正在整理主题要求…' : '正在整理内容…')
           await request<ProjectSource>(`/projects/${project.id}/sources`, {
             method: 'POST',
             body: JSON.stringify({ kind: input.mode, content: input.content }),

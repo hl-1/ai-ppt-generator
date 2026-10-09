@@ -5,9 +5,9 @@ from pydantic import BaseModel, Field
 
 
 class ReportBrief(BaseModel):
-    scenario: Literal["general", "business_review", "project_review", "proposal", "strategy"] = (
-        "general"
-    )
+    scenario: Literal[
+        "general", "travel_plan", "business_review", "project_review", "proposal", "strategy"
+    ] = "general"
     goal: str = Field(default="", max_length=500)
     decision_request: str = Field(default="", max_length=300)
 
@@ -59,6 +59,8 @@ EvidenceKind = Literal[
 ]
 VisualType = Literal[
     "auto",
+    "photo",
+    "illustration",
     "line",
     "column",
     "bar",
@@ -69,6 +71,14 @@ VisualType = Literal[
     "waterfall",
     "combo_chart",
 ]
+
+
+class ImagePlan(BaseModel):
+    subject: str = Field(min_length=1, max_length=120)
+    queries: list[str] = Field(default_factory=list, max_length=4)
+    source: Literal["auto", "stock", "generated"] = "auto"
+    require_real: bool = False
+    purpose: Literal["cover", "subject", "support"] = "subject"
 
 
 class OutlinePageDraft(BaseModel):
@@ -91,6 +101,7 @@ class OutlinePageDraft(BaseModel):
     # 一句配图意图，为空表示这页不配图。放在大纲阶段而不是正文阶段，
     # 是因为「哪些页该配图」是全局节奏问题：正文页各自并发生成，看不到彼此。
     visual: str | None = Field(default=None, max_length=120)
+    image_plan: ImagePlan | None = None
 
 
 class OutlineDraft(BaseModel):

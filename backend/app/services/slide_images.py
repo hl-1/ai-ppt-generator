@@ -5,6 +5,7 @@ from app.domain.content import ImageBlock, Slide
 from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, Rect
 from app.domain.slide_geometry import placed_by_block_id
 from app.images.base import ImageRequest
+from app.images.errors import ImageFetchError
 from app.images.pipeline import ImagePipeline
 from app.images.validate import validate_image
 from app.services.media import media_url, store_image
@@ -27,6 +28,7 @@ async def resolve_slide_images(
     deck_title: str,
     page_title: str,
     slide: Slide,
+    excluded_ids: set[str] | None = None,
 ) -> Slide:
     """为尚未填充的图片块拉取真实图源；失败则保留占位，绝不打断整页。"""
     placements = placed_by_block_id(slide)
@@ -38,7 +40,14 @@ async def resolve_slide_images(
         placed = placements.get(block.id)
         if placed is None:
             logger.warning("图片块无几何位置，保留占位图：%s", block.id)
-            blocks.append(block)
+            blocks.append(
+                block.model_copy(
+                    update={
+                        "image_status": "failed",
+                        "image_error": "图片没有可用位置，请调整版式后重试",
+                    }
+                )
+            )
             continue
         resolved = await _resolve_one(
             pipeline,
@@ -48,8 +57,11 @@ async def resolve_slide_images(
             deck_title=deck_title,
             page_title=page_title,
             rect=placed.rect,
+            excluded_ids=excluded_ids,
         )
         blocks.append(resolved)
+        if excluded_ids is not None and resolved.image_asset_id:
+            excluded_ids.add(resolved.image_asset_id)
     return slide.model_copy(update={"blocks": blocks})
 
 
@@ -62,22 +74,42 @@ async def _resolve_one(
     deck_title: str,
     page_title: str,
     rect: Rect,
+    excluded_ids: set[str] | None = None,
 ) -> ImageBlock:
     try:
         aspect = _image_aspect(rect)
         # prompt 给生图、query 给图库：同一语义在两边的最佳措辞不同
-        asset = await pipeline.fetch(
-            ImageRequest(
-                prompt=(
-                    f"{block.alt}。用作主题为「{deck_title}」的商务演示页面"
-                    f"「{page_title}」的配图，构图简洁、留白充足，画面中不要出现任何文字。"
-                ),
-                query=block.alt,
-                aspect_ratio=aspect,
-            )
+        plan = block.image_plan
+        request = ImageRequest(
+            prompt=(
+                f"{block.alt}。用作主题为「{deck_title}」的演示页面"
+                f"「{page_title}」的配图，构图简洁、留白充足，画面中不要出现任何文字。"
+            ),
+            query=block.alt,
+            aspect_ratio=aspect,
+            queries=plan.queries if plan else [],
+            subject=plan.subject if plan else block.alt,
+            preferred_source=plan.source if plan else "auto",
+            require_real=plan.require_real if plan else False,
+            excluded_ids=excluded_ids or set(),
         )
+        if not pipeline.available_for(request):
+            return block.model_copy(
+                update={
+                    "image_status": "failed",
+                    "image_error": "所需图源尚未配置，请上传图片或检查配置",
+                }
+            )
+        asset = await pipeline.fetch(request)
         if asset is None:
-            return block
+            return block.model_copy(
+                update={
+                    "image_status": "failed",
+                    "image_error": "未找到描述匹配的真实照片，请搜索候选或上传图片"
+                    if request.require_real
+                    else "配图未成功，图源可能超时或不可用，请重试",
+                }
+            )
 
         extension, _content_type = validate_image(asset.data)
         key = store_image(
@@ -91,9 +123,19 @@ async def _resolve_one(
                 "url": media_url(key),
                 "source": asset.source,
                 "credit": asset.credit,
+                "credit_url": asset.credit_url,
+                "image_asset_id": asset.asset_id,
+                "image_status": "ready",
+                "image_error": None,
+                "image_job_id": None,
+                "image_job_started_at": None,
             }
         )
+    except ImageFetchError as error:
+        return block.model_copy(update={"image_status": "failed", "image_error": str(error)})
     except Exception as error:
         # 一张图不该让整页失败：校验、存储、甚至意外异常都只降级到占位
-        logger.warning("配图异常，保留占位图：%s", error)
-        return block
+        logger.warning("image resolution failed type=%s", type(error).__name__)
+        return block.model_copy(
+            update={"image_status": "failed", "image_error": "图片校验或保存失败，请重试或上传图片"}
+        )

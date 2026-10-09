@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 import uuid
 from typing import Any, TypedDict
 
@@ -10,17 +13,27 @@ from app.domain.enterprise_layout import bind_planned_evidence, compose_report_s
 from app.domain.enterprise_quality import check_page_readability, check_planned_data
 from app.domain.flex_fit import fit_tree_to_content
 from app.domain.flex_width import fit_row_widths
+from app.domain.image_planning import bind_page_image
 from app.domain.outline import OutlinePageDraft
 from app.domain.quality import check_evidence_alignment, check_slide_richness, is_repair_worthy
 from app.domain.slide_draft import FlexSlideDraft, SlideDraft, draft_to_slide, flex_draft_to_slide
 from app.domain.theme import resolve_theme
 from app.domain.validation import StructureIssue, validate_slide
 from app.llm.base import SlideGenerationInput, SlideGenerator
-from app.llm.errors import InvalidSlideOutputError
+from app.llm.errors import (
+    InvalidModelOutputError,
+    InvalidSlideOutputError,
+    LLMTimeoutError,
+    LLMUnavailableError,
+    safe_error_details,
+)
 
 # 只修一轮：结构 error 或过瘦/空话；主题模式额外修复溢出/容量 warning。
 # generate 节点内部是 LCEL json_mode；校验与条件修复留在 Graph。
 MAX_REPAIR_ROUNDS = 1
+MAX_GENERATION_ATTEMPTS = 2
+GENERATION_RETRY_DELAY_SECONDS = 2.0
+logger = logging.getLogger(__name__)
 
 MAX_SECTION_CHARS = 1_500
 MAX_TOTAL_SOURCE_CHARS = 6_000
@@ -35,6 +48,7 @@ class SlideWorkflowState(TypedDict, total=False):
     slide: Slide
     issues: list[StructureIssue]
     repairs: int
+    repair_failed: bool
 
 
 def prepare_slide_input(
@@ -60,7 +74,15 @@ def prepare_slide_input(
         text = text[:remaining]
         sections.append(section.model_copy(update={"text": text}))
         used += len(text)
-    return payload.model_copy(update={"sections": sections})
+    updates = {"sections": sections}
+    if payload.travel_context and payload.layout_mode == "fixed":
+        from app.services.travel_slides import is_itinerary_page
+
+        if payload.page_title == "预算与缺价项目" or is_itinerary_page(payload.page_title):
+            updates["layout_id"] = "table"
+        elif payload.page_title in {"出行条件与安排总览", "预约待办与出发前核对"}:
+            updates["layout_id"] = "bullets"
+    return payload.model_copy(update=updates)
 
 
 def build_slide_workflow(generator: SlideGenerator):
@@ -71,13 +93,71 @@ def build_slide_workflow(generator: SlideGenerator):
     """
 
     async def prepare(state: SlideWorkflowState) -> dict:
-        return {"input": prepare_slide_input(state["input"]), "repairs": 0}
+        return {"input": prepare_slide_input(state["input"]), "repairs": 0, "repair_failed": False}
+
+    def can_keep_previous(state: SlideWorkflowState) -> bool:
+        return (
+            bool(state.get("repairs", 0))
+            and isinstance(state.get("slide"), Slide)
+            and not any(issue.severity == "error" for issue in state.get("issues", []))
+        )
+
+    def keep_previous(state: SlideWorkflowState, error: Exception, *, stage: str) -> dict:
+        if not can_keep_previous(state):
+            raise error
+        logger.warning(
+            "slide repair fallback slide_id=%s position=%s stage=%s details=%s",
+            state["slide_id"],
+            state["input"].position,
+            stage,
+            safe_error_details(error),
+        )
+        return {
+            "repair_failed": True,
+            "issues": [
+                *state.get("issues", []),
+                StructureIssue(
+                    severity="warning",
+                    slide_id=state["slide_id"],
+                    slot_id=None,
+                    code="repair_failed",
+                    message="自动修复未完成，已保留首轮可用内容，可稍后重试",
+                ),
+            ],
+        }
 
     async def generate(state: SlideWorkflowState) -> dict:
-        draft = await generator.generate(state["input"])
-        return {"draft": draft}
+        payload = state["input"]
+        for attempt in range(1, MAX_GENERATION_ATTEMPTS + 1):
+            try:
+                draft = await generator.generate(payload)
+                return {"draft": draft}
+            except (LLMTimeoutError, LLMUnavailableError, InvalidModelOutputError) as error:
+                details = safe_error_details(error)
+                logger.warning(
+                    "slide model request failed slide_id=%s position=%s repair=%s "
+                    "attempt=%s/%s details=%s",
+                    state["slide_id"],
+                    payload.position,
+                    bool(state.get("repairs", 0)),
+                    attempt,
+                    MAX_GENERATION_ATTEMPTS,
+                    details,
+                )
+                if attempt == MAX_GENERATION_ATTEMPTS:
+                    return keep_previous(state, error, stage="generate")
+                if isinstance(error, InvalidModelOutputError):
+                    feedback = (
+                        "上一次输出未通过 JSON 或内容结构校验，请重新输出完整合法的 JSON；"
+                        "字符串必须正确转义，diagram 只输出 nodes 和 edges，不输出 mermaid。"
+                        f"校验信息：{json.dumps(details, ensure_ascii=False)}"
+                    )
+                    payload = payload.model_copy(update={"issues": [*payload.issues, feedback]})
+                await asyncio.sleep(GENERATION_RETRY_DELAY_SECONDS)
+            except Exception as error:
+                return keep_previous(state, error, stage="generate")
 
-    async def check(state: SlideWorkflowState) -> dict:
+    async def check_draft(state: SlideWorkflowState) -> dict:
         slide_id = uuid.UUID(state["slide_id"])
         draft = state["draft"]
         if isinstance(draft, FlexSlideDraft) or state["input"].layout_mode == "flex":
@@ -127,8 +207,32 @@ def build_slide_workflow(generator: SlideGenerator):
             visual_type=payload.visual_type,
             key_message=payload.key_message,
             evidence=payload.evidence,
+            visual=payload.visual_hint,
+            image_plan=payload.image_plan,
         )
-        if slide.layout_mode == "flex":
+        slide = bind_page_image(slide, plan)
+        travel_budget = payload.travel_context and payload.page_title == "预算与缺价项目"
+        travel_cover = payload.travel_context and payload.page_role == "cover"
+        from app.services.travel_slides import CORE_TRAVEL_PAGES, is_itinerary_page
+
+        travel_itinerary = payload.travel_context and is_itinerary_page(payload.page_title)
+        if travel_budget or travel_itinerary:
+            from app.domain.block_style import BlockStyle
+
+            slide = slide.model_copy(
+                update={
+                    "blocks": [
+                        block.model_copy(update={"style": BlockStyle(size_pt=14)})
+                        if block.type == "table"
+                        else block
+                        for block in slide.blocks
+                    ]
+                }
+            )
+        structured_travel = payload.travel_context and (
+            payload.page_title in CORE_TRAVEL_PAGES or travel_cover or travel_itinerary
+        )
+        if slide.layout_mode == "flex" and not structured_travel:
             if enterprise:
                 labels = {
                     s.ref: " · ".join(filter(None, [s.heading, s.locator, s.ref]))
@@ -162,6 +266,22 @@ def build_slide_workflow(generator: SlideGenerator):
                 }
             )
         issues = validate_slide(slide, theme=theme)
+        if payload.travel_context:
+            from app.services.travel_planning import travel_claim_issues
+
+            text = json.dumps(
+                [block.model_dump(mode="json") for block in slide.blocks], ensure_ascii=False
+            )
+            issues.extend(
+                StructureIssue(
+                    severity="error",
+                    slide_id=str(slide.id),
+                    slot_id=None,
+                    code="travel_unverified_claim",
+                    message=message,
+                )
+                for message in travel_claim_issues(text, payload.travel_context)
+            )
         if enterprise:
             issues.extend(check_planned_data(slide, plan))
         issues.extend(check_page_readability(slide))
@@ -187,6 +307,19 @@ def build_slide_workflow(generator: SlideGenerator):
             "slide": slide,
             "issues": issues,
         }
+
+    async def check(state: SlideWorkflowState) -> dict:
+        try:
+            checked = await check_draft(state)
+            if can_keep_previous(state) and any(
+                issue.severity == "error" for issue in checked["issues"]
+            ):
+                return keep_previous(
+                    state, InvalidSlideOutputError("修复结果未通过结构校验"), stage="check"
+                )
+            return checked
+        except Exception as error:
+            return keep_previous(state, error, stage="check")
 
     async def repair(state: SlideWorkflowState) -> dict:
         topic_mode = state["input"].topic_mode
@@ -219,7 +352,11 @@ def build_slide_workflow(generator: SlideGenerator):
     graph.add_node("repair", repair)
     graph.add_edge(START, "prepare")
     graph.add_edge("prepare", "generate")
-    graph.add_edge("generate", "check")
+    graph.add_conditional_edges(
+        "generate",
+        lambda state: END if state.get("repair_failed") else "check",
+        {"check": "check", END: END},
+    )
     graph.add_conditional_edges("check", route, {"repair": "repair", END: END})
     graph.add_edge("repair", "generate")
     return graph.compile()
@@ -244,6 +381,21 @@ async def run_slide_workflow(
     slide = result.get("slide")
     if not isinstance(slide, Slide):
         raise InvalidSlideOutputError("页面工作流未产出内容")
+    if any(issue.code == "travel_unverified_claim" for issue in result.get("issues") or []):
+        raise InvalidSlideOutputError("旅游页面仍包含无法对应来源的价格或时间")
+    if payload.travel_context:
+        manifest = "\n".join(
+            f"{source['id']} {source['title']} {source['url']}"
+            for source in payload.travel_context.get("sources", [])
+        )
+        slide = slide.model_copy(
+            update={
+                "speaker_notes": f"{slide.speaker_notes or ''}\n\n"
+                f"旅行资料版本：{payload.travel_context['version']}\n"
+                f"价格按官方规则/报价/估算/待查询分别标记。"
+                f"游览时段为建议。\n资料来源：\n{manifest}"
+            }
+        )
     return slide, list(result.get("issues") or [])
 
 

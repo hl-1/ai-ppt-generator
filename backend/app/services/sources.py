@@ -8,7 +8,7 @@ from app.ingest.registry import parser_for
 from app.ingest.upload import validate_upload
 from app.models.project import Project, ProjectSource
 from app.schemas.project import TextSourceCreate
-from app.services.topic_material import build_topic_sample_document
+from app.services.topic_material import build_topic_document, topic_request_from_sections
 from app.storage import get_storage
 
 
@@ -20,15 +20,19 @@ def _persist(project: Project, source: ProjectSource, parsed: ParsedDocument) ->
     return source
 
 
+def refresh_topic_sources(project: Project) -> None:
+    """Replace legacy simulated material when a topic outline is regenerated."""
+    for source in project.sources:
+        if source.kind == "topic":
+            topic = topic_request_from_sections(source.sections, fallback=project.title)
+            _persist(project, source, build_topic_document(topic=topic))
+
+
 async def add_text_source(
     session: AsyncSession, project: Project, payload: TextSourceCreate
 ) -> ProjectSource:
     if payload.kind == "topic":
-        parsed = build_topic_sample_document(
-            topic=payload.content,
-            audience=project.audience,
-            report_brief=project.report_brief,
-        )
+        parsed = build_topic_document(topic=payload.content)
     else:
         # 长文本与 .txt 文件的切分规则应当一致，直接复用同一个解析器
         parsed = PlainTextParser().parse(payload.content.encode("utf-8"))

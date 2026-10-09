@@ -47,6 +47,10 @@ export function useDeck(projectId: string, enabled = true) {
     queryKey: deckKey(projectId),
     queryFn: () => request<Deck>(`/projects/${projectId}/deck`),
     enabled,
+    refetchInterval: (query) => query.state.data?.slides.some((slide) =>
+      slide.blocks.some((block) => block.type === 'image' && block.image_status === 'queued'
+        && Date.now() / 1000 - (block.image_job_started_at ?? 0) < 15 * 60),
+    ) ? 2000 : false,
   })
 }
 
@@ -110,6 +114,68 @@ export function useReplaceSlideImage(projectId: string) {
         { method: 'PUT', body: form },
       )
     },
+    onSuccess: (slide) => commitSlideToCache(queryClient, projectId, slide),
+  })
+}
+
+export interface ImageCandidate {
+  id: string
+  url: string
+  thumbnail_url: string
+  description: string
+  width: number
+  height: number
+  credit: string
+  credit_url: string
+  author_url: string
+  match_reason: string
+  metadata_matched: boolean
+}
+
+interface ImageSearchResult {
+  search_id: string
+  candidates: ImageCandidate[]
+  queries: string[]
+}
+
+export function useImageSearch(projectId: string) {
+  return useMutation({
+    mutationFn: (body: { query: string; aspect_ratio: number }) => request<ImageSearchResult>(
+      `/projects/${projectId}/deck/images/search`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  })
+}
+
+type ImageAction =
+  | { action: 'apply'; search_id: string; candidate_id: string }
+  | { action: 'generate'; query: string; source: 'auto' | 'stock' | 'generated' }
+  | { action: 'lock'; locked: boolean }
+
+export function useImageAction(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ slideId, blockId, revision, ...input }:
+      ImageAction & { slideId: string; blockId: string; revision: number }) => {
+      const { action, ...body } = input
+      return request<DeckSlide>(
+        `/projects/${projectId}/deck/slides/${slideId}/blocks/${blockId}/image/${action}`,
+        { method: action === 'lock' ? 'PATCH' : 'POST', body: JSON.stringify({ revision, ...body }) },
+      )
+    },
+    onSuccess: (slide) => commitSlideToCache(queryClient, projectId, slide),
+    onError: () => { void queryClient.invalidateQueries({ queryKey: deckKey(projectId) }) },
+  })
+}
+
+export function useAddSlideImage(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ slideId, revision, subject }:
+      { slideId: string; revision: number; subject: string }) => request<DeckSlide>(
+      `/projects/${projectId}/deck/slides/${slideId}/images`,
+      { method: 'POST', body: JSON.stringify({ revision, subject }) },
+    ),
     onSuccess: (slide) => commitSlideToCache(queryClient, projectId, slide),
   })
 }

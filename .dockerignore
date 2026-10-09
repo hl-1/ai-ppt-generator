@@ -1,0 +1,13 @@
+.git/
+**/AGENTS.md
+**/AGENTS.override.md
+**/.env
+**/.env.*
+**/*.key
+**/*.pem
+certs/
+deploy/
+**/node_modules/
+**/.venv/
+**/__pycache__/
+**/dist/

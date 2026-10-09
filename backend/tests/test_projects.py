@@ -105,7 +105,7 @@ async def test_update_and_delete_project(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_topic_source_expands_to_mock_presentation_material(client: AsyncClient) -> None:
+async def test_topic_source_preserves_user_requirements(client: AsyncClient) -> None:
     headers = await _sign_up(client)
     project = await _create_project(
         client,
@@ -120,21 +120,35 @@ async def test_topic_source_expands_to_mock_presentation_material(client: AsyncC
 
     response = await client.post(
         f"/api/v1/projects/{project['id']}/sources",
-        json={"kind": "topic", "content": "如何把内部工具做成平台"},
+        json={"kind": "topic", "content": "春节去北京旅游规划"},
         headers=headers,
     )
 
     assert response.status_code == 201
     source = response.json()
-    headings = [section["heading"] for section in source["sections"]]
-    assert len(source["sections"]) >= 6
-    assert "核心指标趋势" in headings
-    assert "结构构成" in headings
-    assert "推进流程" in headings
-    assert source["char_count"] > len("如何把内部工具做成平台")
-    assert source["warnings"] == [
-        "从主题自动生成的模拟素材，仅用于样稿；正式汇报请替换为真实数据。"
-    ]
+    assert len(source["sections"]) == 1
+    assert source["sections"][0]["heading"] == "主题与要求"
+    assert source["sections"][0]["text"] == "春节去北京旅游规划"
+    assert source["char_count"] == len("春节去北京旅游规划")
+    assert source["warnings"] == ["主题内容由 AI 基于通用知识扩展，事实与数据请核实。"]
+
+
+@pytest.mark.asyncio
+async def test_travel_category_is_saved_and_returned(client: AsyncClient) -> None:
+    headers = await _sign_up(client)
+    brief = {
+        "scenario": "travel_plan",
+        "goal": "亲子出游，减少跨区域往返",
+        "decision_request": "确认出行日期和住宿区域",
+    }
+    project = await _create_project(
+        client, headers, title="春节去北京旅游规划", report_brief=brief
+    )
+    assert project["report_brief"] == brief
+
+    response = await client.get(f"/api/v1/projects/{project['id']}", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["report_brief"] == brief
 
 
 @pytest.mark.asyncio

@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.domain.outline import ReportBrief
 from app.domain.theme import ThemeOverrides
 from app.ingest.models import SourceSection
+from app.schemas.travel import TravelConditions
 
 Tone = Literal["professional", "plain", "punchy"]
 ProjectStatus = Literal["draft", "outline_ready", "generating", "ready"]
@@ -29,6 +30,7 @@ LayoutMode = Literal["fixed", "flex"]
 
 
 class ProjectCreate(BaseModel):
+    travel_conditions: TravelConditions | None = None
     report_brief: ReportBrief = Field(default_factory=ReportBrief)
     title: str = Field(min_length=1, max_length=200)
     audience: str | None = Field(default=None, max_length=100)
@@ -40,6 +42,7 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectUpdate(BaseModel):
+    travel_conditions: TravelConditions | None = None
     report_brief: ReportBrief = Field(default_factory=ReportBrief)
     title: str | None = Field(default=None, min_length=1, max_length=200)
     audience: str | None = Field(default=None, max_length=100)
@@ -90,6 +93,7 @@ class ProjectPublic(BaseModel):
 
 
 class ProjectDetail(ProjectPublic):
+    travel_conditions: TravelConditions | None = None
     sources: list[SourcePublic]
 
 

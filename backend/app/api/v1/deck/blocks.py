@@ -33,6 +33,7 @@ from app.schemas.deck import (
     SlidePublic,
 )
 from app.services.deck import load_slides
+from app.services.image_jobs import lock_slide
 from app.services.media import media_url, store_image
 
 router = APIRouter(prefix="/projects/{project_id}/deck", tags=["deck"])
@@ -50,8 +51,7 @@ async def replace_slide_image(
     file: Annotated[UploadFile, File()],
     revision: Annotated[int, Form()],
 ) -> Slide:
-    slides = await load_slides(session, project.id)
-    slide = next((item for item in slides if item.id == slide_id), None)
+    slide = await lock_slide(session, project.id, slide_id)
     if slide is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="页面不存在")
 
@@ -94,6 +94,12 @@ async def replace_slide_image(
         "source": "upload",
         "credit": None,
         "locked": True,
+        "credit_url": None,
+        "image_status": "ready",
+        "image_error": None,
+        "image_job_id": None,
+        "image_job_started_at": None,
+        "image_asset_id": None,
     }
     # JSONB 就地改 dict 不会被 SQLAlchemy 感知，必须赋新列表
     slide.blocks = [updated if block.get("id") == block_id else block for block in slide.blocks]

@@ -1,4 +1,4 @@
-"""Deterministic visual planning for topic-only sample decks."""
+"""Deterministic visual planning using user-supplied topic evidence."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def topic_visual_evidence(
     *,
     used_signatures: set[tuple] | None = None,
 ) -> list[EvidenceItem]:
-    """Extract the structured records embedded by the topic sample generator."""
+    """Extract structured numeric records supplied with the topic."""
     if visual_type not in {"line", "column", "bar", "pie", "combo_chart"}:
         return []
 
@@ -147,6 +147,9 @@ def normalize_topic_pages(
     result: list[OutlinePageDraft] = []
 
     for page in pages:
+        if page.visual_type in {"photo", "illustration"} or page.image_plan:
+            result.append(page)
+            continue
         if page.page_role in {"cover", "toc", "section"}:
             result.append(page.model_copy(update={"visual_type": "auto"}))
             continue
@@ -207,14 +210,16 @@ def _suggest_visual(
     page: OutlinePageDraft,
     sources: Mapping[str, str],
 ) -> str:
+    if page.evidence_kind in {"flow", "timeline"}:
+        return page.evidence_kind
     blob = " ".join([page.title, page.objective, page.key_message, *page.key_points])
     if any(
         word in blob for word in ("双指标", "双线", "成熟度与采用率", "指标与率")
     ) and topic_visual_evidence(sources, "combo_chart"):
         return "combo_chart"
     keyword_map = (
-        (("分流", "判断", "审批", "并行", "汇聚", "流程"), "flow"),
-        (("阶段", "路线", "里程碑", "规划", "时间"), "timeline"),
+        (("分流", "审批", "并行", "汇聚"), "flow"),
+        (("里程碑", "阶段安排", "时间轴"), "timeline"),
         (("构成", "结构", "占比", "资源"), "pie"),
         (("对比", "比较", "对象", "差异", "排名"), "bar"),
         (("采用率", "增长", "成熟度", "变化", "趋势"), "line"),

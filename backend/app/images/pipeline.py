@@ -1,18 +1,17 @@
+from collections.abc import Awaitable, Callable
+
 import httpx
 
 from app.core.config import get_settings
 from app.images.bailian import BailianImageProvider
 from app.images.base import ImageAsset, ImageProvider, ImageRequest
+from app.images.errors import ImageFetchError
 from app.images.generated import GeneratedImageProvider
 from app.images.unsplash import UnsplashImageProvider
 
 
 class ImagePipeline:
-    """按优先级依次尝试图源，全部失败则返回 None 交给占位图。
-
-    顺序是「生图 → 图库」：生图能精确贴合页面语义，图库胜在稳定与真实，
-    因此把它放在后面兜底。两级都不可用时不报错，占位图本身就是设计的一部分。
-    """
+    """按配图计划尝试图源；真实对象只用图库，公开错误交给图片状态展示。"""
 
     def __init__(self, providers: list[ImageProvider]) -> None:
         self._providers = providers
@@ -22,16 +21,40 @@ class ImagePipeline:
         return any(provider.available() for provider in self._providers)
 
     async def fetch(self, request: ImageRequest) -> ImageAsset | None:
-        for provider in self._providers:
+        providers = self._providers
+        if request.require_real or request.preferred_source == "stock":
+            providers = sorted(providers, key=lambda p: p.source != "stock")
+        if request.preferred_source == "generated":
+            providers = sorted(providers, key=lambda p: p.source != "generated")
+        failures = []
+        for provider in providers:
+            if request.require_real and provider.source != "stock":
+                continue
             if not provider.available():
                 continue
-            asset = await provider.fetch(request)
+            try:
+                asset = await provider.fetch(request)
+            except ImageFetchError as error:
+                failures.append(str(error))
+                continue
             if asset is not None:
                 return asset
+        if failures:
+            raise ImageFetchError("；".join(dict.fromkeys(failures)))
         return None
 
+    def available_for(self, request: ImageRequest) -> bool:
+        return any(
+            p.available() and (not request.require_real or p.source == "stock")
+            for p in self._providers
+        )
 
-def create_image_pipeline(client: httpx.AsyncClient) -> ImagePipeline:
+
+def create_image_pipeline(
+    client: httpx.AsyncClient,
+    *,
+    reserve: Callable[[str], Awaitable[bool]] | None = None,
+) -> ImagePipeline:
     settings = get_settings()
     if settings.image_provider == "bailian":
         primary: ImageProvider = BailianImageProvider(
@@ -58,6 +81,7 @@ def create_image_pipeline(client: httpx.AsyncClient) -> ImagePipeline:
                 client=client,
                 access_key=settings.unsplash_access_key,
                 timeout_seconds=settings.image_timeout_seconds,
+                reserve=reserve,
             ),
         ]
     )

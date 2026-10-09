@@ -1,9 +1,18 @@
+import asyncio
+import json
 import uuid
 
 import pytest
 
 from app.domain.slide_draft import BulletsContent, SlideDraft, TextContent
 from app.llm.base import OutlineSourceSection, SlideGenerationInput
+from app.llm.errors import (
+    InvalidSlideOutputError,
+    LLMNotConfiguredError,
+    LLMTimeoutError,
+    LLMUnavailableError,
+    safe_error_details,
+)
 from app.workflows.slide import (
     build_slide_workflow,
     prepare_slide_input,
@@ -29,13 +38,16 @@ def _payload(**overrides) -> SlideGenerationInput:
 
 
 class ScriptedGenerator:
-    def __init__(self, drafts: list[SlideDraft]) -> None:
+    def __init__(self, drafts: list[SlideDraft | BaseException]) -> None:
         self._drafts = drafts
         self.prompts: list[list[str]] = []
 
     async def generate(self, payload: SlideGenerationInput) -> SlideDraft:
         self.prompts.append(list(payload.issues))
-        return self._drafts[min(len(self.prompts) - 1, len(self._drafts) - 1)]
+        draft = self._drafts[min(len(self.prompts) - 1, len(self._drafts) - 1)]
+        if isinstance(draft, BaseException):
+            raise draft
+        return draft
 
 
 def _draft(items: list[str], *, title: str = "现状与问题") -> SlideDraft:
@@ -79,12 +91,10 @@ async def test_workflow_skips_repair_for_capacity_overflow() -> None:
 
 @pytest.mark.asyncio
 async def test_fixed_workflow_preserves_confirmed_title() -> None:
-    generator = ScriptedGenerator([
-        _draft(["具体经营结果与数据", "下一步行动与影响"], title="模型改写标题")
-    ])
-    slide, _ = await run_slide_workflow(
-        build_slide_workflow(generator), _payload(), uuid.uuid4()
+    generator = ScriptedGenerator(
+        [_draft(["具体经营结果与数据", "下一步行动与影响"], title="模型改写标题")]
     )
+    slide, _ = await run_slide_workflow(build_slide_workflow(generator), _payload(), uuid.uuid4())
 
     assert next(block for block in slide.blocks if block.slot_id == "title").text == "现状与问题"
 
@@ -148,3 +158,157 @@ async def test_workflow_gives_up_after_one_thin_repair() -> None:
 
     assert len(generator.prompts) == 2
     assert any(issue.code == "thin_content" for issue in issues)
+
+
+@pytest.fixture
+def immediate_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.workflows.slide.GENERATION_RETRY_DELAY_SECONDS", 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        LLMTimeoutError("timeout"),
+        LLMUnavailableError("unavailable"),
+        InvalidSlideOutputError("json"),
+    ],
+)
+async def test_workflow_retries_model_failures(error: Exception, immediate_retry) -> None:
+    rich = ["交付周期从六周缩短到三周，瓶颈在评审排队"] * 3
+    generator = ScriptedGenerator([error, _draft(rich)])
+
+    slide, _ = await run_slide_workflow(build_slide_workflow(generator), _payload(), uuid.uuid4())
+
+    assert len(generator.prompts) == 2
+    assert slide.blocks[1].items == rich
+    if isinstance(error, InvalidSlideOutputError):
+        assert "JSON" in generator.prompts[1][-1]
+        assert "不输出 mermaid" in generator.prompts[1][-1]
+
+
+@pytest.mark.asyncio
+async def test_workflow_stops_retrying_and_logs_without_materials(immediate_retry, caplog) -> None:
+    generator = ScriptedGenerator([LLMTimeoutError("private-provider-response")])
+    slide_id = uuid.uuid4()
+
+    with pytest.raises(LLMTimeoutError):
+        await run_slide_workflow(build_slide_workflow(generator), _payload(), slide_id)
+
+    assert len(generator.prompts) == 2
+    assert str(slide_id) in caplog.text
+    assert "attempt=2/2" in caplog.text
+    assert "timeout" in caplog.text
+    assert "private-provider-response" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [LLMNotConfiguredError("missing key"), RuntimeError("bug")])
+async def test_workflow_does_not_retry_configuration_or_internal_errors(error, immediate_retry):
+    generator = ScriptedGenerator([error])
+
+    with pytest.raises(type(error)):
+        await run_slide_workflow(build_slide_workflow(generator), _payload(), uuid.uuid4())
+
+    assert len(generator.prompts) == 1
+
+
+@pytest.mark.asyncio
+async def test_workflow_keeps_usable_content_when_repair_request_fails(immediate_retry) -> None:
+    generator = ScriptedGenerator([_draft(["短", "也短"]), LLMTimeoutError("timeout")])
+
+    slide, issues = await run_slide_workflow(
+        build_slide_workflow(generator), _payload(), uuid.uuid4()
+    )
+
+    assert len(generator.prompts) == 3
+    assert slide.blocks[1].items == ["短", "也短"]
+    assert any(issue.code == "repair_failed" for issue in issues)
+    assert not any(issue.severity == "error" for issue in issues)
+
+
+@pytest.mark.asyncio
+async def test_workflow_does_not_keep_structurally_invalid_content(immediate_retry) -> None:
+    missing_body = SlideDraft(blocks=[TextContent(slot_id="title", text="现状与问题")])
+    generator = ScriptedGenerator([missing_body, LLMTimeoutError("timeout")])
+
+    with pytest.raises(LLMTimeoutError):
+        await run_slide_workflow(build_slide_workflow(generator), _payload(), uuid.uuid4())
+
+    assert len(generator.prompts) == 3
+
+
+@pytest.mark.asyncio
+async def test_workflow_rejects_structural_regression_during_repair(immediate_retry) -> None:
+    missing_body = SlideDraft(blocks=[TextContent(slot_id="title", text="现状与问题")])
+    generator = ScriptedGenerator([_draft(["短", "也短"]), missing_body])
+
+    slide, issues = await run_slide_workflow(
+        build_slide_workflow(generator), _payload(), uuid.uuid4()
+    )
+
+    assert len(generator.prompts) == 2
+    assert slide.blocks[1].items == ["短", "也短"]
+    assert any(issue.code == "repair_failed" for issue in issues)
+
+
+@pytest.mark.asyncio
+async def test_workflow_keeps_content_when_repair_conversion_raises(monkeypatch) -> None:
+    from app.workflows import slide as workflow_module
+
+    original = workflow_module.draft_to_slide
+    first = _draft(["短", "也短"])
+    second = _draft(["改写内容"])
+
+    def convert(slide_id, layout_id, draft):
+        if draft is second:
+            raise ValueError("private-material")
+        return original(slide_id, layout_id, draft)
+
+    monkeypatch.setattr(workflow_module, "draft_to_slide", convert)
+    generator = ScriptedGenerator([first, second])
+    slide, issues = await run_slide_workflow(
+        build_slide_workflow(generator), _payload(), uuid.uuid4()
+    )
+
+    assert slide.blocks[1].items == ["短", "也短"]
+    assert any(issue.code == "repair_failed" for issue in issues)
+
+
+@pytest.mark.asyncio
+async def test_workflow_propagates_cancellation_during_repair() -> None:
+    repair_started = asyncio.Event()
+
+    class BlockingRepairGenerator(ScriptedGenerator):
+        async def generate(self, payload: SlideGenerationInput) -> SlideDraft:
+            if payload.issues:
+                self.prompts.append(list(payload.issues))
+                repair_started.set()
+                await asyncio.Event().wait()
+            return await super().generate(payload)
+
+    generator = BlockingRepairGenerator([_draft(["短", "也短"])])
+    task = asyncio.create_task(
+        run_slide_workflow(build_slide_workflow(generator), _payload(), uuid.uuid4())
+    )
+    await asyncio.wait_for(repair_started.wait(), timeout=5)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert len(generator.prompts) == 2
+
+
+def test_error_diagnostics_include_json_location_without_content() -> None:
+    try:
+        json.loads('{"text":"private\nmaterial"}')
+    except json.JSONDecodeError as cause:
+        error = InvalidSlideOutputError("private-provider-response")
+        error.__cause__ = cause
+        details = safe_error_details(error)
+
+    assert details["error_code"] == "invalid_output"
+    assert details["cause_type"] == "JSONDecodeError"
+    assert details["json_line"] == 1
+    assert "private" not in json.dumps(details)

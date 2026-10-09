@@ -14,6 +14,8 @@ from app.domain.slide_draft import FlexSlideDraft, SlideDraft
 from app.llm.base import SlideGenerationInput
 from app.llm.client import StructuredChatClient
 from app.llm.errors import InvalidModelOutputError, InvalidSlideOutputError
+from app.llm.topic import TOPIC_SCOPE_RULES
+from app.services.travel_planning import TRAVEL_WRITING_RULES
 
 
 class DeepSeekSlideGenerator:
@@ -38,6 +40,32 @@ class DeepSeekSlideGenerator:
             raise TypeError("需要 model 或 chat")
 
     async def generate(self, payload: SlideGenerationInput) -> SlideDraft | FlexSlideDraft:
+        if payload.travel_context:
+            from app.services.travel_slides import (
+                booking_slide,
+                conditions_slide,
+                is_itinerary_page,
+                itinerary_slide,
+            )
+
+            if is_itinerary_page(payload.page_title):
+                return itinerary_slide(payload)
+            if payload.page_title == "出行条件与安排总览":
+                return conditions_slide(payload)
+            if payload.page_title == "预约待办与出发前核对":
+                return booking_slide(payload)
+        if (
+            payload.travel_context
+            and payload.page_role == "cover"
+            and payload.layout_mode == "flex"
+        ):
+            from app.services.travel_slides import cover_slide
+
+            return cover_slide(payload)
+        if payload.travel_context and payload.page_title == "预算与缺价项目":
+            from app.services.travel_slides import budget_slide
+
+            return budget_slide(payload)
         if payload.layout_mode == "flex":
             return await self._generate_flex(payload)
         return await self._generate_fixed(payload)
@@ -47,7 +75,8 @@ class DeepSeekSlideGenerator:
         try:
             draft = await self._chat.complete(
                 SlideDraft,
-                system=self._system_prompt(layout),
+                system=self._system_prompt(layout)
+                + (TOPIC_SCOPE_RULES if payload.topic_mode else ""),
                 user=self._user_prompt(payload, layout),
                 purpose="生成页面内容",
             )
@@ -111,16 +140,16 @@ class DeepSeekSlideGenerator:
             '- chart: {"slot_id":"visual","type":"chart","chart_type":"bar",'
             '"categories":["..."],"series":[{"name":"...","values":[1,2]}],"unit":"%"}\n'
             '- diagram: {"slot_id":"visual","type":"diagram","diagram_type":"flow",'
-            '"mermaid":"flowchart TB\\n  A[\\"起点\\"] --> B[\\"分流\\"]\\n'
-            '  B --> C[\\"路径一\\"]\\n  B --> D[\\"路径二\\"]\\n'
-            '  C --> E[\\"汇聚处理\\"]\\n  D --> E",'
-            '"nodes":[{"id":"n1","title":"步骤一","desc":"...","status":"default"}],'
+            '"nodes":[{"id":"n1","title":"步骤一","desc":"...","status":"default"},'
+            '{"id":"n2","title":"步骤二","desc":"...","status":"default"}],'
             '"edges":[{"source":"n1","target":"n2","label":"下一步"}]}\n'
             '- cards: {"slot_id":"body","type":"cards",'
             '"items":[{"title":"...","desc":"...","icon":"💡"}]}\n'
             '- callout: {"slot_id":"note","type":"callout","text":"...","icon":null,'
             '"variant":"note"}\n'
             "硬性约束：\n"
+            "diagram 只输出 nodes 和 edges，禁止输出 mermaid 源码；源码由服务端生成。"
+            "所有字符串中的换行、引号必须按 JSON 规则转义。\n"
             "1. 只能使用下面列出的 slot_id，每个槽位最多出现一次，必填槽位不得缺失。\n"
             "2. 每个槽位只能使用它声明接受的 type。\n"
             "3. 遵守槽位容量，保留必要证据与留白；不要为填满页面增加文字。\n"
@@ -140,6 +169,9 @@ class DeepSeekSlideGenerator:
     def _user_prompt(self, payload: SlideGenerationInput, layout: Layout) -> str:
         body = {
             "deck_title": payload.deck_title,
+            "topic_mode": payload.topic_mode,
+            "topic_request": payload.topic_request,
+            "travel_context": payload.travel_context,
             "audience": payload.audience,
             "tone": payload.tone,
             "content_density": payload.content_density,
@@ -172,6 +204,7 @@ class DeepSeekSlideGenerator:
             )
             + "\n"
             f"{_enterprise_writing_rules(payload)}\n"
+            f"{TRAVEL_WRITING_RULES if payload.travel_context else ''}"
             f"{json.dumps(body, ensure_ascii=False)}"
         )
         if payload.issues:
@@ -185,6 +218,9 @@ class DeepSeekSlideGenerator:
     def _flex_user_prompt(self, payload: SlideGenerationInput) -> str:
         body = {
             "deck_title": payload.deck_title,
+            "topic_mode": payload.topic_mode,
+            "topic_request": payload.topic_request,
+            "travel_context": payload.travel_context,
             "audience": payload.audience,
             "tone": payload.tone,
             "content_density": payload.content_density,
@@ -219,6 +255,7 @@ class DeepSeekSlideGenerator:
             )
             + "\n"
             f"{_enterprise_writing_rules(payload)}\n"
+            f"{TRAVEL_WRITING_RULES if payload.travel_context else ''}"
             f"{json.dumps(body, ensure_ascii=False)}"
         )
         if payload.issues:
@@ -259,26 +296,24 @@ _FLEX_SYSTEM_PROMPT = (
     '- kpi: {"id":"kpi_1","type":"kpi","value":"37%","label":"...","note":"..."}\n'
     '- table: {"id":"table","type":"table","header":["..."],"rows":[["..."]]}\n'
     '- chart: {"id":"chart","type":"chart","chart_type":"bar",'
-            '"categories":["..."],"series":[{"name":"...","values":[1,2]}],"unit":"%"}\n'
+    '"categories":["..."],"series":[{"name":"...","values":[1,2]}],"unit":"%"}\n'
     '- financial_table: {"id":"financial_table","type":"financial_table","unit":"RMB Mil",'
-            '"columns":["1H2025","1H2026"],"rows":[{"label":"Operating revenue",'
-            '"values":["543,769","538,035"],"emphasis":true}],"highlight_columns":[1]}\n'
+    '"columns":["1H2025","1H2026"],"rows":[{"label":"Operating revenue",'
+    '"values":["543,769","538,035"],"emphasis":true}],"highlight_columns":[1]}\n'
     '- waterfall: {"id":"waterfall","type":"waterfall","unit":"€bn",'
-            '"items":[{"label":"Net debt Q2","value":44.1,"kind":"start"},'
-            '{"label":"Operating cash flow","value":4.5,"kind":"increase"},'
-            '{"label":"Net debt Q3","value":37.5,"kind":"total"}],'
-            '"callouts":[{"item_index":1,"title":"Therein:","lines":["Inventories -0.2"]}],'
-            '"end_badge":"Cash & cash equiv. €12.0bn"}\n'
+    '"items":[{"label":"Net debt Q2","value":44.1,"kind":"start"},'
+    '{"label":"Operating cash flow","value":4.5,"kind":"increase"},'
+    '{"label":"Net debt Q3","value":37.5,"kind":"total"}],'
+    '"callouts":[{"item_index":1,"title":"Therein:","lines":["Inventories -0.2"]}],'
+    '"end_badge":"Cash & cash equiv. €12.0bn"}\n'
     '- combo_chart: {"id":"combo","type":"combo_chart","categories":["1H2025","1H2026"],'
-            '"bars":[{"name":"Net profit","values":[84235,78934]}],'
-            '"lines":[{"name":"Margin","values":[34.2,32.3]}],"unit":"RMB Mil",'
-            '"line_unit":"%","annotations":["-6.3%"]}\n'
-            '- diagram: {"id":"diagram","type":"diagram","diagram_type":"flow",'
-            '"mermaid":"flowchart TB\\n  A[\\"起点\\"] --> B[\\"分流\\"]\\n'
-            '  B --> C[\\"路径一\\"]\\n  B --> D[\\"路径二\\"]\\n'
-            '  C --> E[\\"汇聚处理\\"]\\n  D --> E",'
-            '"nodes":[{"id":"n1","title":"步骤一","desc":"...","status":"default"}],'
-            '"edges":[{"source":"n1","target":"n2","label":"下一步"}]}\n'
+    '"bars":[{"name":"Net profit","values":[84235,78934]}],'
+    '"lines":[{"name":"Margin","values":[34.2,32.3]}],"unit":"RMB Mil",'
+    '"line_unit":"%","annotations":["-6.3%"]}\n'
+    '- diagram: {"id":"diagram","type":"diagram","diagram_type":"flow",'
+    '"nodes":[{"id":"n1","title":"步骤一","desc":"...","status":"default"},'
+    '{"id":"n2","title":"步骤二","desc":"...","status":"default"}],'
+    '"edges":[{"source":"n1","target":"n2","label":"下一步"}]}\n'
     '- cards: {"id":"cards","type":"cards",'
     '"items":[{"title":"...","desc":"...","icon":"💡"}]}\n'
     '- callout: {"id":"note","type":"callout","text":"...","icon":null,'
@@ -293,6 +328,8 @@ _FLEX_SYSTEM_PROMPT = (
     "内容默认渲染在页面安全区内（四周留边）；bleed 只给封面/章节页贴边的整幅"
     "image/chart 使用，让它顶到画布边缘，文字块一律不得设 bleed。\n"
     "硬性约束：\n"
+    "diagram 只输出 nodes 和 edges，禁止输出 mermaid 源码；源码由服务端生成。"
+    "所有字符串中的换行、引号必须按 JSON 规则转义。\n"
     "1. layout_tree 所有叶子的 block_id 必须与 blocks[].id 一一对应，不多不少。\n"
     "2. ratios 仅用于 row，且取值来自 {33,38,50,62,67}，两列之和应为 100。\n"
     "3. 嵌套深度不超过 3；同一 row 最多 4 个子节点。\n"
@@ -345,9 +382,7 @@ def _page_directives(payload: SlideGenerationInput) -> str:
     if payload.skeleton_hint:
         rules.append(f"本页版式必须按此骨架组织：{payload.skeleton_hint}。")
     if payload.layout_template:
-        rules.append(
-            f"本页必须使用已分配模板 {payload.layout_template}；不要改成其他页面的模板。"
-        )
+        rules.append(f"本页必须使用已分配模板 {payload.layout_template}；不要改成其他页面的模板。")
     rules.append(
         f"本页叙事职责是 {payload.narrative_role}，证据形态是 {payload.evidence_kind}；"
         "标题应优先写结论，避免只写主题名。"
@@ -371,12 +406,7 @@ def _page_directives(payload: SlideGenerationInput) -> str:
             f"{visual_rules.get(payload.visual_type, '')}"
         )
     if payload.topic_mode:
-        rules.append(
-            "当前为主题样稿模式，数据是模拟素材；数字必须来自本页 evidence，"
-            "不要跨页重复同一组数据。必须逐项对照 other_pages，确保本页的目标、核心结论、"
-            "阶段、行动和支撑要点均有独立角度；流程表达判断与分流，路线图表达带时间的阶段和交付物，"
-            "不得把同一组事件换一种说法再写一遍。"
-        )
+        rules.append(TOPIC_SCOPE_RULES)
     if not payload.allow_callout:
         rules.append("本页不得出现 callout 强调框，也不得出现来源说明块。")
     else:
@@ -386,7 +416,7 @@ def _page_directives(payload: SlideGenerationInput) -> str:
 
 def _enterprise_writing_rules(payload: SlideGenerationInput) -> str:
     rules = (
-        "企业汇报约束：一页只支撑一个核心观点，保持与 blueprint 的主线一致。"
+        "内容约束：一页只支撑一个核心观点，保持与 blueprint 的主线一致。"
         "分析页标题表达有证据的判断，封面/目录/定义页可用主题标题。"
         "图表和 KPI 的数字仅使用 evidence 中的值，保留指标、单位、时间和范围。"
         "没有数值证据就使用定性描述；不要编造增长率、负责人、期限或资源承诺。"
@@ -404,8 +434,8 @@ def _enterprise_writing_rules(payload: SlideGenerationInput) -> str:
         "不要通过添加无依据内容或不断缩小字号满足检查。"
     )
     if payload.topic_mode:
-        rules += (
-            "主题样稿正文必须与 other_pages 中每页的目标和要点区分开；"
+        rules += TOPIC_SCOPE_RULES + (
+            "主题正文必须与 other_pages 中每页的目标和要点区分开；"
             "不能只改写标题、卡片名称或句式来制造表面差异。"
         )
     if payload.visual_type == "flow":

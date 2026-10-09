@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from app.domain.block_style import BlockStyle
 from app.domain.flex_layout import FlexContainer
+from app.domain.outline import ImagePlan
 
 BlockType = Literal[
     "text",
@@ -54,6 +55,13 @@ class ImageBlock(BlockBase):
     source: ImageSource
     # 图库要求标注作者，署名信息必须随内容一起保存，否则界面无从展示
     credit: str | None = None
+    credit_url: str | None = None
+    image_plan: ImagePlan | None = None
+    image_status: Literal["idle", "queued", "ready", "failed"] = "idle"
+    image_error: str | None = None
+    image_job_id: str | None = None
+    image_job_started_at: float | None = None
+    image_asset_id: str | None = None
 
 
 class ChartSeries(BaseModel):

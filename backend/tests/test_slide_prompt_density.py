@@ -1,6 +1,18 @@
 """单页 prompt 契约：密度带与页型必须注入 user prompt。"""
 
+import json
+
+import pytest
+
 from app.domain.layout import get_layout
+from app.domain.slide_draft import (
+    DiagramContent,
+    FlexDiagramContent,
+    FlexSlideDraft,
+    SlideDraft,
+    draft_to_slide,
+    flex_draft_to_slide,
+)
 from app.llm.base import SlideGenerationInput
 from app.llm.slide import DeepSeekSlideGenerator
 
@@ -85,3 +97,58 @@ def test_callout_quota_is_stated_either_way() -> None:
     system = gen._flex_system_prompt(_flex_payload(allow_callout=False))
     assert "不得出现 callout 强调框" in system
     assert "不得出现来源说明块" in system
+
+
+@pytest.mark.parametrize("layout_mode", ["fixed", "flex"])
+def test_diagram_prompt_uses_structured_nodes_without_mermaid(layout_mode: str) -> None:
+    gen = _generator()
+    system = (
+        gen._system_prompt(get_layout("chart"))
+        if layout_mode == "fixed"
+        else gen._flex_system_prompt(_flex_payload(visual_type="flow"))
+    )
+    example = next(line for line in system.splitlines() if line.startswith("- diagram: "))
+    diagram = json.loads(example.removeprefix("- diagram: "))
+
+    assert "mermaid" not in diagram
+    assert "禁止输出 mermaid" in system
+    nodes = {node["id"] for node in diagram["nodes"]}
+    assert all(edge["source"] in nodes and edge["target"] in nodes for edge in diagram["edges"])
+
+
+@pytest.mark.parametrize("layout_mode", ["fixed", "flex"])
+def test_diagram_without_mermaid_renders_server_generated_source(layout_mode: str) -> None:
+    import uuid
+
+    nodes = [
+        {"id": "start", "title": "核验"},
+        {"id": "yes", "title": "通过"},
+        {"id": "no", "title": "退回"},
+    ]
+    edges = [
+        {"source": "start", "target": "yes", "label": "充分"},
+        {"source": "start", "target": "no", "label": "不足"},
+    ]
+    if layout_mode == "fixed":
+        draft = SlideDraft(
+            blocks=[DiagramContent(slot_id="visual", diagram_type="flow", nodes=nodes, edges=edges)]
+        )
+        slide = draft_to_slide(uuid.uuid4(), "chart", draft)
+    else:
+        draft = FlexSlideDraft(
+            blocks=[
+                FlexDiagramContent(id="diagram", diagram_type="flow", nodes=nodes, edges=edges)
+            ],
+            layout_tree={
+                "type": "column",
+                "id": "root",
+                "children": [{"type": "block", "id": "leaf", "block_id": "diagram"}],
+            },
+        )
+        slide = flex_draft_to_slide(uuid.uuid4(), draft)
+
+    diagram = slide.blocks[0]
+    assert diagram.type == "diagram"
+    assert diagram.mermaid.startswith("flowchart TB")
+    assert "核验" in diagram.mermaid
+    assert len(diagram.edges) == 2

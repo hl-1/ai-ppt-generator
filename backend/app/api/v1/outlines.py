@@ -26,9 +26,13 @@ from app.schemas.outline import (
     OutlineRevisionRequest,
     OutlineUpdate,
 )
+from app.schemas.travel import TravelConditions
 from app.services.deck import invalidate_outline_slides
 from app.services.outline_inputs import migrate_outline_signature, outline_input_matches
 from app.services.outline_progress import outline_events, publish_outline_event
+from app.services.sources import refresh_topic_sources
+from app.services.travel_planning import travel_sections
+from app.services.travel_research import current_research, is_travel
 from app.worker.context import create_outline_generator
 
 router = APIRouter(prefix="/projects/{project_id}/outline", tags=["outline"])
@@ -57,12 +61,22 @@ def _ensure_draft(outline: ProjectOutline) -> None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
-def _validate_pages(project: Project, pages: list) -> None:
+async def _validate_pages(project: Project, pages: list, session: AsyncSession) -> None:
     sources = {
         f"S{i}:{j}": section.get("text", "")
         for i, source in enumerate(project.sources, 1)
         for j, section in enumerate(source.sections, 1)
     }
+    if is_travel(project):
+        research = await current_research(session, project)
+        if (
+            not research
+            or research.stale
+            or not project.outline
+            or research.id != project.outline.travel_research_id
+        ):
+            raise HTTPException(409, "旅行资料已更新或失效，请重新生成大纲")
+        sources.update({section.ref: section.text for section in travel_sections(research)})
     for page in pages:
         if any(ref not in sources for ref in page.source_refs):
             raise HTTPException(status_code=422, detail=f"{page.title}：引用的来源不存在")
@@ -99,6 +113,13 @@ async def generate_outline(
     session: SessionDep,
     queue: QueueDep,
 ) -> OutlineGenerateAccepted:
+    if is_travel(project):
+        conditions = TravelConditions.model_validate(project.travel_conditions or {})
+        if not conditions.confirmed or not conditions.destination:
+            raise HTTPException(422, "请先确认旅行条件及目的地；日期不明时可生成建议草案")
+        research = await current_research(session, project)
+        if research and not research.stale and research.status in {"queued", "researching"}:
+            raise HTTPException(409, "旅行资料正在查询，请完成后生成大纲")
     if not project.sources or not any(source.char_count > 0 for source in project.sources):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -109,6 +130,7 @@ async def generate_outline(
     if project.outline is not None and project.outline.status == "generating":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="大纲正在生成")
 
+    refresh_topic_sources(project)
     job_id = f"outline-{project.id}-{uuid.uuid4().hex}"
     outline = project.outline
     if outline is None:
@@ -186,7 +208,7 @@ async def update_outline(
     outline = _outline_or_404(project)
     _ensure_draft(outline)
     _ensure_revision(outline, body.revision)
-    _validate_pages(project, body.pages)
+    await _validate_pages(project, body.pages, session)
 
     sources = {
         f"S{i}:{j}": section.get("text", "")
@@ -253,6 +275,11 @@ async def fit_outline_page_evidence(
             "planning_notes": [],
         }
     )
+    if is_travel(project):
+        research = await current_research(session, project)
+        extra = travel_sections(research)
+        source_sections.extend(extra)
+        sources.update({section.ref: section.text for section in extra})
     try:
         generator = create_outline_generator()
         fitted = await generator.refit_page(current, body.evidence_kind, source_sections)
@@ -286,7 +313,7 @@ async def fit_outline_page_evidence(
         )
 
     pages[page_index] = prepared
-    _validate_pages(project, pages)
+    await _validate_pages(project, pages, session)
     await invalidate_outline_slides(session, project, pages)
     outline.pages = [page.model_dump(mode="json") for page in pages]
     outline.revision += 1
@@ -314,7 +341,7 @@ async def confirm_outline(
     if migrated is not None:
         outline.input_signature = migrated
     pages = [*map(_page_from_dict, outline.pages)]
-    _validate_pages(project, pages)
+    await _validate_pages(project, pages, session)
     if any(source.kind == "topic" for source in project.sources):
         duplicates = find_duplicate_topic_pages(pages)
         if duplicates:
@@ -384,11 +411,7 @@ async def stream_outline_events(
             revision=outline.revision,
             stage="save" if settled else None,
             stage_status=(
-                "succeeded"
-                if settled
-                else "failed"
-                if outline.status == "failed"
-                else None
+                "succeeded" if settled else "failed" if outline.status == "failed" else None
             ),
             error_code=outline.error_code,
         ),

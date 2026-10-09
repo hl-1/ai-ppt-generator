@@ -35,6 +35,9 @@ class Project(Base):
     # 整份文字量：concise / medium / detailed
     content_density: Mapped[str] = mapped_column(String(16), nullable=False, default="medium")
     report_brief: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    travel_conditions: Mapped[dict | None] = mapped_column(JSONB)
+    travel_research_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    travel_booking_states: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
 
     created_at: Mapped[datetime] = mapped_column(
@@ -53,6 +56,13 @@ class Project(Base):
     outline: Mapped["ProjectOutline | None"] = relationship(
         back_populates="project",
         cascade="all, delete-orphan",
+        lazy="selectin",
+        uselist=False,
+    )
+    travel_research: Mapped["TravelResearch | None"] = relationship(  # noqa: F821
+        "TravelResearch",
+        primaryjoin="Project.travel_research_id == foreign(TravelResearch.id)",
+        viewonly=True,
         lazy="selectin",
         uselist=False,
     )
@@ -112,6 +122,7 @@ class ProjectOutline(Base):
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     job_id: Mapped[str | None] = mapped_column(String(100))
     input_signature: Mapped[str | None] = mapped_column(String(64))
+    travel_research_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     error_code: Mapped[str | None] = mapped_column(String(64))
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(

@@ -888,6 +888,24 @@ def test_deck_missing_summary_and_decision_are_visible():
     assert {"missing_summary", "missing_decision", "missing_close"} <= codes
 
 
+def test_travel_category_does_not_require_enterprise_summary_or_decision():
+    slides = [slide().model_copy(update={"id": str(i)}) for i in range(5)]
+    plans = {s.id: plan(evidence=[]) for s in slides}
+    deck = Deck(id="d", title="北京旅游规划", theme_id="enterprise", slides=slides)
+    codes = {
+        issue.code
+        for issue in check_report_quality(
+            deck,
+            plans,
+            {},
+            DeckBlueprint(core_message="北京亲子游", decision_request="确认住宿区域"),
+            ReportBrief(scenario="travel_plan", decision_request="确认住宿区域"),
+        )
+    }
+
+    assert not {"missing_summary", "missing_decision", "missing_close"} & codes
+
+
 def test_preview_fingerprint_changes_with_content_and_theme():
     deck = Deck(id="d", title="报告", theme_id="enterprise", slides=[slide()])
     original = preview_fingerprint(deck, get_theme("enterprise"))

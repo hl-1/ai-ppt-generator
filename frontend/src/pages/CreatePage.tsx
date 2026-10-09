@@ -9,12 +9,13 @@ import {
   PAGE_COUNT_OPTIONS,
   TONE_OPTIONS,
 } from '@/features/projects/options'
-import { ACCEPTED_UPLOAD, type Tone } from '@/features/projects/types'
+import { ACCEPTED_UPLOAD, type ReportScenario, type Tone } from '@/features/projects/types'
 import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
+import { EMPTY_TRAVEL, TravelForm, type TravelConditions } from '@/features/travel/TravelForm'
 
 const MODES: Array<{ mode: DraftMode; label: string; icon: typeof Type; hint: string }> = [
-  { mode: 'topic', label: '从主题生成', icon: Sparkles, hint: '自动补模拟数据做样稿' },
+  { mode: 'topic', label: '从主题生成', icon: Sparkles, hint: '主题、重点与具体要求' },
   { mode: 'text', label: '粘贴文字', icon: ClipboardType, hint: '已有内容，自动提炼成要点' },
   { mode: 'document', label: '上传文档', icon: FileUp, hint: '基于真实材料生成汇报' },
 ]
@@ -46,9 +47,10 @@ export default function CreatePage() {
   const [content, setContent] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [audience, setAudience] = useState('')
-  const [scenario, setScenario] = useState<'general' | 'business_review' | 'project_review' | 'proposal' | 'strategy'>('business_review')
+  const [scenario, setScenario] = useState<ReportScenario>('general')
   const [reportGoal, setReportGoal] = useState('')
   const [decisionRequest, setDecisionRequest] = useState('')
+  const [travelConditions, setTravelConditions] = useState<TravelConditions>(EMPTY_TRAVEL)
   const [tone, setTone] = useState<NonNullable<Tone>>('professional')
   const [pageCount, setPageCount] = useState(10)
   const [layoutMode, setLayoutMode] = useState<'fixed' | 'flex'>('flex')
@@ -58,8 +60,10 @@ export default function CreatePage() {
   const [step, setStep] = useState<string | null>(null)
   const create = useCreateDraft()
 
-  const ready = mode === 'document' ? files.length > 0 : content.trim().length > 0
+  const ready = (mode === 'document' ? files.length > 0 : content.trim().length > 0)
+    && (scenario !== 'travel_plan' || (travelConditions.confirmed && !!travelConditions.destination?.trim()))
   const busy = create.isPending
+  const travelPlanning = scenario === 'travel_plan'
 
   const submit = () => {
     if (!ready || busy) return
@@ -76,6 +80,7 @@ export default function CreatePage() {
         layoutMode,
         contentDensity,
         reportBrief: { scenario, goal: reportGoal.trim(), decision_request: decisionRequest.trim() },
+        travelConditions: travelPlanning ? travelConditions : null,
         onStep: setStep,
       },
       {
@@ -134,19 +139,15 @@ export default function CreatePage() {
                 disabled={busy}
                 rows={mode === 'text' ? 9 : 3}
                 maxLength={mode === 'text' ? 20000 : 500}
-                placeholder={PLACEHOLDER[mode]}
+                placeholder={mode === 'topic' && travelPlanning
+                  ? '例如：春节去北京旅游规划，重点安排景点、交通和住宿'
+                  : PLACEHOLDER[mode]}
                 onChange={(event) => setContent(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit()
                 }}
                 className="w-full resize-none bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-ink placeholder:text-ink-muted/70 focus:outline-none"
               />
-              {mode === 'topic' && (
-                <p className="px-2 pb-1 text-xs leading-relaxed text-ink-muted">
-                  将按主题自动生成模拟背景、示例指标、图表数据、流程与路线图；
-                  正式汇报请上传真实材料。
-                </p>
-              )}
             </>
           )}
 
@@ -215,26 +216,31 @@ export default function CreatePage() {
         </div>
 
         <div className="mt-5 grid gap-3 rounded-2xl border border-line bg-surface p-5 sm:grid-cols-2">
-          <label className="text-sm text-ink-soft">汇报场景
-            <select aria-label="汇报场景" value={scenario} disabled={busy}
+          <label className="text-sm text-ink-soft">内容分类
+            <select aria-label="内容分类" value={scenario} disabled={busy}
               onChange={(event) => setScenario(event.target.value as typeof scenario)}
               className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2">
+              <option value="general">通用演示</option>
+              <option value="travel_plan">旅游规划</option>
               <option value="business_review">经营复盘</option><option value="project_review">项目汇报</option>
               <option value="proposal">方案提案</option><option value="strategy">战略汇报</option>
-              <option value="general">通用演示</option>
             </select>
           </label>
-          <label className="text-sm text-ink-soft">希望获得的决策（可选）
-            <input aria-label="希望获得的决策" value={decisionRequest} disabled={busy} maxLength={300}
-              onChange={(event) => setDecisionRequest(event.target.value)} placeholder="例如：批准下一阶段试点资源"
+          <label className="text-sm text-ink-soft">{travelPlanning ? '待确认事项（可选）' : '希望获得的决策（可选）'}
+            <input aria-label={travelPlanning ? '待确认事项' : '希望获得的决策'} value={decisionRequest} disabled={busy} maxLength={300}
+              onChange={(event) => setDecisionRequest(event.target.value)}
+              placeholder={travelPlanning ? '例如：确认出行日期、交通方式和住宿区域' : '例如：批准下一阶段试点资源'}
               className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2" />
           </label>
-          <label className="text-sm text-ink-soft sm:col-span-2">汇报目的（可选）
-            <input aria-label="汇报目的" value={reportGoal} disabled={busy} maxLength={500}
-              onChange={(event) => setReportGoal(event.target.value)} placeholder="例如：说明利润变化原因，并明确下季度的改进重点"
+          <label className="text-sm text-ink-soft sm:col-span-2">{travelPlanning ? '规划目标（可选）' : '汇报目的（可选）'}
+            <input aria-label={travelPlanning ? '规划目标' : '汇报目的'} value={reportGoal} disabled={busy} maxLength={500}
+              onChange={(event) => setReportGoal(event.target.value)}
+              placeholder={travelPlanning ? '例如：亲子出游，减少跨区域往返，兼顾游览和休息' : '例如：讲清主题内容，并给出具体建议'}
               className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2" />
           </label>
         </div>
+
+        {travelPlanning && <TravelForm value={travelConditions} onChange={setTravelConditions} text={content.trim()} disabled={busy} />}
 
         <div className="mt-4 min-h-6 text-center">
           {busy && step && (

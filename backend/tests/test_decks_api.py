@@ -28,7 +28,7 @@ from app.domain.slide_draft import (
     TextContent,
 )
 from app.llm.base import SlideGenerationInput
-from app.llm.errors import InvalidSlideOutputError
+from app.llm.errors import InvalidSlideOutputError, LLMTimeoutError
 from app.main import app
 from app.models.project import Project
 from app.models.slide import Slide
@@ -402,10 +402,38 @@ async def test_flex_project_heals_fixed_slides_on_generate(
 
 
 @pytest.mark.asyncio
+async def test_worker_recovers_transient_page_failure(
+    client: AsyncClient, queue: FakeQueue, monkeypatch: pytest.MonkeyPatch, caplog
+) -> None:
+    monkeypatch.setattr("app.workflows.slide.GENERATION_RETRY_DELAY_SECONDS", 0)
+
+    class FlakyGenerator(FakeSlideGenerator):
+        async def generate(self, payload: SlideGenerationInput) -> SlideDraft | FlexSlideDraft:
+            if payload.position == 2 and 2 not in self.seen:
+                self.seen.append(2)
+                raise LLMTimeoutError("private-provider-response")
+            return await super().generate(payload)
+
+    headers = await _sign_up(client)
+    project = await _confirmed_project(client, headers)
+    await client.post(f"/api/v1/projects/{project['id']}/deck/generate", json={}, headers=headers)
+    generator = FlakyGenerator()
+    await generate_deck({"slide_generator": generator}, project["id"], queue.calls[0][0][2])
+
+    deck = (await client.get(f"/api/v1/projects/{project['id']}/deck", headers=headers)).json()
+    assert deck["status"] == "ready"
+    assert deck["failed"] == 0
+    assert generator.seen.count(2) == 2
+    assert "private-provider-response" not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_generate_resumes_and_retries_failed_slide(
     client: AsyncClient,
     queue: FakeQueue,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("app.workflows.slide.GENERATION_RETRY_DELAY_SECONDS", 0)
     headers = await _sign_up(client)
     project = await _confirmed_project(client, headers)
     await client.post(f"/api/v1/projects/{project['id']}/deck/generate", json={}, headers=headers)

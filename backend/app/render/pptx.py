@@ -162,8 +162,11 @@ class PptxRenderer:
                 continue
             self._render_block(pptx_slide, block, rect=placed.rect, text_style=placed.text_style)
 
-        if slide.speaker_notes:
-            pptx_slide.notes_slide.notes_text_frame.text = slide.speaker_notes
+        credits = [f"{b.credit} {b.credit_url or ''}" for b in slide.blocks
+                   if b.type == "image" and b.credit]
+        notes = "\n\n".join(part for part in [slide.speaker_notes, *credits] if part)
+        if notes:
+            pptx_slide.notes_slide.notes_text_frame.text = notes
 
     def _fill_background(self, pptx_slide: PptxSlide) -> None:
         full_bleed = Rect(x=0, y=0, w=1, h=1)

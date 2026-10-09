@@ -73,7 +73,7 @@ def bind_planned_evidence(
         # 流程/时间线是结构表达，不依赖数值证据；显式视觉选择应覆盖
         # 模型可能返回的 narrative/table 标记，但不生成来源外的数据。
         evidence_kind = requested_kind
-    if topic_mode and page.visual_type != "auto":
+    if topic_mode and page.visual_type not in {"auto", "photo", "illustration"}:
         evidence_kind = requested_kind or evidence_kind
         # 主题模式的视觉选择是页面主视觉；避免模型额外塞入图片把图表/流程挤成窄条。
         blocks = [b for b in blocks if b.type != "image"]
@@ -428,6 +428,7 @@ def compose_report_slide(
         elif (
             page.page_role not in {"cover", "section"}
             and page.visual_type == "auto"
+            and not page.image_plan
             and (
                 page.page_role == "summary"
                 or page.narrative_role in {"executive_summary", "summary", "decision"}
@@ -511,19 +512,25 @@ def _compose_report_tree(
         curate
         and page.page_role not in {"cover", "section"}
         and page.visual_type == "auto"
+        and not page.image_plan
         and (
             page.page_role == "summary"
             or page.narrative_role in {"executive_summary", "summary", "decision"}
         )
     ):
         return _summary_tree(title=title, body=body, page=page)
-    if page.page_role in {"cover", "toc", "section"} and layout_template in {
-        "opening_stack",
-        "opening_split_left",
-        "opening_split_right",
-        "opening_split_top",
-        "opening_split_bottom",
-    }:
+    if (
+        not page.image_plan
+        and page.page_role in {"cover", "toc", "section"}
+        and layout_template
+        in {
+            "opening_stack",
+            "opening_split_left",
+            "opening_split_right",
+            "opening_split_top",
+            "opening_split_bottom",
+        }
+    ):
         return _opening_report_tree(
             title=title,
             body=body,
@@ -1340,6 +1347,15 @@ def _curate_report_body(
     接受这些块。这里是生成期的确定性收口；真实文档的图表数值仍由
     ``bind_planned_evidence`` 绑定，绝不会因为裁剪而补造数据。
     """
+    planned_images = [block for block in visuals if block.type == "image"]
+    if planned_images and (page.image_plan or page.visual_type in {"photo", "illustration"}):
+        support, hidden = _visual_support_blocks(
+            [block for block in body if block not in visuals],
+            limit=2,
+            text_limit=120,
+            max_source_chars=240,
+        )
+        return [planned_images[0], *support], hidden
     body = [
         block.model_copy(update={"items": compact_card_items(block.items)})
         if isinstance(block, CardsBlock)

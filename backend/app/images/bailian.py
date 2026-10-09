@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import httpx
@@ -49,6 +50,8 @@ class BailianImageProvider:
             return None
 
         try:
+            if self._model.startswith(("wanx", "wan2.")):
+                return await self._fetch_async(request)
             response = await self._client.post(
                 f"{self._base_url}{GENERATION_PATH}",
                 headers={"Authorization": f"Bearer {self._api_key}"},
@@ -90,6 +93,66 @@ class BailianImageProvider:
             return None
 
         return ImageAsset(data=image.content, content_type="image/png", source="generated")
+
+    async def _fetch_async(self, request: ImageRequest) -> ImageAsset | None:
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        sizes = ((1.0, "1024*1024"), (1.777, "1280*720"), (0.5625, "720*1280"))
+        size = min(sizes, key=lambda pair: abs(pair[0] - request.aspect_ratio))[1]
+        try:
+            async with asyncio.timeout(self._timeout):
+                response = await self._client.post(
+                    f"{self._base_url}/services/aigc/text2image/image-synthesis",
+                    headers={**headers, "X-DashScope-Async": "enable"},
+                    json={
+                        "model": self._model,
+                        "input": {"prompt": request.prompt},
+                        "parameters": {"size": size, "n": 1},
+                    },
+                    timeout=self._timeout,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                if payload.get("code"):
+                    logger.warning("image submission rejected code=%s", payload.get("code"))
+                    return None
+                task_id = payload.get("output", {}).get("task_id")
+                if not task_id:
+                    return None
+                # Submit once; only status reads are retried to avoid duplicate paid tasks.
+                while True:
+                    response = await self._client.get(
+                        f"{self._base_url}/tasks/{task_id}",
+                        headers=headers,
+                        timeout=min(self._timeout, 20),
+                    )
+                    if response.status_code == 429 or response.status_code >= 500:
+                        await asyncio.sleep(2)
+                        continue
+                    response.raise_for_status()
+                    payload = response.json()
+                    output = payload.get("output", {})
+                    state = output.get("task_status")
+                    if state == "SUCCEEDED":
+                        results = output.get("results") or []
+                        url = results[0].get("url") if results else None
+                        if not url:
+                            return None
+                        image = await self._client.get(url, timeout=self._timeout)
+                        image.raise_for_status()
+                        return ImageAsset(
+                            data=image.content, content_type="image/png", source="generated"
+                        )
+                    if state not in {"PENDING", "RUNNING"} or payload.get("code"):
+                        logger.warning(
+                            "image task failed state=%s code=%s",
+                            state,
+                            output.get("code") or payload.get("code"),
+                        )
+                        return None
+                    await asyncio.sleep(2)
+        except TimeoutError:
+            logger.warning("image task exceeded time budget")
+            return None
 
 
 def _resolve_base_url(base_url: str, workspace_id: str) -> str:

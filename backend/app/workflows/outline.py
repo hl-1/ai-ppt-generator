@@ -5,9 +5,10 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from app.domain.evidence import prepare_page_plan
+from app.domain.image_planning import plan_page_image
 from app.domain.outline import OutlineDraft
-from app.domain.topic_visuals import normalize_topic_pages
 from app.domain.topic_uniqueness import find_duplicate_topic_pages
+from app.domain.topic_visuals import normalize_topic_pages
 from app.llm.base import OutlineGenerationInput, OutlineGenerator, OutlineSourceSection
 from app.llm.errors import InvalidOutlineOutputError
 
@@ -87,26 +88,55 @@ def build_outline_workflow(generator: OutlineGenerator):
     async def generate(state: OutlineWorkflowState) -> dict[str, OutlineDraft]:
         payload = state["prepared"]
         sources = {section.ref: section.text for section in payload.sections}
-        draft = await generator.generate(payload)
+        if payload.travel_context:
+            from app.services.travel_outline import build_travel_outline
+
+            draft = build_travel_outline(payload)
+        else:
+            draft = await generator.generate(payload)
         for repair_round in range(3):
-            pages = draft.pages
+            pages = [plan_page_image(page, deck_title=payload.title) for page in draft.pages]
+            if payload.travel_context:
+                from app.domain.outline import ImagePlan
+
+                pages = [
+                    page.model_copy(
+                        update={
+                            "visual_type": "photo",
+                            "image_plan": ImagePlan(
+                                subject=page.image_plan.subject,
+                                queries=page.image_plan.queries,
+                                source="stock",
+                                require_real=True,
+                                purpose=page.image_plan.purpose,
+                            ),
+                        }
+                    )
+                    if page.image_plan
+                    else page
+                    for page in pages
+                ]
             if payload.topic_mode:
                 pages = normalize_topic_pages(pages, sources)
             pages = [
-                prepare_page_plan(page, sources, topic_mode=payload.topic_mode)
-                for page in pages
+                prepare_page_plan(page, sources, topic_mode=payload.topic_mode) for page in pages
             ]
             draft = draft.model_copy(update={"pages": pages})
-            if not payload.topic_mode:
-                return {"draft": draft}
+            duplicates = find_duplicate_topic_pages(pages) if payload.topic_mode else []
+            if payload.travel_context:
+                from app.services.travel_planning import travel_claim_issues
 
-            duplicates = find_duplicate_topic_pages(pages)
+                for page in pages:
+                    text = " ".join(
+                        [page.title, page.objective, page.key_message, *page.key_points]
+                    )
+                    duplicates.extend(travel_claim_issues(text, payload.travel_context))
             if not duplicates:
                 return {"draft": draft}
             if repair_round == 2:
-                raise InvalidOutlineOutputError(
-                    "主题大纲经两轮修复后仍有重复页面，未保存重复内容"
-                )
+                if payload.travel_context:
+                    raise InvalidOutlineOutputError("旅游大纲仍包含无依据的价格、时间或重复页面")
+                raise InvalidOutlineOutputError("主题大纲经两轮修复后仍有重复页面，未保存重复内容")
             payload = payload.model_copy(
                 update={
                     "issues": duplicates,

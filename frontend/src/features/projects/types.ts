@@ -8,6 +8,7 @@ export type ProjectCreate = Schemas['ProjectCreate']
 export type ProjectUpdate = Schemas['ProjectUpdate']
 export type ProjectSource = Schemas['SourcePublic']
 export type Tone = ProjectCreate['tone']
+export type ReportScenario = Schemas['ReportBrief']['scenario']
 
 export const TONE_LABEL: Record<NonNullable<Tone>, string> = {
   professional: '专业严谨',

@@ -19,6 +19,7 @@ import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { themeList } from '@/render/design'
 import { ThemeCover } from '@/render/ThemeCover'
+import { TravelPanel } from '@/features/travel/TravelPanel'
 
 const MAX_KEY_POINTS = 5
 const MIN_KEY_POINTS = 2
@@ -34,6 +35,8 @@ const NON_VISUAL_LABELS = {
 }
 const VISUAL_LABELS = {
   auto: '默认图表',
+  photo: '真实照片',
+  illustration: 'AI 插图',
   line: '折线图',
   pie: '饼图',
   bar: '条形图',
@@ -50,6 +53,8 @@ type OutlineModeValue = `visual:${VisualType}` | `evidence:${NonVisualKind}`
 
 const VISUAL_TO_EVIDENCE: Record<VisualType, OutlinePage['evidence_kind']> = {
   auto: 'chart',
+  photo: 'narrative',
+  illustration: 'narrative',
   line: 'trend',
   pie: 'composition',
   bar: 'comparison',
@@ -130,6 +135,7 @@ export function OutlineWorkspace({ project }: { project: ProjectDetail }) {
   if (outline == null || outline.status === 'failed') {
     return (
       <Shell title={project.title}>
+        {project.report_brief?.scenario === 'travel_plan' && <div className="mx-auto max-w-4xl px-6 py-5"><TravelPanel project={project} /></div>}
         <CenterCard>
           <p className="text-sm text-ink-soft">
             {outline
@@ -222,6 +228,7 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
     optimisticPage: OutlinePage,
   ) => {
     const current = pages[index]
+    if (visualType === 'photo' || visualType === 'illustration') return
     if (!current?.id) return
     const previous = current
     setRefitError((errors) => {
@@ -340,8 +347,9 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
         </>
       }
     >
-      <div className="mx-auto grid max-w-6xl gap-8 px-6 py-8 lg:grid-cols-[minmax(0,1fr)_19rem]">
-        <div>
+      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-8 px-6 py-8 lg:grid-cols-[minmax(0,1fr)_19rem]">
+        <div className="min-w-0">
+          {project.report_brief?.scenario === 'travel_plan' && <TravelPanel project={project} />}
           <div className="mb-5">
             <h2 className="text-xl font-semibold tracking-tight">确认大纲</h2>
             <p className="mt-1.5 text-sm text-ink-muted">
@@ -446,9 +454,9 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
               </div>
             </button>
           ))}
-          <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+          {project.report_brief?.scenario !== 'travel_plan' && <p className="mt-1 text-xs leading-relaxed text-ink-muted">
             配图会自动匹配；素材不可用时会退化为纯文字版式，不会留下空位。
-          </p>
+          </p>}
         </aside>
       </div>
     </Shell>
@@ -533,7 +541,7 @@ function PageCard({
               disabled={refitting}
               onChange={(event) => onModeChange(event.target.value as OutlineModeValue)}
               className="rounded-lg border border-line bg-surface p-2">
-              <optgroup label="图表与图示">
+              <optgroup label="视觉表达">
                 {Object.entries(VISUAL_LABELS).map(([value, label]) => (
                   <option key={value} value={`visual:${value}`}>{label}</option>
                 ))}
@@ -545,6 +553,29 @@ function PageCard({
               </optgroup>
             </select>
           </div>
+          {(page.visual_type === 'photo' || page.visual_type === 'illustration' || page.image_plan) &&
+            <div className="mb-3 grid gap-2 sm:grid-cols-2">
+              <label className="text-xs text-ink-muted">配图对象
+                <input value={page.image_plan?.subject ?? page.visual ?? page.title} maxLength={120}
+                  aria-label={`第 ${index + 1} 页配图对象`}
+                  onChange={(event) => onChange({ ...page, visual: event.target.value,
+                    image_plan: { ...page.image_plan, subject: event.target.value,
+                      queries: [], source: page.visual_type === 'illustration' ? 'generated' : 'stock',
+                      require_real: page.visual_type !== 'illustration', purpose: 'subject' } })}
+                  className="mt-1 w-full rounded-md border border-line bg-surface px-2 py-1.5 text-sm" />
+              </label>
+              <label className="text-xs text-ink-muted">检索关键词
+                <input value={(page.image_plan?.queries ?? []).join(', ')} maxLength={480}
+                  aria-label={`第 ${index + 1} 页配图检索关键词`}
+                  onChange={(event) => onChange({ ...page, image_plan: {
+                    ...page.image_plan, subject: page.image_plan?.subject ?? page.visual ?? page.title,
+                    queries: event.target.value.split(/[,，]/).slice(0, 4),
+                    source: page.visual_type === 'illustration' ? 'generated' : 'stock',
+                    require_real: page.visual_type !== 'illustration', purpose: 'subject',
+                  } })}
+                  className="mt-1 w-full rounded-md border border-line bg-surface px-2 py-1.5 text-sm" />
+              </label>
+            </div>}
           {refitting && (
             <p className="mb-2 rounded-lg bg-accent/8 px-3 py-2 text-xs text-accent">
               AI 正在根据来源数据重构当前页面…
@@ -709,6 +740,8 @@ function outlineStageLabel(stage: NonNullable<OutlineProgressEvent['stage']>): s
       return '进入生成队列'
     case 'load_input':
       return '读取输入材料'
+    case 'travel_research':
+      return '查询旅行资料'
     case 'plan_structure':
       return '规划大纲结构'
     case 'validate':
@@ -770,6 +803,14 @@ function applyModeChoice(page: OutlinePage, value: OutlineModeValue): OutlinePag
       ...page,
       visual_type: visualType,
       evidence_kind: VISUAL_TO_EVIDENCE[visualType],
+      visual: ['photo', 'illustration'].includes(visualType) ? (page.visual || page.title) : null,
+      image_plan: ['photo', 'illustration'].includes(visualType) ? {
+        subject: page.image_plan?.subject ?? page.visual ?? page.title,
+        queries: page.image_plan?.queries ?? [],
+        source: visualType === 'photo' ? 'stock' : 'generated',
+        require_real: visualType === 'photo', purpose: page.page_role === 'cover' ? 'cover' : 'subject',
+      } : null,
+      layout_id: ['photo', 'illustration'].includes(visualType) ? 'image-right' : page.layout_id,
       planning_notes: [],
     }
   }
@@ -779,6 +820,8 @@ function applyModeChoice(page: OutlinePage, value: OutlineModeValue): OutlinePag
     ...page,
     visual_type: 'auto',
     evidence_kind: evidenceKind,
+    visual: null,
+    image_plan: null,
     planning_notes: [],
   }
 }
@@ -809,10 +852,15 @@ function normalizePages(pages: OutlinePage[]): OutlinePage[] {
     title: page.title.trim(),
     objective: page.objective.trim(),
     key_points: page.key_points.map((point) => point.trim()).filter((point) => point.length > 0),
+    image_plan: page.image_plan ? { ...page.image_plan,
+      subject: page.image_plan.subject.trim(),
+      queries: page.image_plan.queries.map((query) => query.trim()).filter(Boolean),
+    } : page.image_plan,
   }))
 }
 
 function pageIncomplete(page: OutlinePage): boolean {
   const points = page.key_points.filter((point) => point.trim().length > 0)
-  return page.title.trim().length === 0 || page.objective.trim().length === 0 || points.length < MIN_KEY_POINTS
+  return page.title.trim().length === 0 || page.objective.trim().length === 0
+    || points.length < MIN_KEY_POINTS || (page.image_plan != null && !page.image_plan.subject.trim())
 }
