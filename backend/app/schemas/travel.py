@@ -178,6 +178,8 @@ class ServiceStatus(BaseModel):
     count: int = 0
     error_code: str | None = None
     duration_ms: int = 0
+    message: str | None = None
+    action: str | None = None
 
 
 class TravelStop(BaseModel):
@@ -246,6 +248,13 @@ class TravelPlan(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ResearchIssue(BaseModel):
+    stage: str
+    code: str
+    message: str
+    action: str
+
+
 class ResearchData(BaseModel):
     sources: list[TravelSource] = Field(default_factory=list)
     facts: list[TravelFact] = Field(default_factory=list)
@@ -254,6 +263,7 @@ class ResearchData(BaseModel):
     routes: list[TravelRoute] = Field(default_factory=list)
     weather: list[WeatherDay] = Field(default_factory=list)
     services: list[ServiceStatus] = Field(default_factory=list)
+    issues: list[ResearchIssue] = Field(default_factory=list)
     plan: TravelPlan | None = None
 
 

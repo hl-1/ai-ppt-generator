@@ -7,6 +7,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.config import Settings
+from app.domain.outline import OutlinePageDraft
+from app.domain.topic_uniqueness import find_duplicate_topic_pages
 from app.schemas.travel import (
     ResearchData,
     TravelConditions,
@@ -387,6 +389,122 @@ def test_travel_outline_uses_saved_plan_at_requested_page_count(page_count):
     assert all(2 <= len(page.key_points) <= 5 for page in draft.pages)
     assert "v3" in draft.blueprint.core_message
     assert draft.pages[-2].title == "预算与缺价项目"
+
+
+def itinerary_page(day, date_text, *, title=None):
+    return OutlinePageDraft(
+        title=title or f"第 {day} 天行程",
+        objective="按地理位置组织游览顺序并保留交通与休息时间",
+        key_message="按地理位置组织游览顺序并保留交通与休息时间",
+        key_points=[
+            f"第 {day} 天（{date_text}）建议路线：09:00 景点待安排",
+            "建议游览时段须结合实际到达时间、开放公告及预约结果复核",
+        ],
+        layout_id="bullets",
+    )
+
+
+@pytest.mark.parametrize("known_dates", [True, False])
+def test_distinct_itinerary_days_can_share_reminders(known_dates):
+    pages = [
+        itinerary_page(1, "2027-02-10" if known_dates else "日期待确认"),
+        itinerary_page(2, "2027-02-11" if known_dates else "日期待确认"),
+    ]
+
+    assert not find_duplicate_topic_pages(pages, travel_mode=True)
+    assert find_duplicate_topic_pages(pages)
+
+
+@pytest.mark.parametrize("renamed", [True, False])
+def test_copied_itinerary_is_still_rejected(renamed):
+    original = itinerary_page(1, "2027-02-10")
+    copy = original.model_copy(update={"title": "第 2 天行程"} if renamed else {})
+
+    assert find_duplicate_topic_pages([original, copy], travel_mode=True)
+
+
+def test_same_itinerary_date_with_different_day_labels_is_rejected():
+    pages = [itinerary_page(1, "2027-02-10"), itinerary_page(2, "2027-02-10")]
+
+    assert find_duplicate_topic_pages(pages, travel_mode=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("duplicate", [False, True])
+async def test_travel_outline_confirmation_checks_itinerary_scope(monkeypatch, duplicate):
+    from unittest.mock import AsyncMock
+
+    from fastapi import HTTPException
+
+    from app.api.v1 import outlines
+    from app.schemas.outline import OutlineRevisionRequest
+
+    pages = [itinerary_page(1, "2027-02-10"), itinerary_page(2, "2027-02-11")]
+    if duplicate:
+        pages[1] = pages[0].model_copy(update={"title": "第 2 天行程"})
+    outline = SimpleNamespace(
+        status="draft",
+        revision=1,
+        input_signature="current",
+        pages=[page.model_dump(mode="json") for page in pages],
+    )
+    project = SimpleNamespace(
+        outline=outline,
+        sources=[SimpleNamespace(kind="topic")],
+        report_brief={"scenario": "travel_plan"},
+        status="draft",
+    )
+    session = AsyncMock()
+    monkeypatch.setattr(outlines, "outline_input_matches", lambda *_: True)
+    monkeypatch.setattr(outlines, "migrate_outline_signature", lambda *_: None)
+    monkeypatch.setattr(outlines, "_validate_pages", AsyncMock())
+
+    if duplicate:
+        with pytest.raises(HTTPException) as raised:
+            await outlines.confirm_outline(OutlineRevisionRequest(revision=1), project, session)
+        assert raised.value.status_code == 422
+        session.commit.assert_not_awaited()
+    else:
+        result = await outlines.confirm_outline(
+            OutlineRevisionRequest(revision=1), project, session
+        )
+        assert result.status == "confirmed"
+        assert project.status == "outline_ready"
+        session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_multi_day_travel_workflow_does_not_repair_shared_reminders():
+    from app.llm.base import OutlineGenerationInput, OutlineSourceSection
+    from app.workflows.outline import build_outline_workflow, run_outline_workflow
+
+    trip = conditions().model_copy(update={"return_date": date(2027, 2, 13)})
+    plan = build_travel_plan(ResearchData(places=[place()]), trip)
+    context = {
+        "version": 1,
+        "conditions": plan.conditions.model_dump(mode="json"),
+        "plan": plan.model_dump(mode="json"),
+        "sources": [],
+        "facts": [],
+    }
+    payload = OutlineGenerationInput(
+        title="北京八日旅行",
+        tone="professional",
+        page_count=10,
+        topic_mode=True,
+        travel_context=context,
+        sections=[OutlineSourceSection(ref="T:plan", level=1, text="Saved plan", locator="")],
+    )
+
+    class NoModelGenerator:
+        async def generate(self, _):
+            pytest.fail("Distinct travel days must not trigger model repair")
+
+    draft = await run_outline_workflow(build_outline_workflow(NoModelGenerator()), payload)
+
+    assert len(draft.pages) == 10
+    assert not find_duplicate_topic_pages(draft.pages, travel_mode=True)
+    assert all(page.source_refs == ["T:plan"] for page in draft.pages)
 
 
 @pytest.mark.parametrize("layout_mode", ["flex", "fixed"])

@@ -60,7 +60,9 @@ def _layout_block_role(block_type: str) -> str:
     return "content"
 
 
-def find_duplicate_topic_pages(pages: list[OutlinePageDraft]) -> list[str]:
+def find_duplicate_topic_pages(
+    pages: list[OutlinePageDraft], *, travel_mode: bool = False
+) -> list[str]:
     duplicates: list[str] = []
     eligible = [
         (index, page)
@@ -69,16 +71,47 @@ def find_duplicate_topic_pages(pages: list[OutlinePageDraft]) -> list[str]:
     ]
     for offset, (left_index, left) in enumerate(eligible):
         for right_index, right in eligible[offset + 1 :]:
-            reason = _duplicate_reason(left, right)
+            reason = _duplicate_reason(left, right, travel_mode=travel_mode)
             if reason:
                 duplicates.append(
-                    f"第 {left_index} 页「{left.title}」与第 {right_index} 页「{right.title}」{reason}；"
+                    f"第 {left_index} 页「{left.title}」与"
+                    f"第 {right_index} 页「{right.title}」{reason}；"
                     "请改为不同的问题、结论和支撑要点，不要只更换标题或视觉类型。"
                 )
     return duplicates
 
 
-def _duplicate_reason(left: OutlinePageDraft, right: OutlinePageDraft) -> str | None:
+def _itinerary_scope(page: OutlinePageDraft) -> set[str]:
+    title = re.fullmatch(r"第\s*(\d+)(?:\s*[-–至]\s*(\d+))?\s*天行程", page.title)
+    if title is None:
+        return set()
+    first = int(title[1])
+    last = int(title[2] or title[1])
+    days: set[int] = set()
+    scope: set[str] = set()
+    for point in page.key_points:
+        match = re.match(r"第\s*(\d+)\s*天[（(]([^）)]+)[）)]\s*建议路线[：:]", point)
+        if match is None:
+            continue
+        day = int(match[1])
+        days.add(day)
+        date = match[2].strip()
+        scope.add(date if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) else f"day:{day}")
+    # A renamed copy must not gain a new scope from its title alone.
+    if days and min(days) == first and max(days) == last and len(days) == last - first + 1:
+        return scope
+    return set()
+
+
+def _duplicate_reason(
+    left: OutlinePageDraft, right: OutlinePageDraft, *, travel_mode: bool = False
+) -> str | None:
+    if travel_mode:
+        left_scope = _itinerary_scope(left)
+        right_scope = _itinerary_scope(right)
+        if left_scope and right_scope and left_scope.isdisjoint(right_scope):
+            return None
+
     title_sim = _similarity(left.title, right.title)
     objective_sim = _similarity(left.objective, right.objective)
     message_sim = _similarity(left.key_message, right.key_message)

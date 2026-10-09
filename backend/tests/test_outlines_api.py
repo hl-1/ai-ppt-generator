@@ -40,8 +40,7 @@ async def queue(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[FakeQueue, No
     async def ignore_progress(*_args, **_kwargs) -> None:
         pass
 
-    monkeypatch.setattr("app.api.v1.outlines.publish_outline_event", ignore_progress)
-    monkeypatch.setattr("app.worker.tasks.publish_outline_event", ignore_progress)
+    monkeypatch.setattr("app.services.outline_progress.outline_events.publish", ignore_progress)
     app.dependency_overrides[get_queue] = lambda: fake
     yield fake
     app.dependency_overrides.pop(get_queue, None)
@@ -186,31 +185,44 @@ async def test_editing_outline_marks_existing_content_for_regeneration(client, q
     outline = await _complete_outline(project["id"])
     saved = await client.patch(
         f"/api/v1/projects/{project['id']}/outline",
-        json={"revision": outline.revision, "pages": outline.pages}, headers=headers,
+        json={"revision": outline.revision, "pages": outline.pages},
+        headers=headers,
     )
     assert saved.status_code == 200
     pages = saved.json()["pages"]
     async with async_session_factory() as session:
         for index, item in enumerate(pages, start=1):
-            session.add(Slide(
-                project_id=uuid.UUID(project["id"]), outline_page_id=uuid.UUID(item["id"]),
-                position=index, layout_id=item["layout_id"], title=item["title"], status="ready",
-                blocks=[{"id": "previous-content"}], issues=[], layout_mode="flex",
-                layout_tree={"type": "column", "id": "root", "children": []},
-            ))
+            session.add(
+                Slide(
+                    project_id=uuid.UUID(project["id"]),
+                    outline_page_id=uuid.UUID(item["id"]),
+                    position=index,
+                    layout_id=item["layout_id"],
+                    title=item["title"],
+                    status="ready",
+                    blocks=[{"id": "previous-content"}],
+                    issues=[],
+                    layout_mode="flex",
+                    layout_tree={"type": "column", "id": "root", "children": []},
+                )
+            )
         await session.commit()
 
     pages[1]["key_points"] = ["Edited finding", "Updated recommendation"]
     updated = await client.patch(
         f"/api/v1/projects/{project['id']}/outline",
-        json={"revision": saved.json()["revision"], "pages": pages}, headers=headers,
+        json={"revision": saved.json()["revision"], "pages": pages},
+        headers=headers,
     )
     assert updated.status_code == 200
     async with async_session_factory() as session:
-        record = (await session.execute(
-            select(Project).options(selectinload(Project.outline), selectinload(Project.sources))
-            .where(Project.id == uuid.UUID(project["id"]))
-        )).scalar_one()
+        record = (
+            await session.execute(
+                select(Project)
+                .options(selectinload(Project.outline), selectinload(Project.sources))
+                .where(Project.id == uuid.UUID(project["id"]))
+            )
+        ).scalar_one()
         pending = await sync_slides(session, record)
         assert [slide.outline_page_id for slide in pending] == [uuid.UUID(pages[1]["id"])]
         assert pending[0].blocks == []
@@ -293,11 +305,7 @@ async def test_worker_publishes_stage_progress(
         job_id,
     )
 
-    assert [
-        (event.stage, event.stage_status)
-        for event in events
-        if event.stage is not None
-    ] == [
+    assert [(event.stage, event.stage_status) for event in events if event.stage is not None] == [
         ("load_input", "started"),
         ("load_input", "succeeded"),
         ("plan_structure", "started"),
@@ -305,7 +313,6 @@ async def test_worker_publishes_stage_progress(
         ("validate", "started"),
         ("validate", "succeeded"),
         ("save", "started"),
-        ("save", "succeeded"),
         ("save", "succeeded"),
     ]
     assert events[-1].type == "completed"
@@ -596,7 +603,7 @@ async def test_worker_settles_outline_after_last_try(
     outline = await client.get(f"/api/v1/projects/{project['id']}/outline", headers=headers)
     body = outline.json()
     assert body["status"] == "failed"
-    assert body["error"] == "模型生成大纲失败，请稍后重试"
+    assert body["error"] == "AI 返回的大纲格式不符合要求"
 
 
 @pytest.mark.asyncio
@@ -617,7 +624,7 @@ async def test_worker_does_not_retry_missing_credentials(
     outline = await client.get(f"/api/v1/projects/{project['id']}/outline", headers=headers)
     body = outline.json()
     assert body["status"] == "failed"
-    assert body["error"] == "模型生成大纲失败，请稍后重试"
+    assert body["error"] == "AI 服务未配置"
     assert body["error_code"] == "llm_not_configured"
 
 

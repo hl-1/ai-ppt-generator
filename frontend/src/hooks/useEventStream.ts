@@ -36,6 +36,8 @@ export function useEventStream<T extends { type: string }>({
     }
 
     const controller = new AbortController()
+    setEvent(null)
+    setConnectionError(false)
 
     const connect = async () => {
       while (!controller.signal.aborted) {
@@ -52,6 +54,8 @@ export function useEventStream<T extends { type: string }>({
           setConnectionError(true)
         }
         if (finished) return
+        if (controller.signal.aborted) return
+        setConnectionError(true)
         await delay(RECONNECT_DELAY_MS, controller.signal)
       }
     }

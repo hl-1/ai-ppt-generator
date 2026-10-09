@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from collections.abc import Set as AbstractSet
 
 from fastapi import Request
@@ -20,6 +20,8 @@ def event_stream_response(
     key: uuid.UUID,
     fallback: BaseModel,
     terminal_types: AbstractSet[str],
+    initial_filter: Callable[[BaseModel], bool] | None = None,
+    event_filter: Callable[[BaseModel], bool] | None = None,
 ) -> StreamingResponse:
     """把一条 Redis 事件通道包装成 SSE 响应。
 
@@ -29,12 +31,18 @@ def event_stream_response(
     channel = stream.channel(key)
 
     async def events() -> AsyncGenerator[str, None]:
-        initial = await stream.latest(key) or fallback
-        yield _encode(initial)
-
         pubsub = get_redis().pubsub()
-        await pubsub.subscribe(channel)
         try:
+            await pubsub.subscribe(channel)
+            latest = await stream.latest(key)
+            initial = (
+                latest
+                if latest and (initial_filter is None or initial_filter(latest))
+                else fallback
+            )
+            yield _encode(initial)
+            if getattr(initial, "type", None) in terminal_types:
+                return
             while not await request.is_disconnected():
                 message = await pubsub.get_message(
                     ignore_subscribe_messages=True,
@@ -46,6 +54,8 @@ def event_stream_response(
                     continue
 
                 event = type(fallback).model_validate_json(message["data"])
+                if event_filter and not event_filter(event):
+                    continue
                 yield _encode(event)
                 if getattr(event, "type", None) in terminal_types:
                     return

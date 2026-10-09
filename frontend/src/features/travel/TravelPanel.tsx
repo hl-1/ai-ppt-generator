@@ -15,6 +15,14 @@ const serviceLabels: Record<string, string> = { amap: '地图与路线', qweathe
 const statusLabels = { ready: '已查询', partial: '部分完成', failed: '失败', not_configured: '未配置', pending: '待查询' }
 const money = (value: string | number | null | undefined) => value == null ? '待查询' : `¥${Number(value).toFixed(2)}`
 
+function travelServiceMessage(code: string | null | undefined) {
+  if (code?.includes('timeout')) return '查询超时。'
+  if (code === 'not_configured') return '服务尚未配置。'
+  if (code === 'http_401' || code === 'http_403' || code === 'provider_rejected') return '服务访问被拒绝，请检查凭证与权限。'
+  if (code === 'http_429') return '请求受限或额度不足，请稍后刷新。'
+  return '服务查询未全部完成。'
+}
+
 export function TravelPanel({ project, locked = false }: { project: ProjectDetail; locked?: boolean }) {
   const client = useQueryClient()
   const key = ['travel', project.id]
@@ -64,8 +72,15 @@ export function TravelPanel({ project, locked = false }: { project: ProjectDetai
       {research?.stale && <p role="status" className="mt-3 text-sm text-warning">资料已失效，请刷新资料并重新生成大纲。</p>}
       {research?.status === 'failed' && <p role="alert" className="mt-3 text-sm text-negative">查询未完成：{research.stage}</p>}
       {error && <p role="alert" className="mt-3 text-sm text-negative">{errorMessage(error)}</p>}
-      {research?.data.services && <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-ink-muted">
-        {research.data.services.map((service) => <span key={service.service}>{serviceLabels[service.service] ?? service.service}：{statusLabels[service.status]}{service.error_code ? `（${service.error_code}）` : ''}</span>)}
+      {research?.status === 'partial' && <p role="status" className="mt-3 text-sm text-warning">旅行查询部分完成，已有资料可查看，仍有信息待核实。</p>}
+      {research?.data.services && <div className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
+        {research.data.services.map((service) => <div key={service.service} className="min-w-0 border-l-2 border-line pl-3">
+          <p className={service.status === 'ready' ? 'text-positive' : 'text-warning'}>{serviceLabels[service.service] ?? service.service} · {statusLabels[service.status]}</p>
+          {service.status !== 'ready' && <p className="mt-1 break-words text-ink-muted">{service.message ?? travelServiceMessage(service.error_code)} {service.action ?? '请检查服务配置后刷新旅行资料。'}</p>}
+        </div>)}
+      </div>}
+      {!!research?.data.issues?.length && <div role="status" className="mt-4 space-y-2 border-l-2 border-warning pl-3">
+        {research.data.issues.map((issue, index) => <div key={`${issue.code}-${index}`}><p className="text-xs text-warning">{issue.stage}：{issue.message}</p><p className="mt-1 text-xs text-ink-muted">{issue.action}</p></div>)}
       </div>}
       {plan && !research?.stale && <div className="mt-4 space-y-4 text-sm">
         <p className="text-ink-muted">{plan.draft ? '建议草案' : '规划资料'} · {plan.conditions.destination} · {plan.conditions.departure_date ?? '日期待确认'} 至 {plan.conditions.return_date ?? '日期待确认'}</p>

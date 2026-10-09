@@ -4,12 +4,14 @@ import { WorkbenchHeader } from '@/components/WorkbenchHeader'
 import { Button } from '@/components/ui/Button'
 import {
   useGenerateOutline,
+  useCancelOutline,
   useOutline,
   useRefitOutlinePage,
   useUpdateOutline,
 } from '@/features/outline/api'
-import { outlineErrorMessage, outlineRequestErrorMessage } from '@/features/outline/errors'
-import type { Outline, OutlinePage, OutlineProgressEvent } from '@/features/outline/types'
+import { outlineRequestErrorMessage } from '@/features/outline/errors'
+import { OutlineExecutionView } from '@/features/outline/OutlineExecutionView'
+import type { Outline, OutlinePage } from '@/features/outline/types'
 import { useConfirmAndGenerate } from '@/features/outline/useConfirmAndGenerate'
 import { useOutlineProgress } from '@/features/outline/useOutlineProgress'
 import { useUpdateProject } from '@/features/projects/api'
@@ -70,27 +72,16 @@ const REFIT_VISUAL_TYPES = new Set<VisualType>(['auto', 'line', 'pie', 'bar', 'c
 export function OutlineWorkspace({ project }: { project: ProjectDetail }) {
   const outlineQuery = useOutline(project.id)
   const generate = useGenerateOutline(project.id)
+  const cancel = useCancelOutline(project.id)
   const outline = outlineQuery.data ?? null
-  const progress = useOutlineProgress(project.id, outline?.status === 'generating')
-  const currentStage = progress.event?.stage
-  const stageRunning = progress.event?.stage_status === 'started'
-  const [stageElapsedSeconds, setStageElapsedSeconds] = useState(0)
-  const progressMessage =
-    progress.event?.stage_status === 'failed'
-      ? `${outlineErrorMessage(progress.event.error_code)}，正在重试…`
-      : progress.event?.message ?? '正在规划每一页…'
-
-  useEffect(() => {
-    if (!stageRunning) {
-      setStageElapsedSeconds(0)
-      return
-    }
-    const startedAt = Date.now()
-    const update = () => setStageElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000))
-    update()
-    const timer = window.setInterval(update, 1000)
-    return () => window.clearInterval(timer)
-  }, [currentStage, stageRunning])
+  const progress = useOutlineProgress(project.id, outline?.status === 'generating', outline?.job_id)
+  const [reviewedJobId, setReviewedJobId] = useState<string | null>(
+    () => sessionStorage.getItem(`outline-reviewed:${project.id}`),
+  )
+  const snapshot = outline?.execution ?? null
+  const streamed = progress.event?.execution
+  const execution = streamed && (!snapshot || Date.parse(streamed.updated_at) > Date.parse(snapshot.updated_at))
+    ? streamed : snapshot
 
   if (outlineQuery.isPending) {
     return (
@@ -103,67 +94,30 @@ export function OutlineWorkspace({ project }: { project: ProjectDetail }) {
     )
   }
 
-  if (outline?.status === 'generating') {
+  if (!outline || ['generating', 'failed', 'cancelled'].includes(outline.status)
+    || (outline.execution && reviewedJobId !== outline.job_id)) {
     return (
-      <Shell title={project.title}>
-        <CenterCard>
-          <p className="text-sm font-medium">{progressMessage}</p>
-          {currentStage && (
-            <p className="mt-1.5 text-xs text-ink-muted">
-              当前阶段：{outlineStageLabel(currentStage)}
-            </p>
-          )}
-          {stageRunning && !progress.connectionError && (
-            <p className="mt-1 text-xs text-ink-muted">
-              已运行 {stageElapsedSeconds} 秒，正在实时处理
-            </p>
-          )}
-          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-line">
-            <div
-              className="h-full rounded-full bg-accent transition-[width] duration-500"
-              style={{ width: `${progress.event?.progress ?? 8}%` }}
-            />
-          </div>
-          <p className="mt-3 text-xs text-ink-muted">
-            {progress.connectionError ? '进度连接中断，正在重连…' : '大纲只规划目标与要点，不生成正文'}
-          </p>
-        </CenterCard>
+      <Shell title={project.title} plain>
+        <OutlineExecutionView
+          project={project} outline={outline} execution={execution}
+          connectionError={progress.connectionError} queryError={outlineQuery.error}
+          refreshing={outlineQuery.isFetching} onRefresh={() => void outlineQuery.refetch()}
+          onRetry={() => { cancel.reset(); generate.mutate() }} retryPending={generate.isPending}
+          requestError={cancel.error ?? generate.error}
+          onCancel={() => { generate.reset(); cancel.mutate() }} cancelPending={cancel.isPending}
+          onContinue={() => {
+            setReviewedJobId(outline?.job_id ?? null)
+            if (outline?.job_id) sessionStorage.setItem(`outline-reviewed:${project.id}`, outline.job_id)
+          }}
+        />
       </Shell>
     )
   }
 
-  if (outline == null || outline.status === 'failed') {
-    return (
-      <Shell title={project.title}>
-        {project.report_brief?.scenario === 'travel_plan' && <div className="mx-auto max-w-4xl px-6 py-5"><TravelPanel project={project} /></div>}
-        <CenterCard>
-          <p className="text-sm text-ink-soft">
-            {outline
-              ? outlineErrorMessage(outline.error_code, '大纲生成失败，请稍后重试。')
-              : '还没有大纲。'}
-          </p>
-          <Button
-            className="mt-5"
-            disabled={generate.isPending}
-            onClick={() => generate.mutate()}
-          >
-            <RefreshCw className={cn('size-4', generate.isPending && 'animate-spin')} />
-            {generate.isPending ? '正在提交…' : '重新生成大纲'}
-          </Button>
-          {generate.isError && (
-            <p role="alert" className="mt-3 text-xs text-negative">
-              {outlineRequestErrorMessage(generate.error)}
-            </p>
-          )}
-        </CenterCard>
-      </Shell>
-    )
-  }
-
-  return <OutlineEditor project={project} outline={outline} />
+  return <OutlineEditor project={project} outline={outline} onReviewExecution={() => setReviewedJobId(null)} />
 }
 
-function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: Outline }) {
+function OutlineEditor({ project, outline, onReviewExecution }: { project: ProjectDetail; outline: Outline; onReviewExecution: () => void }) {
   const [pages, setPages] = useState<OutlinePage[]>(outline.pages)
   const [blueprint, setBlueprint] = useState(outline.blueprint)
   const [themeId, setThemeId] = useState(project.theme_id)
@@ -349,6 +303,11 @@ function OutlineEditor({ project, outline }: { project: ProjectDetail; outline: 
     >
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-8 px-6 py-8 lg:grid-cols-[minmax(0,1fr)_19rem]">
         <div className="min-w-0">
+          {outline.execution && <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line pb-4 text-xs text-ink-muted">
+            <span className="inline-flex items-center gap-1.5 text-positive"><Check className="size-4" />已生成并保存 {outline.pages.length} 页大纲</span>
+            {outline.execution.stages.some((stage) => stage.status === 'partial') && <span className="text-warning">旅行资料仍有待核实项</span>}
+            <button className="text-accent hover:underline" onClick={onReviewExecution}>查看生成记录</button>
+          </div>}
           {project.report_brief?.scenario === 'travel_plan' && <TravelPanel project={project} />}
           <div className="mb-5">
             <h2 className="text-xl font-semibold tracking-tight">确认大纲</h2>
@@ -708,18 +667,20 @@ function Shell({
   meta,
   actions,
   children,
+  plain = false,
 }: {
   title: string
   meta?: ReactNode
   actions?: ReactNode
   children: ReactNode
+  plain?: boolean
 }) {
   return (
     <div className="flex min-h-screen flex-col">
       <WorkbenchHeader title={title} meta={meta}>
         {actions}
       </WorkbenchHeader>
-      <div className="bg-aurora flex-1">{children}</div>
+      <div className={cn('flex-1', plain ? 'bg-surface' : 'bg-aurora')}>{children}</div>
     </div>
   )
 }
@@ -732,23 +693,6 @@ function CenterCard({ children }: { children: ReactNode }) {
       </div>
     </div>
   )
-}
-
-function outlineStageLabel(stage: NonNullable<OutlineProgressEvent['stage']>): string {
-  switch (stage) {
-    case 'queue':
-      return '进入生成队列'
-    case 'load_input':
-      return '读取输入材料'
-    case 'travel_research':
-      return '查询旅行资料'
-    case 'plan_structure':
-      return '规划大纲结构'
-    case 'validate':
-      return '校验大纲结构'
-    case 'save':
-      return '保存大纲'
-  }
 }
 
 function modeValue(page: OutlinePage): OutlineModeValue {

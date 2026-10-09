@@ -155,6 +155,72 @@ def test_prepare_skips_empty_sections() -> None:
     assert [item.ref for item in prepared.sections] == ["S1:2"]
 
 
+@pytest.mark.parametrize("budget", [0, 180, MAX_TOTAL_SOURCE_CHARS])
+def test_prepare_keeps_all_travel_refs_within_excerpt_budget(budget) -> None:
+    sections = [
+        *[_section(f"S1:{index}", "X" * 3_000) for index in range(1, 8)],
+        _section("T:plan", "Travel plan", heading="Plan"),
+        *[
+            _section(f"T:R{index}", "Y" * 3_000, heading=f"Source {index}", locator=f"url{index}")
+            for index in range(1, 27)
+        ],
+    ]
+    payload = _input(sections=sections).model_copy(
+        update={"travel_context": {"sources": [{"id": f"R{i}"} for i in range(1, 27)]}}
+    )
+
+    prepared = prepare_outline_input(payload, max_total_chars=budget)
+
+    assert {section.ref for section in prepared.sections if section.ref.startswith("T:")} == {
+        "T:plan",
+        *(f"T:R{index}" for index in range(1, 27)),
+    }
+    assert sum(len(s.text) + len(s.heading or "") for s in prepared.sections) <= budget
+    late_source = next(s for s in prepared.sections if s.ref == "T:R17")
+    assert late_source.text == ""
+    assert late_source.locator == "url17"
+    assert payload.sections[-1].text == "Y" * 3_000
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "quote, valid", [("Advance booking is required.", True), ("Invented rule.", False)]
+)
+async def test_workflow_checks_trimmed_travel_evidence_against_original(monkeypatch, quote, valid):
+    from app.services import travel_outline
+
+    page = OutlinePageDraft(
+        title="Booking requirements",
+        objective="Check the official booking rule",
+        key_points=["Book ahead", "Check the official notice"],
+        source_refs=["T:R17"],
+        evidence=[{"source_ref": "T:R17", "quote": quote}],
+        layout_id="bullets",
+    )
+    monkeypatch.setattr(
+        travel_outline, "build_travel_outline", lambda _: OutlineDraft(pages=[page])
+    )
+    sections = [
+        *[_section(f"S1:{index}", "X" * 3_000) for index in range(1, 8)],
+        _section("T:plan", "Travel plan"),
+        _section("T:R17", "Y" * 3_000 + "Advance booking is required."),
+    ]
+    payload = _input(page_count=1, sections=sections).model_copy(
+        update={"travel_context": {"sources": [{"id": "R17"}]}}
+    )
+    generator = FakeOutlineGenerator()
+
+    draft = await run_outline_workflow(build_outline_workflow(generator), payload)
+
+    assert generator.calls == []
+    assert draft.pages[0].source_refs == ["T:R17"]
+    assert bool(draft.pages[0].evidence) is valid
+    if valid:
+        assert draft.pages[0].evidence[0].quote == quote
+    else:
+        assert draft.pages[0].planning_notes
+
+
 @pytest.mark.asyncio
 async def test_workflow_prepare_and_page_count_flow() -> None:
     generator = FakeOutlineGenerator()
@@ -491,6 +557,30 @@ async def test_deepseek_rejects_illegal_ref() -> None:
 
     with pytest.raises(InvalidOutlineOutputError, match="未知来源引用"):
         await generator.generate(_input(page_count=2))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ref, valid", [("T:R17", True), ("T:R99", False)])
+async def test_deepseek_validates_travel_refs_after_excerpts_are_trimmed(ref, valid) -> None:
+    sections = [
+        _section("S1:1", "X" * 3_000),
+        *[_section(f"T:R{i}", "Y" * 3_000) for i in range(1, 27)],
+    ]
+    payload = _input(page_count=2, sections=sections).model_copy(
+        update={"travel_context": {"sources": [{"id": f"R{i}"} for i in range(1, 27)]}}
+    )
+    prepared = prepare_outline_input(payload, max_total_chars=180)
+    chat = FakeChat(_valid_outline_json(ref=ref))
+    generator = DeepSeekOutlineGenerator(chat=chat, layout_ids=frozenset({"bullets"}))
+
+    if valid:
+        draft = await generator.generate(prepared)
+        assert draft.pages[0].source_refs == [ref]
+        prompt_body = json.loads(chat.last_user[chat.last_user.index("{") :])
+        assert ref in {section["ref"] for section in prompt_body["sections"]}
+    else:
+        with pytest.raises(InvalidOutlineOutputError, match="未知来源引用"):
+            await generator.generate(prepared)
 
 
 @pytest.mark.asyncio

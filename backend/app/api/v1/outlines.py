@@ -3,9 +3,11 @@ import uuid
 from typing import Annotated
 
 from arq.connections import ArqRedis
+from arq.jobs import Job
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from redis.exceptions import RedisError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_queue
@@ -20,6 +22,7 @@ from app.llm.errors import InvalidOutlineOutputError, LLMNotConfiguredError
 from app.models.project import Project, ProjectOutline
 from app.schemas.outline import (
     OutlineEvent,
+    OutlineExecution,
     OutlineGenerateAccepted,
     OutlinePageEvidenceFitRequest,
     OutlinePublic,
@@ -28,12 +31,19 @@ from app.schemas.outline import (
 )
 from app.schemas.travel import TravelConditions
 from app.services.deck import invalidate_outline_slides
+from app.services.outline_errors import outline_failure
 from app.services.outline_inputs import migrate_outline_signature, outline_input_matches
-from app.services.outline_progress import outline_events, publish_outline_event
+from app.services.outline_progress import (
+    apply_event,
+    new_execution,
+    outline_events,
+    publish_outline_event,
+)
 from app.services.sources import refresh_topic_sources
 from app.services.travel_planning import travel_sections
 from app.services.travel_research import current_research, is_travel
 from app.worker.context import create_outline_generator
+from app.worker.retry import MAX_TRIES
 
 router = APIRouter(prefix="/projects/{project_id}/outline", tags=["outline"])
 logger = logging.getLogger(__name__)
@@ -113,6 +123,8 @@ async def generate_outline(
     session: SessionDep,
     queue: QueueDep,
 ) -> OutlineGenerateAccepted:
+    await session.execute(select(Project.id).where(Project.id == project.id).with_for_update())
+    await session.refresh(project, ["outline"])
     if is_travel(project):
         conditions = TravelConditions.model_validate(project.travel_conditions or {})
         if not conditions.confirmed or not conditions.destination:
@@ -140,6 +152,11 @@ async def generate_outline(
     outline.error_code = None
     outline.error = None
     outline.job_id = job_id
+    outline.execution = new_execution(
+        job_id,
+        travel=is_travel(project),
+        max_attempts=MAX_TRIES,
+    ).model_dump(mode="json")
     await session.commit()
 
     try:
@@ -149,10 +166,37 @@ async def generate_outline(
             job_id,
             _job_id=job_id,
         )
+        if job is None:
+            raise RedisError("Queue rejected a unique outline job")
     except RedisError as error:
-        outline.status = "failed"
-        outline.error_code = "queue_unavailable"
-        outline.error = "大纲生成失败，请稍后重试"
+        outline = await session.scalar(
+            select(ProjectOutline)
+            .where(
+                ProjectOutline.project_id == project.id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if outline is None:
+            raise HTTPException(503, "任务队列暂时不可用") from error
+        if outline.job_id == job_id and outline.status == "generating":
+            outline.status = "failed"
+            outline.error_code = "queue_unavailable"
+            outline.error = outline_failure("queue_unavailable", "queue").message
+            if outline.execution:
+                outline.execution = apply_event(
+                    OutlineExecution.model_validate(outline.execution),
+                    OutlineEvent(
+                        type="failed",
+                        status="failed",
+                        progress=0,
+                        stage="queue",
+                        stage_status="failed",
+                        job_id=job_id,
+                        error_code="queue_unavailable",
+                        message=outline.error,
+                    ),
+                ).model_dump(mode="json")
         await session.commit()
         logger.exception(
             "outline stage failed project_id=%s stage=queue error_code=queue_unavailable",
@@ -169,15 +213,13 @@ async def generate_outline(
                 stage="queue",
                 stage_status="failed",
                 error_code="queue_unavailable",
+                job_id=job_id,
             ),
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="任务队列暂时不可用",
         ) from error
-
-    if job is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="任务已存在")
 
     await publish_outline_event(
         project.id,
@@ -189,6 +231,7 @@ async def generate_outline(
             revision=outline.revision,
             stage="queue",
             stage_status="succeeded",
+            job_id=job_id,
         ),
     )
     logger.info(
@@ -197,6 +240,57 @@ async def generate_outline(
         job_id,
     )
     return OutlineGenerateAccepted(job_id=job_id)
+
+
+@router.post("/cancel", response_model=OutlinePublic)
+async def cancel_outline(
+    project: OwnedProject,
+    session: SessionDep,
+    queue: QueueDep,
+) -> ProjectOutline:
+    outline = await session.scalar(
+        select(ProjectOutline)
+        .where(
+            ProjectOutline.project_id == project.id,
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if outline is None or outline.status != "generating":
+        raise HTTPException(409, "当前没有正在生成的大纲任务，请刷新状态")
+    execution = OutlineExecution.model_validate(outline.execution) if outline.execution else None
+    event = OutlineEvent(
+        type="cancelled",
+        status="cancelled",
+        progress=0,
+        message="本次大纲生成已取消，输入材料与已有资料仍然保留",
+        job_id=outline.job_id,
+        stage=execution.stage if execution else "queue",
+        stage_status="cancelled",
+        attempt=execution.attempt if execution else 1,
+    )
+    outline.status, outline.error, outline.error_code = "cancelled", None, None
+    if execution:
+        event.execution = apply_event(execution, event)
+        event.timestamp = event.execution.updated_at
+        outline.execution = event.execution.model_dump(mode="json")
+    await session.commit()
+    try:
+        await outline_events.publish(project.id, event)
+        if outline.job_id:
+            await Job(outline.job_id, queue).abort(timeout=0)
+    except TimeoutError:
+        pass  # Abort was requested; the worker acknowledges it asynchronously.
+    except RedisError:
+        logger.warning("outline abort transport unavailable project_id=%s", project.id)
+    except Exception as error:
+        logger.warning(
+            "outline abort acknowledgement failed project_id=%s error_type=%s",
+            project.id,
+            type(error).__name__,
+        )
+    await session.refresh(outline)
+    return outline
 
 
 @router.patch("", response_model=OutlinePublic)
@@ -343,7 +437,7 @@ async def confirm_outline(
     pages = [*map(_page_from_dict, outline.pages)]
     await _validate_pages(project, pages, session)
     if any(source.kind == "topic" for source in project.sources):
-        duplicates = find_duplicate_topic_pages(pages)
+        duplicates = find_duplicate_topic_pages(pages, travel_mode=is_travel(project))
         if duplicates:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -393,12 +487,17 @@ async def stream_outline_events(
 ) -> StreamingResponse:
     outline = _outline_or_404(project)
     settled = outline.status in {"draft", "confirmed"}
+    execution = OutlineExecution.model_validate(outline.execution) if outline.execution else None
     return event_stream_response(
         request,
         stream=outline_events,
         key=project.id,
         fallback=OutlineEvent(
-            type="snapshot",
+            type="completed"
+            if settled
+            else outline.status
+            if outline.status in {"failed", "cancelled"}
+            else "snapshot",
             status=outline.status,
             progress=100 if settled or outline.status == "failed" else 0,
             message=(
@@ -406,14 +505,28 @@ async def stream_outline_events(
                 if settled
                 else "大纲生成失败"
                 if outline.status == "failed"
+                else "任务已取消"
+                if outline.status == "cancelled"
                 else "等待任务进度"
             ),
             revision=outline.revision,
-            stage="save" if settled else None,
+            stage=execution.stage if execution else "save" if settled else None,
             stage_status=(
                 "succeeded" if settled else "failed" if outline.status == "failed" else None
             ),
             error_code=outline.error_code,
+            job_id=outline.job_id,
+            execution=execution,
+            timestamp=execution.updated_at if execution else outline.updated_at,
         ),
-        terminal_types={"completed", "failed"},
+        terminal_types={"completed", "failed", "cancelled"},
+        event_filter=lambda event: event.job_id == outline.job_id,
+        initial_filter=lambda event: (
+            event.job_id == outline.job_id
+            and event.status == outline.status
+            and (
+                not execution
+                or bool(event.execution and event.execution.updated_at >= execution.updated_at)
+            )
+        ),
     )

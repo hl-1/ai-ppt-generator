@@ -35,29 +35,34 @@ def prepare_outline_input(
     used_chars = 0
 
     for section in payload.sections:
+        preserve_ref = bool(payload.travel_context) and section.ref.startswith("T:")
         heading = section.heading.strip() if section.heading else None
         text = " ".join(section.text.split())
         locator = section.locator.strip()
 
-        if not text and not heading:
+        if not text and not heading and not preserve_ref:
             continue
 
         if len(text) > max_section_chars:
             text = text[:max_section_chars]
 
-        remaining = max_total_chars - used_chars
-        if remaining <= 0:
-            break
-
+        remaining = max(0, max_total_chars - used_chars)
         heading_len = len(heading or "")
-        # 标题本身已超出剩余预算时停止，避免截断 heading 造成语义残缺
-        if heading_len > remaining:
-            break
+        # Keep headings intact; retain travel refs even when their excerpt cannot fit.
+        if remaining == 0 or heading_len > remaining:
+            if not preserve_ref:
+                if payload.travel_context:
+                    continue
+                break
+            # Travel context can still cite this source after its excerpt is omitted.
+            heading = None
+            heading_len = 0
+            text = ""
 
         text_budget = min(len(text), remaining - heading_len)
         text = text[:text_budget]
         section_cost = len(text) + heading_len
-        if section_cost <= 0:
+        if section_cost <= 0 and not preserve_ref:
             break
 
         prepared_sections.append(
@@ -70,7 +75,7 @@ def prepare_outline_input(
             )
         )
         used_chars += section_cost
-        if used_chars >= max_total_chars:
+        if used_chars >= max_total_chars and not payload.travel_context:
             break
 
     return payload.model_copy(update={"sections": prepared_sections})
@@ -87,7 +92,9 @@ def build_outline_workflow(generator: OutlineGenerator):
 
     async def generate(state: OutlineWorkflowState) -> dict[str, OutlineDraft]:
         payload = state["prepared"]
-        sources = {section.ref: section.text for section in payload.sections}
+        # Validate travel evidence against the saved source, not a prompt excerpt.
+        source_sections = state["input"].sections if payload.travel_context else payload.sections
+        sources = {section.ref: section.text for section in source_sections}
         if payload.travel_context:
             from app.services.travel_outline import build_travel_outline
 
@@ -122,7 +129,11 @@ def build_outline_workflow(generator: OutlineGenerator):
                 prepare_page_plan(page, sources, topic_mode=payload.topic_mode) for page in pages
             ]
             draft = draft.model_copy(update={"pages": pages})
-            duplicates = find_duplicate_topic_pages(pages) if payload.topic_mode else []
+            duplicates = (
+                find_duplicate_topic_pages(pages, travel_mode=bool(payload.travel_context))
+                if payload.topic_mode
+                else []
+            )
             if payload.travel_context:
                 from app.services.travel_planning import travel_claim_issues
 

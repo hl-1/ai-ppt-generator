@@ -25,11 +25,13 @@ from app.models.travel import TravelResearch
 from app.schemas.travel import (
     FactExtraction,
     ResearchData,
+    ResearchIssue,
     TravelConditions,
     TravelExtractResult,
     TravelFact,
     TravelSource,
 )
+from app.services.outline_errors import travel_service_issue
 from app.services.topic_material import topic_request_from_sections
 from app.services.travel_planning import (
     build_travel_plan,
@@ -333,8 +335,11 @@ async def execute_research(research_id: uuid.UUID, *, model=None, progress=None)
     settings = get_settings()
     started = datetime.now(UTC)
     failure = None
+    last_stage = "提取查询清单"
 
     async def checkpoint(value: int, stage: str):
+        nonlocal last_stage
+        last_stage = stage
         async with async_session_factory() as session:
             current = await session.get(TravelResearch, research_id)
             if current and not current.stale and current.status == "researching":
@@ -449,6 +454,14 @@ async def execute_research(research_id: uuid.UUID, *, model=None, progress=None)
                                     attempt + 1,
                                     safe_error_details(error),
                                 )
+                        data.issues.append(
+                            ResearchIssue(
+                                stage="核对来源原文及适用日期",
+                                code="facts_unverified",
+                                message="部分来源的事实核对未完成",
+                                action="请在来源列表中检查原文，门票与预约信息需进一步核实。",
+                            )
+                        )
 
                     try:
                         async with asyncio.timeout(min(settings.llm_timeout_seconds, 35)):
@@ -490,9 +503,24 @@ async def execute_research(research_id: uuid.UUID, *, model=None, progress=None)
             )
             data.facts = validate_facts(data.facts, data, conditions)
             data.services = providers.statuses()
+            for service in data.services:
+                if service.status != "ready":
+                    issue = travel_service_issue(service.service, service.error_code)
+                    service.message, service.action = issue.message, issue.action
             data.plan = build_travel_plan(data, conditions, booking_states)
             if failure:
-                data.plan.unresolved_items.append(f"资料查询未全部完成：{failure}")
+                reason = {"total_timeout": "查询超时", "cancelled": "查询已取消"}.get(
+                    failure, "查询执行异常"
+                )
+                data.issues.append(
+                    ResearchIssue(
+                        stage=last_stage,
+                        code=failure,
+                        message=reason,
+                        action="已获取的资料仍然保留，请检查资料服务状态后重新查询。",
+                    )
+                )
+                data.plan.unresolved_items.append(f"{last_stage}：{reason}，部分信息待核实")
             await _finish_research(research_id, data, failure)
             logger.info(
                 "travel service=workflow stage=completed duration_ms=%s count=%s error_code=%s",
@@ -520,6 +548,7 @@ async def _finish_research(research_id: uuid.UUID, data: ResearchData, error_cod
         research.status = (
             "partial"
             if error_code
+            or data.issues
             or not data.sources
             or any(service.status != "ready" for service in data.services)
             or (data.plan and data.plan.unresolved_items)

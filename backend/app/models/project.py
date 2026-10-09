@@ -121,6 +121,7 @@ class ProjectOutline(Base):
     blueprint: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     job_id: Mapped[str | None] = mapped_column(String(100))
+    execution: Mapped[dict | None] = mapped_column(JSONB)
     input_signature: Mapped[str | None] = mapped_column(String(64))
     travel_research_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     error_code: Mapped[str | None] = mapped_column(String(64))

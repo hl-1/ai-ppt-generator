@@ -22,6 +22,7 @@ export function useOutline(projectId: string) {
       }
     },
     retry: false,
+    refetchInterval: (query) => query.state.data?.status === 'generating' ? 2500 : false,
   })
 }
 
@@ -32,7 +33,16 @@ export function useGenerateOutline(projectId: string) {
       request<OutlineGenerateAccepted>(`/projects/${projectId}/outline/generate`, {
         method: 'POST',
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: outlineKey(projectId) }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: outlineKey(projectId) }),
+  })
+}
+
+export function useCancelOutline(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => request<Outline>(`/projects/${projectId}/outline/cancel`, { method: 'POST' }),
+    onSuccess: (outline) => queryClient.setQueryData(outlineKey(projectId), outline),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: outlineKey(projectId) }),
   })
 }
 
