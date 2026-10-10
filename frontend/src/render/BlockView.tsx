@@ -1,3 +1,4 @@
+import { ImageOff, ImagePlus, Loader2, RotateCw } from 'lucide-react'
 import { useRef, useState, type CSSProperties } from 'react'
 import { boxCss, mergeTextCss } from '@/render/blockStyle'
 import {
@@ -40,6 +41,9 @@ interface BlockProps<T> {
   editable?: boolean
   onCommit?: (blockId: string, body: EditableBlockCommit) => void
   onSelect?: (blockId: string) => void
+  showImageStatus?: boolean
+  onImageRetry?: (blockId: string) => Promise<void>
+  imageRetryDisabled?: boolean
 }
 
 function TextView({ block, slot, theme, editable, onCommit, onSelect }: BlockProps<TextBlock>) {
@@ -224,7 +228,40 @@ function ImagePlaceholder({ theme, alt }: { theme: Theme; alt: string }) {
   )
 }
 
-function ImageView({ block, theme }: BlockProps<ImageBlock>) {
+function ImageView({
+  block, theme, showImageStatus, onImageRetry, imageRetryDisabled,
+}: BlockProps<ImageBlock>) {
+  const [loadState, setLoadState] = useState<{ url: string; failed: boolean } | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+  const [retrying, setRetrying] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
+  const loadFailed = Boolean(block.url && loadState?.url === block.url && loadState.failed)
+  const loading = Boolean(block.url && loadState?.url !== block.url)
+  const queued = block.image_status === 'queued'
+  const failed = block.image_status === 'failed' || loadFailed || Boolean(retryError)
+  const statusVisible = showImageStatus && (queued || retrying || loading || failed || !block.url)
+  const busy = queued || retrying || loading
+  const label = retrying ? '正在提交配图' : queued ? '正在配图'
+    : loading ? '图片加载中' : loadFailed ? '图片加载失败'
+    : failed ? '配图失败' : '尚未配图'
+  const detail = retryError ?? (loadFailed ? '图片暂时无法读取' : block.image_error)
+  const retryImage = async () => {
+    if (loadFailed && block.url) {
+      setLoadState(null)
+      setReloadKey((value) => value + 1)
+      return
+    }
+    if (!onImageRetry) return
+    setRetryError(null)
+    setRetrying(true)
+    try {
+      await onImageRetry(block.id)
+    } catch (error) {
+      setRetryError(error instanceof Error ? error.message : '重试失败，请稍后再试')
+    } finally {
+      setRetrying(false)
+    }
+  }
   const border =
     block.style?.border_color != null &&
     block.style?.border_width_pt != null &&
@@ -241,19 +278,47 @@ function ImageView({ block, theme }: BlockProps<ImageBlock>) {
         }
       : { width: '100%', height: '100%' }
 
-  if (!block.url) {
-    return (
-      <div style={border}>
-        <ImagePlaceholder theme={theme} alt={block.alt} />
-      </div>
-    )
-  }
   return (
-    <img
-      src={block.url}
-      alt={block.alt}
-      style={{ ...border, objectFit: 'cover', display: 'block' }}
-    />
+    <div style={{ ...border, position: 'relative', overflow: 'hidden' }}>
+      {block.url && !loadFailed ? (
+        <img key={`${block.url}-${reloadKey}`} src={block.url} alt={block.alt}
+          onLoad={() => setLoadState({ url: block.url!, failed: false })}
+          onError={() => setLoadState({ url: block.url!, failed: true })}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      ) : !showImageStatus ? <ImagePlaceholder theme={theme} alt={block.alt} /> : null}
+      {statusVisible && (
+        <div data-image-status={busy ? 'loading' : failed ? 'failed' : 'empty'}
+          role={failed ? 'alert' : 'status'}
+          style={{
+            position: 'absolute', inset: block.url && !loadFailed && !loading ? 'auto 0 0' : 0,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: pt(8), padding: pt(16), boxSizing: 'border-box', minWidth: 0,
+            background: resolveColor(theme, 'background'), color: resolveColor(theme, 'ink_muted'),
+            border: `${pt(1)} dashed ${resolveColor(theme, 'line')}`,
+          }}>
+          {busy ? <Loader2 className="animate-spin" style={{ width: pt(22), height: pt(22), flexShrink: 0 }} />
+            : failed ? <ImageOff style={{ width: pt(22), height: pt(22), flexShrink: 0 }} />
+            : <ImagePlus style={{ width: pt(22), height: pt(22), flexShrink: 0 }} />}
+          <span style={{ fontSize: pt(13), lineHeight: 1.4, textAlign: 'center' }}>{label}</span>
+          {!busy && detail && <span title={detail} style={{ fontSize: pt(10), lineHeight: 1.4,
+            textAlign: 'center', overflowWrap: 'anywhere', display: '-webkit-box',
+            WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{detail}</span>}
+          {!busy && (onImageRetry || loadFailed) && (
+            <button type="button" title={loadFailed ? '重新加载图片' : '重试配图'}
+              aria-label={loadFailed ? '重新加载图片' : '重试配图'}
+              disabled={imageRetryDisabled || block.locked}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => { event.stopPropagation(); void retryImage() }}
+              style={{ width: pt(30), height: pt(30), flexShrink: 0, display: 'grid', placeItems: 'center',
+                borderRadius: pt(4), border: `${pt(1)} solid ${resolveColor(theme, 'line')}`,
+                color: resolveColor(theme, 'ink'), background: resolveColor(theme, 'background') }}
+              className="disabled:opacity-40 enabled:cursor-pointer enabled:hover:brightness-95">
+              <RotateCw style={{ width: pt(14), height: pt(14) }} />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -619,6 +684,9 @@ export function BlockView({
   editable,
   onCommit,
   onSelect,
+  showImageStatus,
+  onImageRetry,
+  imageRetryDisabled,
 }: BlockProps<Block>) {
   switch (block.type) {
     case 'text':
@@ -644,7 +712,8 @@ export function BlockView({
         />
       )
     case 'image':
-      return <ImageView block={block} slot={slot} theme={theme} />
+      return <ImageView block={block} slot={slot} theme={theme} showImageStatus={showImageStatus}
+        onImageRetry={onImageRetry} imageRetryDisabled={imageRetryDisabled} />
     case 'chart':
       return <ChartView block={block} slot={slot} theme={theme} />
     case 'financial_table':

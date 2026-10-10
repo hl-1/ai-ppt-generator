@@ -292,6 +292,90 @@ async def test_deepseek_parses_valid_outline() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("plan_field", ["image_plan", "imagePlan"])
+@pytest.mark.parametrize("explicit_plan", [False, True])
+async def test_deepseek_recovers_image_plan_from_visual(plan_field, explicit_plan) -> None:
+    misplaced_plan = {
+        "subject": "AI chip and datacenter servers",
+        "queries": ["AI chip datacenter", "computer servers"],
+        "source": "stock",
+        "require_real": True,
+        "purpose": "cover",
+    }
+    existing_plan = {
+        "subject": "A developer using an AI coding assistant",
+        "queries": ["developer AI coding assistant"],
+        "source": "generated",
+        "require_real": False,
+        "purpose": "support",
+    }
+    response = json.loads(_valid_outline_json(page_count=1))
+    response["pages"][0]["visual"] = misplaced_plan
+    response["pages"][0].pop("image_plan", None)
+    response["pages"][0][plan_field] = existing_plan if explicit_plan else None
+    chat = SequenceChat([json.dumps(response)])
+    generator = DeepSeekOutlineGenerator(chat=chat, layout_ids=frozenset({"bullets"}))
+
+    draft = await generator.generate(_input(page_count=1))
+
+    assert len(chat.system_prompts) == 1
+    page = draft.pages[0]
+    assert page.visual == misplaced_plan["subject"]
+    assert page.image_plan.model_dump() == (existing_plan if explicit_plan else misplaced_plan)
+    assert response["pages"][0]["visual"] == misplaced_plan
+
+
+@pytest.mark.asyncio
+async def test_workflow_preserves_recovered_image_plan() -> None:
+    response = json.loads(_valid_outline_json(page_count=1))
+    response["pages"][0].update(
+        page_role="cover",
+        visual_type="photo",
+        visual={
+            "subject": "AI chip and datacenter servers",
+            "queries": ["AI chip datacenter"],
+            "source": "stock",
+            "require_real": True,
+            "purpose": "cover",
+        },
+    )
+    chat = SequenceChat([json.dumps(response)])
+    generator = DeepSeekOutlineGenerator(chat=chat, layout_ids=frozenset({"bullets"}))
+    payload = _input(page_count=1).model_copy(update={"topic_mode": True})
+
+    draft = await run_outline_workflow(build_outline_workflow(generator), payload)
+
+    page = draft.pages[0]
+    assert len(chat.system_prompts) == 1
+    assert page.visual == "AI chip and datacenter servers"
+    assert page.image_plan.queries[0] == "server rack computer chip"
+    assert "AI chip datacenter" in page.image_plan.queries
+    assert page.image_plan.source == "stock"
+    assert page.image_plan.require_real is True
+    assert page.image_plan.purpose == "cover"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "visual", [{"description": "unrecognized image plan"}, {"subject": 42}]
+)
+async def test_deepseek_rejects_unrecognized_visual_objects(visual, caplog) -> None:
+    response = json.loads(_valid_outline_json(page_count=1))
+    response["pages"][0]["visual"] = visual
+    chat = SequenceChat([json.dumps(response)])
+    generator = DeepSeekOutlineGenerator(chat=chat, layout_ids=frozenset({"bullets"}))
+
+    with pytest.raises(InvalidOutlineOutputError):
+        await generator.generate(_input(page_count=1))
+
+    assert len(chat.system_prompts) == 2
+    assert "pages.0.visual: string_type" in chat.system_prompts[1]
+    assert "'path': ['pages', 0, 'visual']" in caplog.text
+    assert "'type': 'string_type'" in caplog.text
+    assert "unrecognized image plan" not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_deepseek_normalizes_evidence_kinds_mistaken_for_narrative_roles() -> None:
     response = json.loads(_valid_outline_json(page_count=2))
     response["pages"][0]["narrative_role"] = "composition"
@@ -328,13 +412,52 @@ async def test_deepseek_retries_once_when_model_returns_wrong_page_count() -> No
 
 
 def test_create_chat_model_disables_thinking_by_default() -> None:
-    model = create_chat_model(Settings(llm_api_key="k", llm_thinking_enabled=False))
+    model = create_chat_model(
+        Settings(
+            llm_api_key="k",
+            llm_thinking_enabled=False,
+            llm_model="deepseek-v4-flash",
+            llm_base_url="https://api.deepseek.com",
+        )
+    )
     assert model.extra_body == {"thinking": {"type": "disabled"}}
 
 
 def test_create_chat_model_enables_thinking() -> None:
     model = create_chat_model(Settings(llm_api_key="k", llm_thinking_enabled=True))
     assert model.extra_body == {"thinking": {"type": "enabled"}}
+
+
+def test_tokenhub_flashx_uses_supported_thinking_default() -> None:
+    model = create_chat_model(
+        Settings(
+            llm_api_key="k",
+            llm_thinking_enabled=False,
+            llm_model="glm-5.3-flashx",
+            llm_base_url="https://tokenhub.tencentmaas.com/v1",
+        )
+    )
+    assert model.extra_body is None
+    assert model.reasoning_effort == "high"
+
+
+@pytest.mark.parametrize(
+    "base_url,model_name",
+    [
+        ("https://tokenhub.tencentmaas.com/v1", "glm-5.3-flash"),
+        ("https://other.example/v1", "glm-5.3-flashx"),
+    ],
+)
+def test_thinking_compatibility_keeps_other_models_and_providers(base_url, model_name) -> None:
+    model = create_chat_model(
+        Settings(
+            llm_api_key="k",
+            llm_thinking_enabled=False,
+            llm_model=model_name,
+            llm_base_url=base_url,
+        )
+    )
+    assert model.extra_body == {"thinking": {"type": "disabled"}}
 
 
 @pytest.mark.asyncio

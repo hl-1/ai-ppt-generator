@@ -13,6 +13,7 @@ from app.domain.outline import (
     DeckBlueprint,
     EvidenceItem,
     EvidenceKind,
+    ImagePlan,
     NarrativeRole,
     OutlineDraft,
     OutlinePageDraft,
@@ -24,6 +25,7 @@ from app.llm.errors import (
     InvalidModelOutputError,
     InvalidOutlineOutputError,
     LLMNotConfiguredError,
+    safe_error_details,
 )
 from app.llm.normalization import (
     model_output_feedback,
@@ -46,9 +48,18 @@ logger = logging.getLogger(__name__)
 _VISUAL_RULE = (
     "配图规则：根据主题规划与本页直接相关的画面，没有表达价值时 visual/image_plan 留 null。"
     "旅游、景点、建筑、产品与人物优先真实照片，visual_type=photo；抽象概念可用 illustration。"
-    "图片页填写 visual 为具体对象，同时填写 image_plan：subject（具体对象）、"
+    "visual 只能是描述具体画面的字符串（不超过 120 字）或 null，禁止填写对象或数组。"
+    "图片页同时填写 image_plan 对象：subject（具体画面的描述字符串）、"
     "queries（1-3 个简短英文检索词，保留地名和对象名）、source（stock/generated/auto）、"
-    "require_real（真实对象为 true）、purpose（cover/subject/support）。"
+    "require_real（指定地标、人物、品牌或产品型号，以及用户明确要求实拍时为 true）、"
+    "purpose（cover/subject/support）。"
+    "通用行业配图只优先照片，不强制实拍：visual_type=photo、source=stock、require_real=false，"
+    "允许图库无匹配时使用示意插图。queries 使用对象名，如 server rack、laptop smartphone，"
+    "避免长句和 AI computing infrastructure 等抽象描述；具体对象检索保留名称或型号。"
+    '例如："visual":"AI 芯片与数据中心服务器",'
+    '"image_plan":{"subject":"AI 芯片与数据中心服务器",'
+    '"queries":["AI chip datacenter"],"source":"stock",'
+    '"require_real":false,"purpose":"cover"}。'
     "旅游封面及景点介绍页应规划照片；行程使用时间线，预算使用表格。"
     "数据页优先图表，目录通常不配图；不能用生成图片冒充真实景点或产品。\n"
 )
@@ -118,6 +129,14 @@ class _ModelOutlinePageDraft(OutlinePageDraft):
         value = normalize_model_fields(value, cls.model_fields)
         if not isinstance(value, dict):
             return value
+        # Recover image plans misplaced in visual without replacing an explicit plan.
+        visual = value.get("visual")
+        if isinstance(visual, dict):
+            plan = normalize_model_fields(visual, ImagePlan.model_fields)
+            if isinstance(plan.get("subject"), str):
+                if value.get("image_plan") is None:
+                    value["image_plan"] = plan
+                value["visual"] = plan["subject"]
         for name in ("key_points", "source_refs", "planning_notes"):
             if name in value:
                 value[name] = normalize_string_list(value[name])
@@ -214,6 +233,11 @@ class DeepSeekOutlineGenerator:
                 return draft
             except (InvalidModelOutputError, ValidationError) as error:
                 last_error = error
+                logger.warning(
+                    "outline model output rejected attempt=%s details=%s",
+                    attempt + 1,
+                    safe_error_details(error),
+                )
 
         if isinstance(last_error, InvalidOutlineOutputError):
             raise InvalidOutlineOutputError(str(last_error)) from last_error
@@ -424,6 +448,7 @@ class DeepSeekOutlineGenerator:
                     "key_message": "本页唯一需要观众记住的判断",
                     "evidence": [],
                     "visual": None,
+                    "image_plan": None,
                 }
             ],
         }
@@ -454,7 +479,8 @@ class DeepSeekOutlineGenerator:
             '"decision_request":"..."},"pages":[{"title":"...","objective":"...",'
             '"key_message":"...","evidence":[],"key_points":["..."],'
             '"source_refs":["S1:1"],"layout_id":"cover","page_role":"cover",'
-            '"narrative_role":"cover","evidence_kind":"narrative","visual_type":"auto","visual":null}]}\n'
+            '"narrative_role":"cover","evidence_kind":"narrative","visual_type":"auto",'
+            '"visual":null,"image_plan":null}]}\n'
             f"示例：{json.dumps(example, ensure_ascii=False)}\n"
             "硬性约束：\n"
             "1. pages 数组长度必须精确等于用户给定的 page_count。\n"

@@ -10,16 +10,18 @@ import signal
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from datetime import UTC, datetime, timedelta, timezone
 from http.cookiejar import MozillaCookieJar
 from pathlib import Path
 from urllib.parse import urlparse
 
+import httpx
 from pydantic import BaseModel, Field, ValidationError
 
 from app.core.config import Settings
 from app.core.paths import REPO_ROOT
-from app.llm.errors import InvalidModelOutputError, LLMUnavailableError, safe_error_details
+from app.llm.errors import MODEL_ERROR_LABELS, NON_RETRYABLE_MODEL_ERRORS, safe_error_details
 from app.schemas.travel import (
     ResearchIssue,
     ServiceStatus,
@@ -29,11 +31,21 @@ from app.schemas.travel import (
     VideoAdvice,
     VideoSegment,
 )
-from app.services.travel_providers import TravelProviders
+from app.services.travel_providers import TravelProviders, coordinates, place_in_text
 
 logger = logging.getLogger(__name__)
 CHINA = timezone(timedelta(hours=8))
 MAX_VIDEO_DURATION_SECONDS = 15 * 60
+VIDEO_REJECTION_LABELS = {
+    "duration_unknown": "时长未知",
+    "video_too_long": "时长超限",
+    "popularity_unknown": "热度未知",
+    "below_popularity_threshold": "热度未达门槛",
+    "publication_unknown": "发布时间未知",
+    "outside_date_range": "超出发布时间范围",
+    "irrelevant_video": "内容不匹配",
+    "selection_limit": "已选取其他候选",
+}
 MEDIA_DOMAINS = (
     "bilibili.com",
     "hdslb.com",
@@ -129,12 +141,137 @@ def apply_metadata(video: TravelVideo, raw: dict):
     video.retrieved_at = datetime.now(UTC)
 
 
-def select_videos(videos: list[TravelVideo], conditions: TravelConditions, settings: Settings):
+def douyin_media_url(media: dict) -> str | None:
+    addresses = []
+    audio_tracks = media.get("bit_rate_audio")
+    for track in audio_tracks if isinstance(audio_tracks, list) else []:
+        audio = track.get("audio_meta") if isinstance(track, dict) else None
+        if not isinstance(audio, dict) or audio.get("media_type") != "audio":
+            continue
+        urls = audio.get("url_list")
+        if isinstance(urls, dict):
+            urls = [urls.get(key) for key in ("main_url", "backup_url", "fallback_url")]
+        addresses.append((0, audio.get("size"), urls))
+    variants = media.get("bit_rate")
+    variants = variants if isinstance(variants, list) else []
+    for variant in [media, *variants]:
+        if isinstance(variant, dict) and variant.get("is_bytevc1") not in (None, 0):
+            continue
+        address = variant.get("play_addr") if isinstance(variant, dict) else None
+        if isinstance(address, dict):
+            addresses.append((1, address.get("data_size"), address.get("url_list")))
+    candidates = []
+    for priority, size, urls in addresses:
+        if not isinstance(urls, list):
+            continue
+        url = next(
+            (
+                url
+                for url in urls
+                if isinstance(url, str)
+                and public_media_url(url)
+                and (
+                    priority == 0
+                    or (
+                        "/media-video-" not in urlparse(url).path
+                        and "/play/dash" not in urlparse(url).path
+                    )
+                )
+            ),
+            None,
+        )
+        if not url:
+            continue
+        size = size if type(size) in {int, float} and math.isfinite(size) and size > 0 else math.inf
+        candidates.append((priority, size, url))
+    # DASH video streams omit audio; prefer the video's audio track, then smaller muxed media.
+    return min(candidates, key=lambda item: item[:2])[2] if candidates else None
+
+
+def douyin_item_metadata(data, identifier: str) -> dict:
+    stack = [(data, 0)]
+    visited = 0
+    while stack and visited < 10_000:
+        node, depth = stack.pop()
+        visited += 1
+        if depth > 20:
+            continue
+        if isinstance(node, list):
+            stack.extend((child, depth + 1) for child in node[:200])
+        elif isinstance(node, dict):
+            if str(node.get("aweme_id") or node.get("awemeId") or "") == identifier:
+                stats = node.get("statistics") or {}
+                media = node.get("video") or {}
+                author = node.get("author") or {}
+                if not all(isinstance(value, dict) for value in (stats, media, author)):
+                    continue
+                duration = media.get("duration")
+                try:
+                    duration = float(duration) / 1000
+                except (TypeError, ValueError):
+                    duration = None
+                return {
+                    "title": node.get("desc"),
+                    "author": author.get("nickname"),
+                    "timestamp": node.get("create_time") or node.get("createTime"),
+                    "likes": stats.get("digg_count", stats.get("diggCount")),
+                    "favorites": stats.get("collect_count", stats.get("collectCount")),
+                    "duration_seconds": duration,
+                    "media_url": douyin_media_url(media),
+                }
+            stack.extend(
+                (child, depth + 1) for child in node.values() if isinstance(child, (dict, list))
+            )
+    return {}
+
+
+def metadata_complete(video: TravelVideo) -> bool:
+    return (
+        video.duration_seconds is not None
+        and video.duration_seconds > 0
+        and video.published_at is not None
+        and (video.likes is not None or video.favorites is not None)
+    )
+
+
+def video_locations(providers: TravelProviders, conditions: TravelConditions) -> list[str]:
+    cities = [place.city.removesuffix("市") for place in providers.data.places if place.city]
+    return list(dict.fromkeys([*cities, conditions.destination]))
+
+
+async def resolve_video_cities(providers: TravelProviders):
+    cities = {}
+    for place in providers.data.places[:4]:
+        if place.city or not coordinates(place.location):
+            continue
+        if place.location not in cities:
+            payload = await providers.call(
+                "amap",
+                "https://restapi.amap.com/v3/geocode/regeo",
+                params={"location": place.location, "extensions": "base"},
+            )
+            component = ((payload or {}).get("regeocode") or {}).get("addressComponent") or {}
+            city = component.get("city")
+            if not isinstance(city, str) or not city:
+                province = component.get("province")
+                city = province if isinstance(province, str) and province.endswith("市") else ""
+            cities[place.location] = city
+        place.city = cities[place.location]
+
+
+def select_videos(
+    videos: list[TravelVideo],
+    conditions: TravelConditions,
+    settings: Settings,
+    *,
+    locations: list[str] | None = None,
+):
     now = datetime.now(UTC)
     preferences = conditions.video_preferences
     ranked = []
     for video in videos:
         video.selected = False
+        video.eligible = False
         video.status = "rejected"
         if video.duration_seconds is None or video.duration_seconds <= 0:
             video.error_code = "duration_unknown"
@@ -162,8 +299,13 @@ def select_videos(videos: list[TravelVideo], conditions: TravelConditions, setti
         if age < -1 or age > preferences.lookback_days:
             video.error_code = "outside_date_range"
             continue
-        subjects = [conditions.destination, *conditions.interests]
-        if not any(subject and subject in video.title for subject in subjects):
+        subjects = [
+            conditions.destination,
+            *(locations or []),
+            *conditions.must_visit,
+            *conditions.interests,
+        ]
+        if not any(subject and place_in_text(subject, video.title) for subject in subjects):
             video.error_code = "irrelevant_video"
             continue
         video.score = round(
@@ -173,6 +315,7 @@ def select_videos(videos: list[TravelVideo], conditions: TravelConditions, setti
             4,
         )
         video.error_code = None
+        video.eligible = True
         ranked.append(video)
     ranked.sort(key=lambda item: (-item.score, item.id))
     # Reserve a candidate for each researched subject before filling by score.
@@ -236,12 +379,43 @@ async def run_video_worker(payload: dict, timeout: float) -> dict:
         return {"error_code": "invalid_response"}
 
 
-DOUYIN_PAGE_DATA = """() => {
+DOUYIN_PAGE_DATA = """(identifier) => {
     const text = document.body.innerText;
     const count = name => Array.from(document.querySelectorAll(`[data-e2e="${name}"]`))
         .map(node => node.textContent?.trim()).find(value => /^\\d/.test(value));
     const date = text.match(/发布时间[：:]?\\s*(\\d{4}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2})/);
-    const duration = text.match(/\\d{2}:\\d{2}\\s*\\/\\s*((?:\\d+:)?\\d{2}:\\d{2})/);
+    const duration = text.match(/\\d{1,2}:\\d{2}\\s*\\/\\s*((?:\\d+:)?\\d{1,2}:\\d{2})/);
+    let visited = 0;
+    const seen = new WeakSet();
+    const findItem = (node, depth = 0) => {
+        if (!node || typeof node !== 'object' || depth > 20
+            || visited++ > 10000 || seen.has(node)) return null;
+        seen.add(node);
+        if (String(node.aweme_id || node.awemeId || '') === identifier) return node;
+        for (const value of Object.values(node)) {
+            const found = findItem(value, depth + 1);
+            if (found) return found;
+        }
+        return null;
+    };
+    let item = findItem(window._ROUTER_DATA);
+    const scripts = document.querySelectorAll(
+        'script[type="application/json"],script#RENDER_DATA,script#__NEXT_DATA__');
+    for (const script of scripts) {
+        if (item) break;
+        try { item = findItem(JSON.parse(script.textContent)); }
+        catch {
+            try { item = findItem(JSON.parse(decodeURIComponent(script.textContent))); } catch {}
+        }
+    }
+    const players = Array.from(document.querySelectorAll('video'))
+        .filter(node => node.getBoundingClientRect().width > 100
+            && node.getBoundingClientRect().height > 100)
+        .sort((a, b) => b.getBoundingClientRect().width * b.getBoundingClientRect().height
+            - a.getBoundingClientRect().width * a.getBoundingClientRect().height);
+    const player = players[0];
+    const playerDuration = player && Number.isFinite(player.duration)
+        && player.duration > 0 ? player.duration : null;
     const chapterLabel = Array.from(document.querySelectorAll('div,span'))
         .find(node => node.children.length === 0 && node.textContent.trim() === '章节要点');
     let chapterNode = chapterLabel, chapters = '';
@@ -257,7 +431,8 @@ DOUYIN_PAGE_DATA = """() => {
         author: document.querySelector('[data-e2e="user-name"]')?.textContent || '',
         likes: count('video-player-digg'), favorites: count('video-player-collect'),
         published_at: date?.[1]?.replace(' ', 'T'), duration: duration?.[1], chapters,
-        restricted: /登录后即可搜索|验证码|安全验证/.test(text)
+        duration_seconds: playerDuration, media_url: player?.currentSrc, structured_data: item,
+        restricted: /登录后即可搜索|登录后观看|验证码|安全验证/.test(text)
     };
 }"""
 
@@ -319,27 +494,55 @@ class VideoReader:
         return self._context
 
     async def douyin_metadata(self, video: TravelVideo) -> dict:
+        from playwright.async_api import TimeoutError as PageTimeoutError
+
         context = await self.browser_context()
         page = await context.new_page()
-        media = []
+        identifier = video.id.split(":", 1)[1]
+        captured = {}
+        pending = set()
+
+        async def read_response(response):
+            try:
+                async with asyncio.timeout(3):
+                    raw = douyin_item_metadata(await response.json(), identifier)
+                captured.update({key: value for key, value in raw.items() if value is not None})
+            except Exception:
+                pass
 
         def observe(response):
-            if (
-                "douyinvod.com" in response.url or "mime_type=video" in response.url
-            ) and public_media_url(response.url):
-                media.append(response.url)
+            host = (urlparse(response.url).hostname or "").lower()
+            if (host == "douyin.com" or host.endswith(".douyin.com")) and "aweme" in response.url:
+                task = asyncio.create_task(read_response(response))
+                pending.add(task)
+                task.add_done_callback(pending.discard)
 
         page.on("response", observe)
-        page.on("request", observe)
         try:
-            await page.goto(video.url, wait_until="domcontentloaded", timeout=20000)
-            await page.wait_for_function(
-                """() => Array.from(document.querySelectorAll('[data-e2e="video-player-digg"]'))
-                    .some(node => /^\\d/.test(node.textContent.trim()))""",
-                timeout=15000,
+            timed_out = False
+            try:
+                await page.goto(video.url, wait_until="domcontentloaded", timeout=15000)
+                await page.wait_for_function(
+                    f"(id) => {{ const raw = ({DOUYIN_PAGE_DATA})(id); "
+                    "return raw.restricted || raw.structured_data || "
+                    "raw.duration_seconds > 0 || Boolean(raw.duration); }",
+                    arg=identifier,
+                    timeout=8000,
+                )
+            except PageTimeoutError:
+                timed_out = True
+            raw = await page.evaluate(DOUYIN_PAGE_DATA, identifier)
+            structured = douyin_item_metadata(raw.pop("structured_data", None), identifier)
+            if pending:
+                await asyncio.wait(pending, timeout=1)
+            raw.update(
+                {
+                    key: value
+                    for key, value in {**structured, **captured}.items()
+                    if value is not None
+                }
             )
-            raw = await page.evaluate(DOUYIN_PAGE_DATA)
-            if raw.get("duration"):
+            if not raw.get("duration_seconds") and raw.get("duration"):
                 from app.services.travel_video_extract import timestamp_seconds
 
                 duration = timestamp_seconds(raw["duration"])
@@ -360,10 +563,19 @@ class VideoReader:
                         VideoSegment(start=timestamp_seconds(match[1]), text=text[:2000])
                     )
             self._summaries[video.id] = chapters
-            if media:
-                self._media[video.id] = media[0]
+            if public_media_url(str(raw.get("media_url") or "")):
+                self._media[video.id] = raw["media_url"]
+            if raw.get("restricted"):
+                raw["error_code"] = "access_restricted"
+            elif timed_out:
+                raw["error_code"] = "metadata_timeout"
             return raw
         finally:
+            page.remove_listener("response", observe)
+            for task in list(pending):
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
             await page.close()
 
     async def bilibili_metadata(self, video: TravelVideo) -> dict:
@@ -376,7 +588,11 @@ class VideoReader:
         response.raise_for_status()
         payload = response.json()
         if payload.get("code") != 0 or not isinstance(payload.get("data"), dict):
-            return {}
+            return {
+                "error_code": "access_restricted"
+                if payload.get("code") in {-403, -412, -101}
+                else "metadata_incomplete"
+            }
         data = payload["data"]
         self._bilibili[video.id] = data
         return {
@@ -389,6 +605,7 @@ class VideoReader:
         }
 
     async def inspect(self, video: TravelVideo):
+        video.metadata_error_code = None
         try:
             async with asyncio.timeout(self.settings.travel_video_item_timeout_seconds):
                 try:
@@ -397,25 +614,43 @@ class VideoReader:
                         if video.platform == "douyin"
                         else self.bilibili_metadata(video)
                     )
-                except Exception:
+                except Exception as error:
                     raw = {}
+                    video.metadata_error_code = (
+                        "metadata_timeout"
+                        if "timeout" in type(error).__name__.lower()
+                        else "access_restricted"
+                        if isinstance(error, httpx.HTTPStatusError)
+                        and error.response.status_code in {401, 403, 412}
+                        else "metadata_failed"
+                    )
                 apply_metadata(video, raw)
-                if (
-                    video.likes is None
-                    and video.favorites is None
-                    or video.duration_seconds is None
-                    or video.published_at is None
-                ):
+                video.metadata_error_code = raw.get("error_code") or video.metadata_error_code
+                if not metadata_complete(video):
                     with tempfile.TemporaryDirectory(prefix="aippt-video-") as directory:
                         raw = await run_video_worker(
-                            {**self.worker_payload(video, directory), "action": "inspect"},
+                            {
+                                **self.worker_payload(video, directory),
+                                "action": "inspect",
+                                "metadata_only": True,
+                            },
                             self.settings.travel_video_item_timeout_seconds,
                         )
                     apply_metadata(video, raw)
+                    video.metadata_error_code = raw.get("error_code") or video.metadata_error_code
+                if metadata_complete(video):
+                    video.metadata_error_code = None
+                elif not video.metadata_error_code:
+                    video.metadata_error_code = "metadata_incomplete"
+        except asyncio.CancelledError:
+            if not metadata_complete(video):
+                video.metadata_error_code = "metadata_timeout"
+            raise
         except Exception as error:
-            video.error_code = (
-                "metadata_timeout" if isinstance(error, TimeoutError) else "access_restricted"
-            )
+            if video.metadata_error_code not in {"access_restricted", "verification_required"}:
+                video.metadata_error_code = (
+                    "metadata_timeout" if isinstance(error, TimeoutError) else "metadata_failed"
+                )
             logger.info("travel video=%s stage=metadata error=%s", video.id, type(error).__name__)
 
     async def bilibili_subtitles(self, video: TravelVideo) -> list[VideoSegment]:
@@ -476,6 +711,7 @@ class VideoReader:
             video.selected, video.status, video.error_code = False, "rejected", "video_too_long"
             return
         segments = []
+        cancelled = False
         try:
             if video.platform == "bilibili":
                 async with asyncio.timeout(self.settings.travel_video_item_timeout_seconds):
@@ -536,7 +772,8 @@ class VideoReader:
                             video.error_code = result.get("error_code", "transcription_empty")
                     else:
                         video.error_code = audio.get("error_code", "audio_unavailable")
-                except TimeoutError:
+                except (TimeoutError, asyncio.CancelledError) as error:
+                    cancelled = isinstance(error, asyncio.CancelledError)
                     video.error_code = "transcription_timeout" if transcribing else "audio_timeout"
                     try:
                         segments = valid_segments(
@@ -555,6 +792,8 @@ class VideoReader:
             if not segments:
                 video.status = "unavailable"
                 video.error_code = video.error_code or "content_unavailable"
+                if cancelled:
+                    raise asyncio.CancelledError
                 return
         # Retain exactly the evidence passed to the model in the saved source.
         kept, used = [], 0
@@ -566,6 +805,8 @@ class VideoReader:
         video.content_truncated |= len(kept) < len(segments)
         video.segments, video.status = kept, "ready"
         video.error_code = "content_partial" if video.content_truncated else None
+        if cancelled:
+            raise asyncio.CancelledError
 
 
 def valid_segments(values) -> list[VideoSegment]:
@@ -614,6 +855,7 @@ async def extract_video_advice(
             ensure_ascii=False,
         ),
         purpose="整理视频旅游建议",
+        max_tokens=4096,
     )
     result = []
     for item in selection.items:
@@ -653,25 +895,73 @@ async def extract_video_advice(
 
 
 async def discover_videos(
-    providers: TravelProviders, conditions: TravelConditions, subjects: list[str] | None = None
+    providers: TravelProviders,
+    conditions: TravelConditions,
+    subjects: list[str] | None = None,
+    *,
+    round_index: int = 0,
+    exclude_ids: set[str] | None = None,
+    timeout_seconds: float = 45,
 ) -> list[TravelVideo]:
     found: dict[str, TravelVideo] = {}
-    topics = ["旅游攻略", "住宿推荐 避坑", "美食餐厅 打卡攻略"]
-    topics += [f"{name} 游览路线 打卡 避坑" for name in (subjects or conditions.interests)[:2]]
-    limit = max(1, min(providers.settings.travel_video_max_candidates, 30))
+    excluded = exclude_ids or set()
+    limit = min(12, max(0, min(providers.settings.travel_video_max_candidates, 60) - len(excluded)))
+    if not limit:
+        return []
+    keywords = (
+        ["旅游攻略", "住宿推荐 避坑", "美食餐厅 打卡攻略"],
+        ["自由行 路线攻略", "酒店 住宿体验", "本地美食 探店"],
+        ["旅行 实用攻略", "住宿 测评", "特色餐厅 推荐"],
+    )[round_index % 3]
+    locations = video_locations(providers, conditions)
+    cities = [location for location in locations if location != conditions.destination]
+    location = (cities or locations)[round_index % len(cities or locations)]
+    names = list(dict.fromkeys([*(subjects or []), *conditions.must_visit, *conditions.interests]))
+    topics = []
+    if names:
+        topics.append((names[round_index % len(names)], "游览路线 打卡 避坑"))
+    topics.extend((location, topic) for topic in keywords)
     platforms = list(dict.fromkeys(conditions.video_preferences.platforms))
-    per_query = max(1, limit // (len(topics) * len(platforms)))
-    for topic in topics:
+    per_query = min(5, max(2, math.ceil(limit / (len(topics) * len(platforms)))))
+    now = datetime.now(CHINA)
+    cutoff = now - timedelta(days=conditions.video_preferences.lookback_days)
+    date_filter = f"cdr:1,cd_min:{cutoff:%m/%d/%Y},cd_max:{now:%m/%d/%Y}"
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    for subject, topic in topics:
         for platform in platforms:
-            payload = await providers.call(
-                "firecrawl",
-                "https://api.firecrawl.dev/v2/search",
-                body={
-                    "query": f"site:{platform}.com/video {conditions.destination} {topic}",
-                    "limit": min(5, per_query),
-                    "lang": "zh",
-                },
-            )
+            if providers.last_error("firecrawl") in {
+                "http_429",
+                "http_402",
+                "http_401",
+                "http_403",
+            }:
+                return list(found.values())[:limit]
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return list(found.values())[:limit]
+            try:
+                async with asyncio.timeout(remaining):
+                    payload = await providers.call(
+                        "firecrawl",
+                        "https://api.firecrawl.dev/v2/search",
+                        body={
+                            "query": f"site:{platform}.com/video {subject} {topic}",
+                            "limit": per_query,
+                            "lang": "zh",
+                            "tbs": date_filter,
+                        },
+                        retries=0,
+                    )
+            except TimeoutError:
+                providers.data.issues.append(
+                    ResearchIssue(
+                        stage="视频检索",
+                        code="video_search_timeout",
+                        message="视频补搜到达时间上限，已找到的候选仍保留",
+                        action="可查看已获取的候选，稍后刷新资料。",
+                    )
+                )
+                return list(found.values())[:limit]
             raw = (payload or {}).get("data") or {}
             results = raw.get("web", []) if isinstance(raw, dict) else raw
             for item in results if isinstance(results, list) else []:
@@ -679,6 +969,8 @@ async def discover_videos(
                 if not parsed or parsed[0] != platform:
                     continue
                 identifier = f"{parsed[0]}:{parsed[1]}"
+                if identifier in excluded:
+                    continue
                 if identifier not in found:
                     found[identifier] = TravelVideo(
                         id=identifier,
@@ -687,8 +979,9 @@ async def discover_videos(
                         title=str(item.get("title") or "")[:500],
                         retrieved_at=datetime.now(UTC),
                     )
-                if topic not in found[identifier].topics:
-                    found[identifier].topics.append(topic)
+                topic_name = f"{subject} {topic}"
+                if topic_name not in found[identifier].topics:
+                    found[identifier].topics.append(topic_name)
             if len(found) >= limit:
                 break
         if len(found) >= limit:
@@ -713,29 +1006,99 @@ async def research_videos(
             if not providers.configured("firecrawl"):
                 error_code = "not_configured"
                 return
-            data.videos = await discover_videos(providers, conditions, subjects)
-            if not data.videos:
-                error_code = "no_candidates"
-                return
-            # Limit concurrent Chromium pages, platform requests and metadata subprocesses.
+            await resolve_video_cities(providers)
+            selection_conditions = conditions.model_copy(
+                update={
+                    "interests": list(dict.fromkeys([*conditions.interests, *(subjects or [])]))
+                }
+            )
+            rounds = max(1, min(providers.settings.travel_video_search_rounds, 3))
+            target = max(1, min(providers.settings.travel_video_max_selected, 8))
+            deadline = (
+                asyncio.get_running_loop().time() + providers.settings.travel_video_timeout_seconds
+            )
+            content_reserve = min(120, providers.settings.travel_video_timeout_seconds / 2)
+            selected = []
+            search_error = None
             semaphore = asyncio.Semaphore(2)
 
             async def inspect(video):
                 async with semaphore:
                     await reader.inspect(video)
 
-            await asyncio.gather(*(inspect(video) for video in data.videos))
-            selection_conditions = conditions.model_copy(
-                update={
-                    "interests": list(dict.fromkeys([*conditions.interests, *(subjects or [])]))
-                }
-            )
-            selected = select_videos(data.videos, selection_conditions, providers.settings)
+            for round_index in range(rounds):
+                if providers.last_error("firecrawl") in {
+                    "http_429",
+                    "http_402",
+                    "http_401",
+                    "http_403",
+                }:
+                    search_error = providers.last_error("firecrawl")
+                    break
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= content_reserve:
+                    break
+                batch = await discover_videos(
+                    providers,
+                    conditions,
+                    subjects,
+                    round_index=round_index,
+                    exclude_ids={video.id for video in data.videos},
+                    timeout_seconds=min(30, remaining - content_reserve),
+                )
+                search_error = providers.last_error("firecrawl")
+                seen = {video.id for video in data.videos}
+                unique = []
+                for video in batch:
+                    if video.id not in seen:
+                        seen.add(video.id)
+                        unique.append(video)
+                batch = unique
+                available = max(
+                    0, min(providers.settings.travel_video_max_candidates, 60) - len(data.videos)
+                )
+                batch = batch[:available]
+                data.videos.extend(batch)
+                remaining = deadline - asyncio.get_running_loop().time()
+                inspection_budget = max(1, (remaining - content_reserve) / (rounds - round_index))
+                try:
+                    async with asyncio.timeout(inspection_budget):
+                        await asyncio.gather(*(inspect(video) for video in batch))
+                except TimeoutError:
+                    for video in batch:
+                        if not metadata_complete(video) and not video.metadata_error_code:
+                            video.metadata_error_code = "metadata_timeout"
+                selected = select_videos(
+                    data.videos,
+                    selection_conditions,
+                    providers.settings,
+                    locations=video_locations(providers, conditions),
+                )
+                if (
+                    len(selected) >= target
+                    or len(data.videos) >= providers.settings.travel_video_max_candidates
+                    or (
+                        selected and deadline - asyncio.get_running_loop().time() <= content_reserve
+                    )
+                ):
+                    break
+                if search_error in {"http_402", "http_401", "http_403", "provider_rejected"}:
+                    break
+            if not data.videos:
+                error_code = search_error or "no_candidates"
+                return
             if not selected:
-                error_code = "no_eligible_videos"
+                error_code = search_error or "no_eligible_videos"
                 return
             for video in selected:
-                await reader.content(video)
+                remaining = deadline - asyncio.get_running_loop().time()
+                read_budget = max(1, remaining - min(30, providers.settings.llm_timeout_seconds))
+                try:
+                    async with asyncio.timeout(read_budget):
+                        await reader.content(video)
+                except TimeoutError:
+                    if video.status != "ready":
+                        video.status, video.error_code = "unavailable", "content_timeout"
                 if video.status != "ready":
                     continue
                 text = (
@@ -766,20 +1129,36 @@ async def research_videos(
                                 video.error_code = "no_relevant_advice"
                         break
                     except Exception as error:
+                        details = safe_error_details(error)
                         logger.warning(
                             "travel video=%s stage=advice attempt=%s details=%s",
                             video.id,
                             attempt + 1,
-                            safe_error_details(error),
+                            details,
                         )
-                        if attempt == 0 and isinstance(
-                            error, (TimeoutError, LLMUnavailableError, InvalidModelOutputError)
-                        ):
+                        code = details["error_code"]
+                        if code in NON_RETRYABLE_MODEL_ERRORS:
+                            video.error_code = code
+                            error_code = code
+                            break
+                        if attempt == 0 and code in {
+                            "timeout",
+                            "unavailable",
+                            "rate_limited",
+                            "invalid_output",
+                        }:
+                            await asyncio.sleep(
+                                details.get("retry_after_seconds", 5)
+                                if code == "rate_limited"
+                                else 1
+                            )
                             continue
                         video.error_code = "advice_extraction_failed"
                         break
+                if error_code in NON_RETRYABLE_MODEL_ERRORS:
+                    break
             if not data.video_advice:
-                error_code = "no_video_advice"
+                error_code = error_code or "no_video_advice"
     except TimeoutError:
         error_code = "video_timeout"
     except asyncio.CancelledError:
@@ -801,6 +1180,33 @@ async def research_videos(
             video.selected and (video.status != "ready" or video.error_code)
             for video in data.videos
         )
+        eligible = sum(video.eligible or video.selected for video in data.videos)
+        extracted = len({advice.video_id for advice in data.video_advice})
+        metadata_failures = sum(bool(video.metadata_error_code) for video in data.videos)
+        content_errors = {
+            video.error_code for video in data.videos if video.selected and video.status != "ready"
+        }
+        action = (
+            "请检查模型配置、访问权限或额度后刷新资料。"
+            if error_code in NON_RETRYABLE_MODEL_ERRORS
+            else "请检查联网检索服务的剩余额度或计费状态后刷新资料。"
+            if error_code == "http_402"
+            else "视频检索受限流影响，请稍后刷新。"
+            if error_code == "http_429"
+            else "视频采集依赖缺失，请检查 yt-dlp、FFmpeg 和语音转写依赖后刷新。"
+            if "dependency_missing" in content_errors
+            else "入选视频的媒体文件超过下载上限，可稍后刷新资料或改用其他视频候选。"
+            if "download_too_large" in content_errors
+            else "入选视频访问或验证受限，需配置有效的平台登录态后刷新资料。"
+            if content_errors & {"access_restricted", "verification_required"}
+            else "已找到达标视频，但内容读取或建议整理未完成；请查看视频的具体状态后刷新。"
+            if eligible and not count
+            else "部分平台元数据未取得，请检查采集状态；登录或验证受限时需配置平台登录态。"
+            if metadata_failures
+            else "未找到满足当前条件的视频，请调整目的地或稍后刷新。"
+            if not count
+            else "可查看视频原文与时间戳，复核体验建议。"
+        )
         data.services.append(
             ServiceStatus(
                 service="video",
@@ -814,16 +1220,33 @@ async def research_videos(
                 count=count,
                 error_code=error_code,
                 duration_ms=int((datetime.now(UTC) - started).total_seconds() * 1000),
-                message="视频建议已整理" if count else "暂未取得符合条件的视频建议",
-                action="可调整热度门槛和发布时间范围后刷新；受限视频需配置登录态。",
+                message=(
+                    f"找到 {len(data.videos)} 条候选，{eligible} 条达标，{extracted} 条提取到建议"
+                ),
+                action=action,
             )
         )
         if error_code:
+            rejected = Counter(
+                video.error_code or "unknown" for video in data.videos if video.status == "rejected"
+            )
+            reasons = "；".join(
+                f"{VIDEO_REJECTION_LABELS.get(code, '读取未完成')} {count} 条"
+                for code, count in rejected.items()
+            )
+            message = (
+                f"找到 {len(data.videos)} 条候选，{eligible} 条达标，{extracted} 条提取到建议"
+                + (f"；未入选原因：{reasons}" if reasons else "")
+            )
+            if error_code == "no_candidates":
+                message = "当前搜索未找到视频候选"
+            elif error_code in MODEL_ERROR_LABELS:
+                message += f"；建议整理失败：{MODEL_ERROR_LABELS[error_code]}"
             data.issues.append(
                 ResearchIssue(
                     stage="搜索与整理高热度视频",
                     code=error_code,
-                    message="部分视频资料未获取，已有来源与原文仍保留",
-                    action="检查视频采集依赖、登录态及筛选条件后刷新资料。",
+                    message=message,
+                    action=action,
                 )
             )

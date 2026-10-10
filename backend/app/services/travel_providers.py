@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import math
+import re
 import time
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from urllib.parse import urlparse
+from email.utils import parsedate_to_datetime
+from urllib.parse import urljoin, urlparse
+from weakref import WeakKeyDictionary
 from zoneinfo import ZoneInfo
 
 import httpx
+from markdown_it import MarkdownIt
 
 from app.core.config import Settings
 from app.schemas.travel import (
     AirQualityDay,
     ResearchData,
+    ResearchIssue,
     ServiceStatus,
     TravelConditions,
     TravelPlace,
@@ -44,6 +50,7 @@ OFFICIAL_HOSTS = {
     "ihg.com",
     "huazhu.com",
     "atour.com",
+    "txdyq.cn",
 }
 OFFICIAL_PLACE_DOMAINS = {
     "故宫": "dpm.org.cn",
@@ -52,18 +59,67 @@ OFFICIAL_PLACE_DOMAINS = {
     "八达岭": "badaling.cn",
     "慕田峪": "mutianyugreatwall.com",
     "国家博物馆": "chnmuseum.cn",
+    "天下第一泉": "txdyq.cn",
+    "趵突泉": "txdyq.cn",
+    "五龙潭": "txdyq.cn",
+    "大明湖": "txdyq.cn",
+    "黑虎泉": "txdyq.cn",
+}
+OFFICIAL_PLACE_ALIASES = {
+    "趵突泉": ("Baotu Spring",),
+    "五龙潭": ("Wulongtan", "Wulong Tan"),
+    "大明湖": ("Daming Lake",),
+    "黑虎泉": ("Black Tiger Spring",),
+    "天下第一泉": ("Best Spring Under Heaven",),
+}
+OFFICIAL_PLACE_GROUPS = {
+    "天下第一泉": ("趵突泉", "五龙潭", "大明湖", "黑虎泉"),
 }
 
 
-def public_url(url: str) -> bool:
+def place_search_name(name: str) -> str:
+    return re.sub(r"(?:风景名胜区|风景区|景区|公园)$", "", name.strip())
+
+
+def place_in_text(name: str, text: str) -> bool:
+    name = place_search_name(name)
+    aliases = (name, *OFFICIAL_PLACE_ALIASES.get(name, ()))
+    return any(alias.casefold() in text.casefold() for alias in aliases if alias)
+
+
+def official_place_for_text(source: TravelSource, text: str) -> str | None:
+    if source.trust != "official":
+        return None
+    host = (urlparse(source.url).hostname or "").lower()
+    names = [
+        name
+        for name, domain in OFFICIAL_PLACE_DOMAINS.items()
+        if host == domain or host.endswith("." + domain) or host.endswith(".gov.cn")
+    ]
+    matched = [name for name in names if place_in_text(name, text)]
+    if len(matched) == 1:
+        return matched[0]
+    return names[0] if not matched and len(names) == 1 else None
+
+
+def public_url(url: str, *, allow_official_http=False) -> bool:
     parsed = urlparse(url)
-    host = parsed.hostname or ""
+    host = (parsed.hostname or "").lower()
+    try:
+        port = parsed.port
+    except ValueError:
+        return False
     return (
-        parsed.scheme == "https"
+        (
+            parsed.scheme == "https" and port in {None, 443}
+            or allow_official_http
+            and parsed.scheme == "http"
+            and port in {None, 80}
+            and official_url(url)
+        )
         and bool(host)
         and not parsed.username
         and not parsed.password
-        and parsed.port in {None, 443}
         and host != "localhost"
         and not host.replace(".", "").isdigit()
         and not host.endswith((".local", ".internal"))
@@ -79,9 +135,9 @@ def official_url(url: str) -> bool:
 
 def photo_url(value: str) -> str:
     parsed = urlparse(value)
-    if parsed.scheme == "http":
+    if parsed.scheme == "http" and not official_url(value):
         value = parsed._replace(scheme="https").geturl()
-    return value if public_url(value) else ""
+    return value if public_url(value, allow_official_http=True) else ""
 
 
 def trip_dates(conditions: TravelConditions) -> list[date | None]:
@@ -208,6 +264,57 @@ def normalize_weather(payload: dict, dates: list[date | None], source_id: str) -
     return result
 
 
+def retry_after_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        delay = float(value)
+    except ValueError:
+        try:
+            deadline = parsedate_to_datetime(value)
+            if deadline.tzinfo is None:
+                deadline = deadline.replace(tzinfo=UTC)
+            delay = (deadline - datetime.now(UTC)).total_seconds()
+        except (ValueError, TypeError, OverflowError):
+            return None
+    return max(0, delay) if math.isfinite(delay) else None
+
+
+class FirecrawlLimiter:
+    def __init__(self, settings: Settings):
+        self.semaphore = asyncio.Semaphore(max(1, min(2, settings.travel_web_concurrency)))
+        self.interval = 60 / max(1, settings.travel_web_requests_per_minute)
+        self._lock = asyncio.Lock()
+        self._next_request: dict[str, float] = {}
+        self._cooldown_until = 0.0
+
+    async def wait(self, endpoint: str):
+        while True:
+            async with self._lock:
+                now = time.monotonic()
+                delay = max(self._next_request.get(endpoint, 0), self._cooldown_until) - now
+                if delay <= 0:
+                    self._next_request[endpoint] = now + self.interval
+                    return
+            await asyncio.sleep(delay)
+
+    async def cooldown(self, delay: float):
+        async with self._lock:
+            self._cooldown_until = max(self._cooldown_until, time.monotonic() + delay)
+
+
+# Research jobs in one worker share the account's pacing and cooldown.
+_FIRECRAWL_LIMITERS: WeakKeyDictionary = WeakKeyDictionary()
+
+
+def firecrawl_limiter(settings: Settings) -> FirecrawlLimiter:
+    accounts = _FIRECRAWL_LIMITERS.setdefault(asyncio.get_running_loop(), {})
+    key = hashlib.sha256(settings.firecrawl_api_key.encode()).hexdigest()
+    if key not in accounts:
+        accounts[key] = FirecrawlLimiter(settings)
+    return accounts[key]
+
+
 class TravelProviders:
     def __init__(self, client: httpx.AsyncClient, settings: Settings, data: ResearchData):
         self.client = client
@@ -215,6 +322,9 @@ class TravelProviders:
         self.data = data
         self._semaphore = asyncio.Semaphore(4)
         self._counts: dict[str, list[ServiceStatus]] = {}
+        self._page_tasks: dict[str, asyncio.Task] = {}
+        self._page_errors: dict[str, str] = {}
+        self._official_tasks: dict[str, asyncio.Task] = {}
 
     def configured(self, service: str) -> bool:
         if service == "qweather":
@@ -240,11 +350,21 @@ class TravelProviders:
         self.data.sources.append(source)
         return source
 
-    async def call(self, service: str, url: str, *, params=None, body=None) -> dict | None:
+    async def call(
+        self, service: str, url: str, *, params=None, body=None, retries=None
+    ) -> dict | None:
         started = time.monotonic()
         status = "failed"
         code = "unavailable"
         result = None
+        timeout = (
+            max(
+                self.settings.travel_service_timeout_seconds,
+                self.settings.travel_web_timeout_seconds,
+            )
+            if service == "firecrawl"
+            else self.settings.travel_service_timeout_seconds
+        )
         if not self.configured(service):
             status, code = "not_configured", "not_configured"
         else:
@@ -256,18 +376,33 @@ class TravelProviders:
                 headers["X-QW-Api-Key"] = self.settings.qweather_api_key
             else:
                 headers["Authorization"] = f"Bearer {self.settings.firecrawl_api_key}"
-            for attempt in range(min(max(self.settings.travel_service_retries, 0), 2) + 1):
+            retry_limit = min(
+                max(self.settings.travel_service_retries if retries is None else retries, 0), 2
+            )
+            limiter = firecrawl_limiter(self.settings) if service == "firecrawl" else None
+            semaphore = limiter.semaphore if limiter else self._semaphore
+            for attempt in range(retry_limit + 1):
+                retry_delay = (2 ** attempt) if limiter else 0.25 * (attempt + 1)
                 try:
-                    async with self._semaphore:
-                        async with asyncio.timeout(self.settings.travel_service_timeout_seconds):
+                    async with semaphore:
+                        if limiter:
+                            await limiter.wait(urlparse(url).path)
+                        async with asyncio.timeout(timeout):
                             response = await self.client.request(
                                 "POST" if body is not None else "GET",
                                 url,
                                 params=params or None,
                                 json=body,
                                 headers=headers,
-                                timeout=self.settings.travel_service_timeout_seconds,
+                                timeout=timeout,
                             )
+                            if limiter and response.status_code == 429:
+                                retry_delay = retry_after_seconds(
+                                    response.headers.get("Retry-After")
+                                )
+                                if retry_delay is None:
+                                    retry_delay = 60 * (2 ** attempt)
+                                await limiter.cooldown(max(limiter.interval, retry_delay))
                             response.raise_for_status()
                             result = response.json()
                     if not isinstance(result, dict):
@@ -295,8 +430,8 @@ class TravelProviders:
                         break
                 except (httpx.HTTPError, ValueError):
                     code = "invalid_response"
-                if attempt < self.settings.travel_service_retries:
-                    await asyncio.sleep(0.25 * (attempt + 1))
+                if attempt < retry_limit:
+                    await asyncio.sleep(retry_delay)
         elapsed = int((time.monotonic() - started) * 1000)
         self._counts.setdefault(service, []).append(
             ServiceStatus(
@@ -315,6 +450,10 @@ class TravelProviders:
             code,
         )
         return result
+
+    def last_error(self, service: str) -> str | None:
+        calls = self._counts.get(service, [])
+        return calls[-1].error_code if calls else None
 
     def statuses(self) -> list[ServiceStatus]:
         results = []
@@ -478,6 +617,7 @@ class TravelProviders:
                     location=poi["location"],
                     address=poi.get("address") if isinstance(poi.get("address"), str) else "",
                     area=poi.get("adname") or "",
+                    city=poi.get("cityname") if isinstance(poi.get("cityname"), str) else "",
                     source_id=source.id,
                     near_place_id=near.id if near else None,
                     business_hours=str((poi.get("business") or {}).get("opentime_week") or "")
@@ -499,50 +639,156 @@ class TravelProviders:
                 break
         return result
 
-    async def search(self, query: str, *, official=False):
+    async def scrape_page(self, url: str, title: str) -> TravelSource | None:
+        if not public_url(url, allow_official_http=True):
+            return None
+        if url not in self._page_tasks:
+            self._page_tasks[url] = asyncio.create_task(self._scrape_page(url, title))
+        return await self._page_tasks[url]
+
+    async def _scrape_page(self, url: str, title: str) -> TravelSource | None:
+        existing = next((source for source in self.data.sources if source.url == url), None)
+        if existing:
+            return existing
+        payload = await self.call(
+            "firecrawl",
+            "https://api.firecrawl.dev/v2/scrape",
+            body={
+                "url": url,
+                "formats": ["markdown"],
+                "onlyMainContent": True,
+                "location": {"country": "CN", "languages": ["zh-CN"]},
+                "maxAge": 0,
+            },
+        )
+        page = (payload or {}).get("data") or {}
+        metadata = page.get("metadata") or {}
+        status = metadata.get("statusCode")
+        if isinstance(status, int) and status >= 400:
+            self._page_errors[url] = f"source_http_{status}"
+            if status in {404, 410} and not official_url(url):
+                logger.info("travel stage=webpage error_code=source_http_%s optional=true", status)
+                return None
+            self.data.issues.append(
+                ResearchIssue(
+                    stage="官网与网页查询",
+                    code=f"source_http_{status}",
+                    message=f"{title}：网页返回 {status}，未取得正文",
+                    action="查看来源网页或稍后刷新；搜索摘要不作为已核实价格。",
+                )
+            )
+            return None
+        text = page.get("markdown") or ""
+        if not text:
+            return None
+        return self.source("firecrawl", title, url, text, official=official_url(url))
+
+    async def official_pages(self, domain: str):
+        if domain not in self._official_tasks:
+            self._official_tasks[domain] = asyncio.create_task(self._official_pages(domain))
+        await self._official_tasks[domain]
+
+    async def _official_pages(self, domain: str):
+        scheme = "http" if domain == "txdyq.cn" else "https"
+        root = await self.scrape_page(f"{scheme}://www.{domain}/", f"{domain} 景区官网")
+        if not root:
+            return
+        links = {}
+        for token in MarkdownIt().parse(root.text):
+            children = token.children or []
+            for index, child in enumerate(children):
+                if child.type != "link_open":
+                    continue
+                caption = []
+                for following in children[index + 1 :]:
+                    if following.type == "link_close":
+                        break
+                    caption.append(following.content)
+                label = " ".join(caption)
+                url = urljoin(root.url, child.attrGet("href") or "")
+                host = (urlparse(url).hostname or "").lower()
+                if (
+                    host != domain
+                    and not host.endswith("." + domain)
+                    or not public_url(url, allow_official_http=True)
+                ):
+                    continue
+                if domain == "txdyq.cn":
+                    parsed = urlparse(url)
+                    if parsed.path == "/en" or parsed.path.startswith("/en/"):
+                        url = parsed._replace(path=parsed.path[3:] or "/").geturl()
+                priority = (
+                    0
+                    if re.search(r"购票|门票|票务|开放时间|Ticket|Time", label, re.I)
+                    else 1
+                    if any(
+                        place_in_text(name, label)
+                        for name, known in OFFICIAL_PLACE_DOMAINS.items()
+                        if known == domain
+                    )
+                    else 2
+                    if re.search(r"参观须知|游客须知|预约|游览须知", label)
+                    else None
+                )
+                if priority is not None and url != root.url:
+                    links[url] = (priority, label[:120])
+        selected = sorted(links.items(), key=lambda item: item[1][0])[:6]
+        await asyncio.gather(
+            *(self.scrape_page(url, f"{domain} {label}") for url, (_, label) in selected)
+        )
+
+    async def search(self, query: str, *, official=False, subject: str | None = None):
         official_domain = next(
             (domain for place, domain in OFFICIAL_PLACE_DOMAINS.items() if place in query), None
         )
         if official_domain and (official or "官网" in query):
-            subject = next(place for place in OFFICIAL_PLACE_DOMAINS if place in query)
-            query = f"site:{official_domain} {subject} 门票 开放 预约 身份证 入园 限流"
-        payload = await self.call(
-            "firecrawl",
-            "https://api.firecrawl.dev/v2/search",
-            body={
-                "query": query,
-                "limit": 3,
-                "lang": "zh",
-                "scrapeOptions": {"formats": ["markdown"]},
-                **({"tbs": "qdr:m6"} if not official and "官网" not in query else {}),
-            },
+            subject = subject or next(place for place in OFFICIAL_PLACE_DOMAINS if place in query)
+            query = f'"{place_search_name(subject)}" 门票 开放时间 site:{official_domain}'
+        payload, _ = await asyncio.gather(
+            self.call(
+                "firecrawl",
+                "https://api.firecrawl.dev/v2/search",
+                body={
+                    "query": query,
+                    "limit": 5,
+                    "lang": "zh",
+                    **(
+                        {"tbs": "qdr:m6"}
+                        if not official and "官网" not in query and "照片" not in query
+                        else {}
+                    ),
+                },
+            ),
+            self.official_pages(official_domain)
+            if official_domain and (official or "官网" in query)
+            else asyncio.sleep(0),
         )
         raw = (payload or {}).get("data") or {}
         results = raw.get("web", []) if isinstance(raw, dict) else raw
+        selected = []
         for item in results if isinstance(results, list) else []:
             url = item.get("url") or (item.get("metadata") or {}).get("sourceURL") or ""
-            if not public_url(url) or any(source.url == url for source in self.data.sources):
+            if not public_url(url, allow_official_http=True):
                 continue
-            text = item.get("markdown") or ""
-            if not text:
-                scraped = await self.call(
-                    "firecrawl",
-                    "https://api.firecrawl.dev/v2/scrape",
-                    body={
-                        "url": url,
-                        "formats": ["markdown"],
-                        "onlyMainContent": True,
-                    },
-                )
-                text = ((scraped or {}).get("data") or {}).get("markdown") or ""
-            if text:
-                self.source(
-                    "firecrawl",
-                    str(item.get("title") or query),
-                    url,
-                    text,
-                    official=official_url(url),
-                )
+            description = " ".join(
+                str(item.get(key) or "") for key in ("title", "description", "markdown")
+            )
+            if subject and not place_in_text(subject, description):
+                continue
+            selected.append((url, str(item.get("title") or query)))
+        selected.sort(key=lambda item: not official_url(item[0]))
+        pages = await asyncio.gather(*(self.scrape_page(url, title) for url, title in selected[:3]))
+        if any(
+            self._page_errors.get(url) in {"source_http_404", "source_http_410"}
+            and not official_url(url)
+            for url, _ in selected[:3]
+        ):
+            missing = 3 - sum(page is not None for page in pages)
+            for url, title in selected[3:]:
+                if missing <= 0:
+                    break
+                if await self.scrape_page(url, title):
+                    missing -= 1
 
     async def route(
         self, origin: TravelPlace, destination: TravelPlace, conditions: TravelConditions

@@ -210,12 +210,13 @@ async def browser_check_ui(deck, data, outline, url, output):
         )
         await page.get_by_label("目的地", exact=True).fill("北京")
         await page.get_by_label("出发城市", exact=True).fill("上海")
+        await page.get_by_text("更多偏好", exact=True).click()
         await page.get_by_label("房间数", exact=True).fill("2")
-        await page.get_by_label("每日餐饮预算", exact=True).fill("80")
-        await page.get_by_label("团队备用金", exact=True).fill("500")
-        await page.get_by_label("必去地点", exact=True).press_sequentially(
-            "故宫，天坛，颐和园，景山，北海，八达岭，圆明园，恭王府"
-        )
+        places = ["故宫", "天坛", "颐和园", "景山", "北海", "八达岭", "圆明园", "恭王府"]
+        await page.get_by_label("想去的地方", exact=True).fill("，".join(places))
+        await page.get_by_label("想去的地方", exact=True).blur()
+        for name in places:
+            await page.get_by_label(f"必去：{name}", exact=True).check()
         await page.get_by_label("查询视频攻略", exact=True).uncheck()
         await page.get_by_label("确认旅行条件", exact=True).check()
         await page.get_by_text("13 页", exact=False).first.wait_for()
@@ -230,8 +231,8 @@ async def browser_check_ui(deck, data, outline, url, output):
         assert submissions[0]["page_count"] == 13
         submitted = submissions[0]["travel_conditions"]
         assert len(submitted["must_visit"]) == 8
-        assert submitted["room_count"] == 2 and submitted["meal_budget_per_day"] == 80
-        assert submitted["contingency"] == 500
+        assert submitted["room_count"] == 2 and submitted["meal_budget_per_day"] == 100
+        assert submitted["contingency"] == 300 and submitted["budget_mode"] == "total"
         assert await page.get_by_role("button", name="取消生成", exact=True).count() == 0
         assert await page.get_by_role("button", name="导出", exact=True).is_enabled()
         for width, name in ((1440, "desktop"), (390, "mobile")):

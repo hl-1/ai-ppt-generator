@@ -6,9 +6,9 @@ import json
 import logging
 import re
 import uuid
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from urllib.parse import urlparse
 
 import httpx
 from pydantic import BaseModel, Field, model_validator
@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.db import async_session_factory
 from app.llm.client import StructuredChatClient, create_chat_model
-from app.llm.errors import safe_error_details
+from app.llm.errors import MODEL_ERROR_LABELS, NON_RETRYABLE_MODEL_ERRORS, safe_error_details
 from app.llm.normalization import normalize_model_fields
 from app.models.project import Project
 from app.models.travel import TravelResearch
@@ -42,7 +42,7 @@ from app.services.travel_planning import (
     source_operating_facts,
     validate_facts,
 )
-from app.services.travel_providers import OFFICIAL_PLACE_DOMAINS, TravelProviders
+from app.services.travel_providers import TravelProviders, official_place_for_text
 from app.services.travel_video import research_videos
 
 logger = logging.getLogger(__name__)
@@ -57,31 +57,42 @@ class SourceFactSelections(BaseModel):
 
 
 def source_ticket_facts(source: TravelSource) -> list[TravelFact]:
-    host = (urlparse(source.url).hostname or "").lower()
-    place = next(
-        (
-            name
-            for name, domain in OFFICIAL_PLACE_DOMAINS.items()
-            if host == domain or host.endswith("." + domain)
-        ),
-        None,
-    )
-    if source.trust != "official" or not place:
+    if source.trust != "official":
         return []
     facts = []
+    heading_place = official_place_for_text(source, source.title)
     for line in source.text.splitlines():
         quote = line.strip()
-        if "门票" not in quote or len(quote) > 800:
+        if quote.startswith("#"):
+            heading_place = official_place_for_text(source, quote)
+        place = official_place_for_text(source, quote) or heading_place
+        ticket = any(word in quote for word in ("门票", "学生票", "成人票", "免票"))
+        free = bool(re.search(r"免票|免费(?:对外)?开放|取消门票收费|免门票", quote))
+        if (
+            not place
+            or not (ticket or free)
+            or len(quote) > 800
+            or quote.startswith(("![", "[!["))
+        ):
             continue
         amounts = {Decimal(value) for value in re.findall(r"(?<!\d)(\d+(?:\.\d+)?)\s*元", quote)}
-        if len(amounts) == 1:
+        if ticket and len(amounts) == 1 or free and not amounts:
+            restricted = any(
+                word in quote
+                for word in (
+                    "岁", "儿童", "未成年", "学生", "老人", "老年", "残疾", "军人",
+                    "消防", "警察", "记者", "导游", "人才", "教师", "干部", "遗属",
+                    "市民", "献血", "荣誉卡", "凭", "持", "夜间", "夜游", "优惠",
+                )
+            )
             facts.append(
                 TravelFact(
                     place=place,
                     kind="price",
                     source_id=source.id,
                     quote=quote,
-                    amount=next(iter(amounts)),
+                    amount=next(iter(amounts)) if amounts else Decimal(0),
+                    audience="特定票种或条件" if restricted else "所有游客",
                 )
             )
     return facts
@@ -223,8 +234,14 @@ def travel_request(project: Project) -> str:
 
 
 def travel_input_signature(project: Project) -> str:
+    settings = get_settings()
     payload = {
-        "planning_version": 3,
+        "planning_version": 5,
+        "model": {
+            "name": settings.llm_model,
+            "base_url": settings.llm_base_url,
+            "thinking": settings.llm_thinking_enabled,
+        },
         "conditions": project.travel_conditions,
         "request": travel_request(project),
         "brief": project.report_brief,
@@ -448,8 +465,8 @@ async def execute_research(research_id: uuid.UUID, *, model=None, progress=None)
                             )[:place_limit]
                     except Exception as error:
                         logger.warning(
-                            "travel service=llm stage=query_plan error_code=%s",
-                            type(error).__name__,
+                            "travel service=llm stage=query_plan details=%s",
+                            safe_error_details(error),
                         )
                 await checkpoint(10, "正在查询景点位置和住宿区域")
                 geo_task = asyncio.create_task(providers.geocode(conditions.destination))
@@ -489,7 +506,9 @@ async def execute_research(research_id: uuid.UUID, *, model=None, progress=None)
                 await asyncio.gather(load_places(), load_hotels(), load_weather())
                 await checkpoint(35, "正在检索官网门票、开放时间、预约和导览资料")
                 video_task = asyncio.create_task(
-                    research_videos(providers, conditions, chat, candidates)
+                    research_videos(
+                        providers, conditions, chat, [place.name for place in data.places] or candidates
+                    )
                 )
                 names = (
                     [place.name for place in data.places]
@@ -500,9 +519,9 @@ async def execute_research(research_id: uuid.UUID, *, model=None, progress=None)
                 await asyncio.gather(
                     *(
                         providers.search(
-                            f"{conditions.destination} {name} 官网 门票 开放时间 "
-                            f"停止入园 预约 身份证 核验 入园限制 导览 季节 {year}",
+                            f'{conditions.destination} "{name}" 门票 开放时间 官网',
                             official=True,
+                            subject=name,
                         )
                         for name in names[:8]
                     )
@@ -518,14 +537,16 @@ async def execute_research(research_id: uuid.UUID, *, model=None, progress=None)
                     *(load_restaurants(place) for place in data.places),
                     *(
                         providers.search(
-                            f"{conditions.destination} {name} 打卡 拍照 排队 避坑 餐厅 {year}"
+                            f"{conditions.destination} {name} 打卡 拍照 排队 避坑 餐厅 {year}",
+                            subject=name,
                         )
                         for name in names[:8]
                     ),
                     *(
                         providers.search(
                             f"{conditions.destination} {hotel.name} 住宿 房型 房价 入住 税费 "
-                            f"官方 {conditions.departure_date or ''}"
+                            f"官方 {conditions.departure_date or ''}",
+                            subject=hotel.name,
                         )
                         for hotel in data.hotels
                     ),
@@ -539,13 +560,17 @@ async def execute_research(research_id: uuid.UUID, *, model=None, progress=None)
                 await asyncio.gather(
                     *(
                         providers.search(
-                            f"{conditions.destination} {restaurant.name} 营业 餐饮 近期"
+                            f"{conditions.destination} {restaurant.name} 营业 餐饮 近期",
+                            subject=restaurant.name,
                         )
                         for restaurant in data.restaurants[:4]
                     )
                 )
                 await checkpoint(60, "正在核对来源原文及适用日期")
-                web_sources = [source for source in data.sources if source.service == "firecrawl"]
+                web_sources = sorted(
+                    (source for source in data.sources if source.service == "firecrawl"),
+                    key=lambda source: source.trust != "official",
+                )
                 data.facts = validate_facts(
                     [
                         fact
@@ -556,45 +581,83 @@ async def execute_research(research_id: uuid.UUID, *, model=None, progress=None)
                     conditions,
                 )
                 if web_sources and settings.llm_api_key:
-                    fact_semaphore = asyncio.Semaphore(4)
+                    fact_semaphore = asyncio.Semaphore(2)
+                    failures = {}
+                    remaining_sources = {source.id for source in web_sources}
 
                     async def load_facts(source):
-                        for attempt in range(2):
-                            try:
-                                async with fact_semaphore, asyncio.timeout(15):
-                                    facts = await extract_source_facts(chat, source, conditions)
-                                data.facts.extend(validate_facts(facts, data, conditions))
-                                return
-                            except Exception as error:
-                                logger.warning(
-                                    "travel service=llm stage=facts "
-                                    "source_id=%s attempt=%s details=%s",
-                                    source.id,
-                                    attempt + 1,
-                                    safe_error_details(error),
-                                )
-                        data.issues.append(
-                            ResearchIssue(
-                                stage="核对来源原文及适用日期",
-                                code="facts_unverified",
-                                message="部分来源的事实核对未完成",
-                                action="请在来源列表中检查原文，门票与预约信息需进一步核实。",
-                            )
-                        )
+                        async with fact_semaphore:
+                            for attempt in range(2):
+                                if chat.fatal_error_code:
+                                    failures[source.id] = chat.fatal_error_code
+                                    remaining_sources.discard(source.id)
+                                    return
+                                try:
+                                    async with asyncio.timeout(settings.llm_timeout_seconds):
+                                        facts = await extract_source_facts(chat, source, conditions)
+                                    data.facts.extend(validate_facts(facts, data, conditions))
+                                    failures.pop(source.id, None)
+                                    remaining_sources.discard(source.id)
+                                    return
+                                except Exception as error:
+                                    details = safe_error_details(error)
+                                    code = details["error_code"]
+                                    failures[source.id] = code
+                                    logger.warning(
+                                        "travel service=llm stage=facts "
+                                        "source_id=%s attempt=%s details=%s",
+                                        source.id,
+                                        attempt + 1,
+                                        details,
+                                    )
+                                    if code in NON_RETRYABLE_MODEL_ERRORS or code not in {
+                                        "timeout", "rate_limited", "unavailable", "invalid_output"
+                                    }:
+                                        break
+                                    if attempt == 0:
+                                        await asyncio.sleep(
+                                            details.get("retry_after_seconds", 5)
+                                            if code == "rate_limited" else 1
+                                        )
+                            remaining_sources.discard(source.id)
 
                     try:
-                        async with asyncio.timeout(min(settings.llm_timeout_seconds, 35)):
+                        async with asyncio.timeout(settings.llm_timeout_seconds):
                             await asyncio.gather(*(load_facts(source) for source in web_sources))
                     except Exception as error:
                         logger.warning(
                             "travel service=llm stage=facts details=%s", safe_error_details(error)
                         )
+                        for source_id in remaining_sources:
+                            failures.setdefault(
+                                source_id,
+                                "timeout" if isinstance(error, TimeoutError)
+                                else safe_error_details(error)["error_code"],
+                            )
+                    if failures:
+                        reasons = "；".join(
+                            f"{MODEL_ERROR_LABELS.get(code, '提取失败')} {count} 个"
+                            for code, count in Counter(failures.values()).items()
+                        )
+                        examples = "、".join(list(failures)[:3])
+                        retained = sum(
+                            fact.kind in {"price", "hours", "entry_cutoff"}
+                            and any(
+                                source.id == fact.source_id and source.trust == "official"
+                                for source in web_sources
+                            )
+                            for fact in data.facts
+                        )
                         data.issues.append(
                             ResearchIssue(
                                 stage="核对来源原文及适用日期",
-                                code="facts_partial",
-                                message="部分网页事实整理未完成",
-                                action="检查来源原文或重新查询。",
+                                code="facts_unverified",
+                                message=f"{len(failures)} 个网页未完成模型整理：{reasons}"
+                                f"（来源示例：{examples}）。",
+                                action=(
+                                    f"已保留 {retained} 条通过原文校验的官方票价或时间规则；"
+                                    if retained else "未取得可直接确认的官方票价或时间规则；"
+                                ) + "修正模型配置或额度后刷新资料，其他信息仍需核实。",
                             )
                         )
                     data.facts = validate_facts(data.facts, data, conditions)
@@ -632,8 +695,14 @@ async def execute_research(research_id: uuid.UUID, *, model=None, progress=None)
                 video_task.cancel()
                 await asyncio.gather(video_task, return_exceptions=True)
             data.places = order_places(data.places)[:place_limit]
+            data.facts.extend(
+                fact
+                for source in data.sources
+                if source.service == "firecrawl"
+                for fact in [*source_ticket_facts(source), *source_operating_facts(source)]
+            )
             data.facts = list(
-                {(fact.source_id, fact.kind, fact.quote): fact for fact in data.facts}.values()
+                {(fact.source_id, fact.place, fact.kind, fact.quote): fact for fact in data.facts}.values()
             )
             data.facts = validate_facts(data.facts, data, conditions)
             data.services = providers.statuses() + [

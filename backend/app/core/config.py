@@ -50,14 +50,19 @@ class Settings(BaseSettings):
     # 百炼业务空间 ID：填写后使用专属域名，覆盖 image_base_url
     image_workspace_id: str = ""
     unsplash_access_key: str = ""
+    stock_search_timeout_seconds: float = 8
     qweather_api_host: str = ""
     qweather_api_key: str = ""
     amap_api_key: str = ""
     firecrawl_api_key: str = ""
     travel_service_timeout_seconds: float = 15
-    travel_total_timeout_seconds: float = 120
+    travel_web_timeout_seconds: float = 60
+    travel_web_concurrency: int = 2
+    travel_web_requests_per_minute: int = 10
+    travel_total_timeout_seconds: float = 300
     travel_service_retries: int = 1
-    travel_video_max_candidates: int = 12
+    travel_video_max_candidates: int = 36
+    travel_video_search_rounds: int = 3
     travel_video_max_selected: int = 4
     travel_video_timeout_seconds: float = 240
     travel_video_item_timeout_seconds: float = 40

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from app.domain.outline import ImagePlan, OutlinePageDraft
 
 IMAGE_VISUAL_TYPES = {"photo", "illustration"}
@@ -14,14 +16,62 @@ LANDMARKS = {
     "胡同": ("Beijing hutong", "hutong"),
     "鸟巢": ("Beijing National Stadium", "national stadium", "bird's nest"),
 }
+_OBJECT_QUERIES = {
+    "server rack": (
+        "服务器",
+        "机房",
+        "数据中心",
+        "server",
+        "datacenter",
+        "data center",
+        "data centre",
+    ),
+    "laptop": ("笔记本", "laptop", "notebook"),
+    "smartphone": ("手机", "smartphone", "mobile phone", "cell phone"),
+    "computer chip": ("芯片", "chip", "semiconductor"),
+}
+_PRODUCT_IDENTITIES = re.compile(
+    r"(?<![a-z0-9])(?:[a-z]+[- ]?\d[\w-]*|iphone|macbook|samsung|huawei|"
+    r"nvidia|tesla|thinkpad)(?![a-z0-9])",
+    re.I,
+)
+
+
+def stock_identity_terms(subject: str, queries: list[str]) -> list[str]:
+    return list(
+        dict.fromkeys(
+            match.group().lower()
+            for text in [subject, *queries]
+            for match in _PRODUCT_IDENTITIES.finditer(text)
+        )
+    )
+
+
+def stock_object_queries(subject: str) -> list[str]:
+    if _PRODUCT_IDENTITIES.search(subject):
+        return []
+    return [
+        query
+        for query, aliases in _OBJECT_QUERIES.items()
+        if any(
+            alias in subject.lower()
+            if not alias.isascii()
+            else re.search(rf"\b{re.escape(alias)}s?\b", subject, re.I)
+            for alias in aliases
+        )
+    ]
 
 
 def search_queries(subject: str, queries: list[str] | None = None) -> list[str]:
     preferred = [values[0] for name, values in LANDMARKS.items() if name in subject]
     if not preferred and "北京" in subject:
         preferred = ["Beijing city architecture"]
+    if not preferred and not any(_PRODUCT_IDENTITIES.search(q) for q in queries or []):
+        preferred = stock_object_queries(subject)
+        if len(preferred) > 1:
+            preferred = [" ".join(preferred), *preferred]
     return list(
-        dict.fromkeys(q.strip()[:120] for q in [*(queries or []), *preferred, subject] if q.strip())
+        dict.fromkeys(q.strip()[:120] for q in [*preferred, *(queries or []), subject] if q.strip())
     )[:4]
 
 
@@ -52,13 +102,20 @@ def plan_page_image(page: OutlinePageDraft, *, deck_title: str = "") -> OutlineP
     if not explicit and page.evidence_kind != "narrative":
         return page.model_copy(update={"visual": None, "image_plan": None})
     real = page.visual_type != "illustration" and (
-        page.visual_type == "photo" or (plan.require_real if plan else travel)
+        (plan.require_real if plan else travel)
+        or any(
+            name in subject or any(alias in subject.lower() for alias in aliases)
+            for name, aliases in LANDMARKS.items()
+        )
+        or bool(stock_identity_terms(subject, plan.queries if plan else []))
     )
     source = (
         "stock"
         if real
         else "generated"
         if page.visual_type == "illustration"
+        else "stock"
+        if page.visual_type == "photo" and (plan is None or plan.source == "auto")
         else (plan.source if plan else "auto")
     )
     plan = ImagePlan(

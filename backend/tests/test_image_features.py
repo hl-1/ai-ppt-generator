@@ -17,8 +17,8 @@ from app.domain.content import Deck, ImageBlock, Slide, TextBlock
 from app.domain.enterprise_layout import bind_planned_evidence, compose_report_slide
 from app.domain.evidence import prepare_page_plan
 from app.domain.flex_layout import iter_leaf_block_ids
-from app.domain.image_planning import bind_page_image, plan_page_image
-from app.domain.outline import OutlinePageDraft
+from app.domain.image_planning import bind_page_image, plan_page_image, search_queries
+from app.domain.outline import ImagePlan, OutlinePageDraft
 from app.images.bailian import BailianImageProvider
 from app.images.base import ImageAsset, ImageCandidate, ImageRequest
 from app.images.errors import ImageFetchError
@@ -138,6 +138,94 @@ def test_photo_plan_does_not_replace_explicit_timeline():
     )
     assert planned.image_plan is None
     assert planned.visual_type == "timeline"
+
+
+def test_generic_photo_prefers_stock_and_allows_ai_fallback():
+    planned = plan_page_image(OutlinePageDraft(
+        title="AI 算力基础设施", objective="介绍计算机行业", key_points=["算力需求增长", "建设机房"],
+        layout_id="image-right",
+        visual_type="photo", visual="数据中心机房内 GPU 服务器阵列与蓝色灯光",
+    ))
+    assert planned.image_plan.source == "stock"
+    assert not planned.image_plan.require_real
+    assert planned.image_plan.queries[0] == "server rack"
+
+
+@pytest.mark.parametrize("subject", ["故宫建筑", "iPhone 17 产品实拍"])
+def test_specific_photo_remains_real_even_when_plan_relaxes_requirement(subject):
+    planned = plan_page_image(OutlinePageDraft(
+        title="对象介绍", objective="介绍图片主体", key_points=["展示外观", "介绍特点"],
+        layout_id="image-right",
+        visual_type="photo", image_plan=ImagePlan(subject=subject, require_real=False),
+    ))
+    assert planned.image_plan.source == "stock" and planned.image_plan.require_real
+
+
+def test_search_queries_use_concrete_objects_and_preserve_product_identity():
+    assert search_queries("AI PC 笔记本电脑与 AI 手机并排展示的产品实拍")[0] == "laptop smartphone"
+    assert search_queries("iPhone 17 手机", ["iPhone 17 product photo"])[0] == "iPhone 17 product photo"
+
+
+@pytest.mark.parametrize(("subject", "description", "matched"), [
+    ("数据中心机房内 GPU 服务器阵列与蓝色灯光", "Rows of servers in a data centre", True),
+    ("数据中心机房内 GPU 服务器阵列与蓝色灯光", "A blue coat on a clothing rack", False),
+    ("AI PC 笔记本电脑与 AI 手机并排展示的产品实拍", "A notebook computer and cell phone", True),
+    ("AI PC 笔记本电脑与 AI 手机并排展示的产品实拍", "A laptop on an office desk", False),
+    ("iPhone 17 手机", "iPhone 16 smartphone product photo", False),
+    ("iPhone 17 手机", "iPhone 17 smartphone product photo", True),
+    ("服务器机房", "3D rendered server racks", False),
+])
+async def test_stock_match_checks_core_objects_and_specific_identity(subject, description, matched):
+    def handler(request):
+        return httpx.Response(200, json={"results": [{
+            "id": "photo", "description": description, "width": 1800, "height": 1200,
+            "urls": {"regular": "https://images.unsplash.com/photo"},
+        }]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as transport:
+        candidates = await UnsplashImageProvider(client=transport, access_key="test").search(
+            ImageRequest(prompt="", query=subject, subject=subject, aspect_ratio=1.5,
+                         preferred_source="stock", queries=["smartphone"] if "iPhone" in subject else [])
+        )
+    assert candidates[0].metadata_matched is matched
+
+
+async def test_stock_search_time_budget_falls_back_to_ai():
+    async def handler(request):
+        await asyncio.sleep(0.1)
+        return httpx.Response(200, json={"results": []})
+
+    generated = Provider()
+    generated.source = "generated"
+    generated.fetch = AsyncMock(return_value=ImageAsset(
+        data=MINIMAL_PNG, content_type="image/png", source="generated",
+    ))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as transport:
+        stock = UnsplashImageProvider(client=transport, access_key="test", search_timeout_seconds=0.01)
+        result = await ImagePipeline([generated, stock]).fetch(ImageRequest(
+            prompt="p", query="server rack", aspect_ratio=1.5, preferred_source="stock",
+        ))
+    assert result.source == "generated" and generated.fetch.await_count == 1
+
+
+async def test_stock_search_keeps_partial_candidates_on_timeout():
+    calls = 0
+
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            await asyncio.sleep(0.1)
+        return httpx.Response(200, json={"results": [{
+            "id": "photo", "description": "office desk",
+            "urls": {"regular": "https://images.unsplash.com/photo"},
+        }]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as transport:
+        candidates = await UnsplashImageProvider(
+            client=transport, access_key="test", search_timeout_seconds=0.01,
+        ).search(ImageRequest(prompt="", query="server rack", aspect_ratio=1.5, preferred_source="stock"))
+    assert len(candidates) == 1 and not candidates[0].metadata_matched
 
 
 async def test_wanx_submits_once_and_polls_correct_endpoint(monkeypatch):

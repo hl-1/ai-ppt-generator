@@ -25,7 +25,7 @@ class VideoPreferences(BaseModel):
     platforms: list[Literal["douyin", "bilibili"]] = Field(
         default_factory=lambda: ["douyin", "bilibili"], min_length=1, max_length=2
     )
-    min_likes: int = Field(default=10_000, ge=1, le=100_000_000)
+    min_likes: int = Field(default=1_000, ge=1, le=100_000_000)
     min_favorites: int = Field(default=1_000, ge=1, le=100_000_000)
     lookback_days: int = Field(default=180, ge=1, le=1095)
 
@@ -171,6 +171,7 @@ class TravelPlace(BaseModel):
     location: str
     address: str = ""
     area: str = ""
+    city: str = ""
     source_id: str
     photos: list[dict[str, str]] = Field(default_factory=list)
     near_place_id: str | None = None
@@ -325,8 +326,10 @@ class TravelVideo(BaseModel):
     duration_seconds: float | None = Field(default=None, ge=0)
     topics: list[str] = Field(default_factory=list)
     selected: bool = False
+    eligible: bool = False
     status: Literal["candidate", "rejected", "selected", "ready", "unavailable"] = "candidate"
     error_code: str | None = None
+    metadata_error_code: str | None = None
     score: float = 0
     content_kind: Literal["subtitles", "transcription", "platform_summary"] | None = None
     content_truncated: bool = False

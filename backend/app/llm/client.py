@@ -1,5 +1,6 @@
 import json
 from typing import TypeVar
+from urllib.parse import urlparse
 
 import httpx
 from langchain_core.exceptions import OutputParserException
@@ -13,10 +14,13 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings, get_settings
 from app.llm.errors import (
+    MODEL_ERROR_LABELS,
+    NON_RETRYABLE_MODEL_ERRORS,
     InvalidModelOutputError,
     LLMNotConfiguredError,
     LLMTimeoutError,
     LLMUnavailableError,
+    safe_error_details,
 )
 from app.llm.normalization import model_output_feedback
 
@@ -47,6 +51,14 @@ def create_chat_model(settings: Settings | None = None) -> ChatOpenAI:
             }
         },
     }
+    if (
+        not cfg.llm_thinking_enabled
+        and cfg.llm_model == "glm-5.3-flashx"
+        and urlparse(cfg.llm_base_url).hostname == "tokenhub.tencentmaas.com"
+    ):
+        # TokenHub FlashX rejects disabled thinking; use the model's supported default.
+        kwargs.pop("extra_body")
+        kwargs["reasoning_effort"] = "high"
     return ChatOpenAI(**kwargs)
 
 
@@ -56,6 +68,8 @@ class StructuredChatClient:
     def __init__(self, *, model: BaseChatModel, api_key: str) -> None:
         self._model = model
         self._api_key = api_key
+        self.fatal_error_code: str | None = None
+        self._fatal_error: Exception | None = None
 
     async def complete(
         self,
@@ -64,13 +78,21 @@ class StructuredChatClient:
         system: str,
         user: str,
         purpose: str,
+        max_tokens: int | None = None,
     ) -> T:
         if not self._api_key.strip():
             raise LLMNotConfiguredError(f"未配置 LLM API Key，无法{purpose}")
+        if self.fatal_error_code:
+            raise LLMUnavailableError(
+                MODEL_ERROR_LABELS[self.fatal_error_code]
+            ) from self._fatal_error
 
-        chain = _PROMPT | self._model.with_structured_output(
-            schema, method="json_mode", include_raw=True
+        model = (
+            self._model
+            if max_tokens is None
+            else self._model.model_copy(update={"max_tokens": max_tokens})
         )
+        chain = _PROMPT | model.with_structured_output(schema, method="json_mode", include_raw=True)
         try:
             response = await chain.ainvoke({"system": system, "user": user})
             raw = response.get("raw") if isinstance(response, dict) else None
@@ -96,6 +118,9 @@ class StructuredChatClient:
         except (TimeoutError, httpx.TimeoutException, APITimeoutError) as error:
             raise LLMTimeoutError("模型请求超时") from error
         except (httpx.HTTPError, APIError) as error:
+            code = safe_error_details(error)["error_code"]
+            if code in NON_RETRYABLE_MODEL_ERRORS:
+                self.fatal_error_code, self._fatal_error = code, error
             raise LLMUnavailableError("模型服务暂不可用") from error
         except LengthFinishReasonError as error:
             raise InvalidModelOutputError("模型返回内容被截断，请缩短输出后重试") from error

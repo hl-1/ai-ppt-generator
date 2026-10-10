@@ -7,7 +7,13 @@ from urllib.parse import urlparse
 import httpx
 
 from app.domain.content import ImageSource
-from app.domain.image_planning import LANDMARKS, search_queries, subject_terms
+from app.domain.image_planning import (
+    LANDMARKS,
+    search_queries,
+    stock_identity_terms,
+    stock_object_queries,
+    subject_terms,
+)
 from app.images.base import ImageAsset, ImageCandidate, ImageRequest
 from app.images.errors import ImageFetchError
 
@@ -17,6 +23,81 @@ _PUNCT_RE = re.compile(r"[：:；;，,。.!！？?\u2014\u2013\-_/\\|（）()【
 _SPACE_RE = re.compile(r"\s+")
 _MAX_QUERY_CHARS = 120
 _PEOPLE_RE = re.compile(r"\b(man|woman|person|people|portrait|guard|selfie|wedding)\b", re.I)
+_SYNTHETIC_RE = re.compile(r"\b(illustration|rendered|rendering|cartoon|3d render)\b", re.I)
+_QUERY_STOP_WORDS = {
+    "a",
+    "an",
+    "the",
+    "and",
+    "of",
+    "with",
+    "in",
+    "on",
+    "for",
+    "to",
+    "ai",
+    "gpu",
+    "npu",
+    "pc",
+    "photo",
+    "image",
+    "real",
+    "blue",
+    "light",
+    "lights",
+    "technology",
+    "computing",
+    "infrastructure",
+}
+_TOKEN_ALIASES = {
+    "servers": "server",
+    "datacenter": "server",
+    "notebook": "laptop",
+    "laptops": "laptop",
+    "notebooks": "laptop",
+    "phone": "smartphone",
+    "phones": "smartphone",
+    "smartphones": "smartphone",
+    "chips": "chip",
+}
+
+
+def _query_tokens(text: str) -> set[str]:
+    text = re.sub(r"\bdata\s+cent(?:er|re)s?\b", "datacenter", text.lower())
+    return {
+        _TOKEN_ALIASES.get(token, token)
+        for token in re.findall(r"[a-z0-9]+", text)
+        if token not in _QUERY_STOP_WORDS
+    }
+
+
+def _match_score(description: str, request: ImageRequest, *, landmark: bool) -> float:
+    text = description.lower()
+    if _SYNTHETIC_RE.search(text):
+        return 0
+    if landmark:
+        return float(
+            any(
+                term in text
+                for term in subject_terms(request.subject or request.query, request.queries)
+            )
+        )
+    tokens = _query_tokens(text)
+    identities = stock_identity_terms(request.subject or request.query, request.queries)
+    if identities and any(not _query_tokens(identity) <= tokens for identity in identities):
+        return 0
+    objects = stock_object_queries(request.subject or request.query)
+    if objects:
+        required = set().union(*(_query_tokens(query) for query in objects)) - {"computer", "rack"}
+        return float(bool(required) and required <= tokens)
+    scores = []
+    for query in request.queries or [request.query]:
+        keywords = _query_tokens(query)
+        if keywords:
+            scores.append(len(tokens & keywords) / len(keywords))
+        elif query.strip() and query.lower() in text:
+            scores.append(1)
+    return max(scores, default=0)
 
 
 class UnsplashImageProvider:
@@ -28,11 +109,13 @@ class UnsplashImageProvider:
         client: httpx.AsyncClient,
         access_key: str,
         timeout_seconds: float = 30,
+        search_timeout_seconds: float = 8,
         reserve: Callable[[str], Awaitable[bool]] | None = None,
     ) -> None:
         self._client = client
         self._access_key = access_key
         self._timeout = timeout_seconds
+        self._search_timeout = min(search_timeout_seconds, timeout_seconds)
         self._reserve = reserve
 
     def available(self) -> bool:
@@ -45,18 +128,19 @@ class UnsplashImageProvider:
         queries = search_queries(request.query, request.queries)
         queries = list(dict.fromkeys(q for query in queries for q in _search_queries(query)))[:4]
         candidates: dict[str, ImageCandidate] = {}
-        terms = subject_terms(request.subject or request.query, request.queries)
         subject = (request.subject or request.query).lower()
         landmark = any(
             name in subject or any(alias.lower() in subject for alias in aliases)
             for name, aliases in LANDMARKS.items()
         )
-        needs_match = request.require_real or landmark
+        needs_match = request.require_real or landmark or request.preferred_source == "stock"
+        threshold = 1.0 if request.require_real else 2 / 3
+        scores: dict[str, float] = {}
         attempts = [(query, _orientation(request.aspect_ratio)) for query in queries]
         if needs_match and queries:
             attempts.append((queries[0], None))
         try:
-            async with asyncio.timeout(min(self._timeout, 45)):
+            async with asyncio.timeout(self._search_timeout):
                 for query, orientation in attempts:
                     params = {"query": query, "per_page": 8, "content_filter": "high"}
                     if orientation:
@@ -65,7 +149,7 @@ class UnsplashImageProvider:
                         f"{API_BASE}/search/photos",
                         headers=headers,
                         params=params,
-                        timeout=min(self._timeout, 20),
+                        timeout=self._search_timeout,
                     )
                     if response.status_code == 410:
                         continue
@@ -78,12 +162,17 @@ class UnsplashImageProvider:
                         candidate = _candidate(photo, fallback_id=f"legacy-{index}")
                         if candidate and candidate.id not in request.excluded_ids:
                             candidates[candidate.id] = candidate
-                    if len(candidates) >= limit and (
-                        not needs_match or any(
-                            term in item.description.lower()
-                            for item in candidates.values() for term in terms
+                            scores[candidate.id] = _match_score(
+                                candidate.description, request, landmark=landmark
+                            )
+                    usable_match = any(
+                        scores[item.id] >= threshold
+                        and (
+                            not item.width or not item.height or min(item.width, item.height) >= 600
                         )
-                    ):
+                        for item in candidates.values()
+                    )
+                    if usable_match or (len(candidates) >= limit and not needs_match):
                         break
         except (httpx.TimeoutException, TimeoutError) as error:
             if not candidates:
@@ -91,8 +180,7 @@ class UnsplashImageProvider:
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as error:
             raise ImageFetchError("图库暂时不可用，请稍后重试") from error
         for candidate in candidates.values():
-            text = candidate.description.lower()
-            candidate.metadata_matched = any(term in text for term in terms)
+            candidate.metadata_matched = scores[candidate.id] >= threshold
             candidate.match_reason = (
                 "描述包含目标对象，尚未进行视觉审图"
                 if candidate.metadata_matched
@@ -104,6 +192,7 @@ class UnsplashImageProvider:
             return (
                 not candidate.metadata_matched,
                 landmark and bool(_PEOPLE_RE.search(candidate.description)),
+                -scores[candidate.id],
                 abs(ratio - request.aspect_ratio),
                 -candidate.width * candidate.height,
             )
@@ -116,10 +205,13 @@ class UnsplashImageProvider:
         candidates = await self.search(request)
         last_error = None
         for candidate in candidates:
-            if request.require_real and not candidate.metadata_matched:
+            if (
+                request.require_real or request.preferred_source == "stock"
+            ) and not candidate.metadata_matched:
                 continue
             if (
-                candidate.width and candidate.height
+                candidate.width
+                and candidate.height
                 and min(candidate.width, candidate.height) < 600
             ):
                 continue
@@ -204,7 +296,9 @@ def sanitize_unsplash_query(query: str) -> str:
 
 def _search_queries(raw: str) -> list[str]:
     primary = sanitize_unsplash_query(raw)
-    short = " ".join(primary.split()[:3])[:16].rstrip()
+    short = " ".join(primary.split()[:3])
+    if len(primary.split()) <= 3 and not primary.isascii():
+        short = primary[:16]
     return list(dict.fromkeys(q for q in (primary, short) if q))
 
 

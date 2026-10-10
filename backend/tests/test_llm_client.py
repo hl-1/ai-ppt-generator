@@ -21,9 +21,11 @@ class _Result(BaseModel):
 async def mock_model():
     clients = []
 
-    def build(content, *, finish_reason="stop"):
+    def build(content, *, finish_reason="stop", requests=None):
         def respond(request):
             body = json.loads(request.content)
+            if requests is not None:
+                requests.append(body)
             assert body["response_format"] == {"type": "json_object"}
             if isinstance(content, Exception):
                 raise content
@@ -91,6 +93,19 @@ async def test_client_rejects_truncated_output(mock_model, content, finish_reaso
 
     with pytest.raises(InvalidModelOutputError):
         await client.complete(_Result, system="Return JSON", user="Test", purpose="test")
+
+
+async def test_output_limit_is_forwarded_without_affecting_other_calls(mock_model) -> None:
+    requests = []
+    model = mock_model('{"text":"ok"}', requests=requests)
+    client = StructuredChatClient(model=model, api_key="test-key")
+    await client.complete(
+        _Result, system="Return JSON", user="Test", purpose="test", max_tokens=4096
+    )
+    await client.complete(_Result, system="Return JSON", user="Test", purpose="test")
+    assert requests[0].get("max_completion_tokens", requests[0].get("max_tokens")) == 4096
+    assert "max_tokens" not in requests[1] and "max_completion_tokens" not in requests[1]
+    assert model.max_tokens is None
 
 
 @pytest.mark.asyncio

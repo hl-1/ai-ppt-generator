@@ -14,20 +14,31 @@ from PIL import Image
 from app.images.validate import ImageRejected, validate_image
 from app.schemas.travel import ResearchIssue, TravelImage, TravelMap
 from app.services.media import media_url, store_image
-from app.services.travel_providers import coordinates, public_url
+from app.services.travel_providers import (
+    coordinates,
+    photo_url,
+    place_in_text,
+    place_search_name,
+    public_url,
+)
 
 
-async def download_public_image(client, url, *, timeout, max_bytes):
+async def download_public_image(client, url, *, timeout, max_bytes, referer=None):
     for _ in range(4):
-        if not public_url(url):
+        if not public_url(url, allow_official_http=True):
             raise ValueError("invalid_image_url")
-        host = urlparse(url).hostname
-        addresses = await asyncio.to_thread(socket.getaddrinfo, host, 443)
+        parsed = urlparse(url)
+        addresses = await asyncio.to_thread(
+            socket.getaddrinfo, parsed.hostname, 80 if parsed.scheme == "http" else 443
+        )
         if not addresses or any(
             not ipaddress.ip_address(item[4][0]).is_global for item in addresses
         ):
             raise ValueError("private_image_host")
-        async with client.stream("GET", url, timeout=timeout, follow_redirects=False) as response:
+        headers = {"Referer": referer} if referer else None
+        async with client.stream(
+            "GET", url, timeout=timeout, follow_redirects=False, headers=headers
+        ) as response:
             if response.is_redirect:
                 url = urljoin(url, response.headers.get("location", ""))
                 continue
@@ -42,6 +53,9 @@ async def download_public_image(client, url, *, timeout, max_bytes):
             with Image.open(BytesIO(data)) as image:
                 image.verify()
             with Image.open(BytesIO(data)) as image:
+                width, height = image.size
+                if width < 320 or height < 180 or not 0.4 <= width / height <= 3.2:
+                    raise ValueError("photo_dimensions_unsuitable")
                 if image.format == "WEBP":
                     converted = BytesIO()
                     image.convert("RGB").save(converted, format="PNG")
@@ -51,23 +65,62 @@ async def download_public_image(client, url, *, timeout, max_bytes):
 
 
 def source_photos(data, place):
-    candidates = list(place.photos)
+    official, web = [], []
     parser = MarkdownIt()
     for source in data.sources:
-        if source.service != "firecrawl" or source.trust != "official":
+        if source.service != "firecrawl":
             continue
         for token in parser.parse(source.text):
-            for child in token.children or []:
+            children = token.children or []
+            link_caption = ""
+            for index, child in enumerate(children):
+                if child.type == "link_open":
+                    caption = []
+                    for following in children[index + 1 :]:
+                        if following.type == "link_close":
+                            break
+                        caption.append(following.content)
+                    link_caption = " ".join(caption)
+                elif child.type == "link_close":
+                    link_caption = ""
                 if (
                     child.type != "image"
                     or not child.content
-                    or not (place.name in child.content or child.content in place.name)
+                    or not (
+                        place_in_text(place.name, child.content)
+                        or place_in_text(place.name, link_caption)
+                    )
+                    or any(
+                        word in child.content.casefold()
+                        for word in (
+                            "二维码", "地图", "示意", "海报", "插画", "手绘", "效果图",
+                            "头像", "门票", "旅游指南", "园区景点", "logo", "banner",
+                            "渲染图", "合成图", "ai生成", "ai绘画", "纪念品", "文创",
+                        )
+                    )
                 ):
                     continue
-                url = urljoin(source.url, child.attrGet("src") or "")
-                if public_url(url):
-                    candidates.append({"url": url, "source_id": source.id, "title": child.content})
-    return candidates
+                url = photo_url(urljoin(source.url, child.attrGet("src") or ""))
+                if url:
+                    target = official if source.trust == "official" else web
+                    target.append(
+                        {
+                            "url": url,
+                            "source_id": source.id,
+                            "title": child.content,
+                            "referer": source.url,
+                            "credit": "景区官网" if source.trust == "official" else source.title,
+                        }
+                    )
+    candidates = [
+        *official,
+        *({**photo, "credit": "高德 POI 实景图片"} for photo in place.photos),
+        *web,
+    ]
+    unique = {}
+    for candidate in candidates:
+        unique.setdefault(candidate["url"], candidate)
+    return list(unique.values())
 
 
 async def collect_travel_assets(providers, plan, *, user_id, project_id):
@@ -76,13 +129,14 @@ async def collect_travel_assets(providers, plan, *, user_id, project_id):
     places = {place.id: place for place in data.places}
 
     async def photo(place):
-        for candidate in source_photos(data, place)[:4]:
+        async def use_photo(candidate):
             try:
                 content = await download_public_image(
                     providers.client,
                     candidate["url"],
                     timeout=settings.travel_service_timeout_seconds,
                     max_bytes=settings.max_image_bytes,
+                    referer=candidate.get("referer"),
                 )
                 extension, _ = validate_image(content)
                 key = store_image(
@@ -95,13 +149,28 @@ async def collect_travel_assets(providers, plan, *, user_id, project_id):
                         url=media_url(key),
                         original_url=candidate["url"],
                         source_id=candidate["source_id"],
-                        credit=f"{place.name} · "
-                        + ("官方资料" if candidate not in place.photos else "高德 POI 图片"),
+                        credit=f"{place.name} · {candidate.get('credit', '实景图片')}",
                     )
                 )
-                return
+                return True
             except (httpx.HTTPError, ValueError, OSError, ImageRejected):
-                continue
+                return False
+
+        tried = set()
+        for candidate in source_photos(data, place)[:8]:
+            tried.add(candidate["url"])
+            if await use_photo(candidate):
+                return
+        if providers.configured("firecrawl"):
+            await providers.search(
+                f'{plan.conditions.destination} "{place_search_name(place.name)}" 实景 照片 游记',
+                subject=place.name,
+            )
+            for candidate in [
+                candidate for candidate in source_photos(data, place) if candidate["url"] not in tried
+            ][:4]:
+                if await use_photo(candidate):
+                    return
         data.issues.append(
             ResearchIssue(
                 stage="景点图片",

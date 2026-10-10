@@ -20,8 +20,16 @@ const videoStatusLabels: Record<string, string> = {
   outside_date_range: '超出发布时间范围', video_too_long: '视频时长超限', irrelevant_video: '内容不匹配',
   selection_limit: '已选取其他候选', access_restricted: '访问受限', advice_extraction_failed: '建议整理未完成',
   no_relevant_advice: '未提取到相关建议',
+  credits_exhausted: '模型额度不足', auth_failed: '模型凭证或权限被拒绝',
+  request_rejected: '模型请求被拒绝', not_configured: '模型未配置',
   content_partial: '已读取部分内容',
   duration_unknown: '视频时长未知',
+  metadata_timeout: '元数据采集超时', metadata_failed: '元数据采集失败', metadata_incomplete: '元数据不完整',
+  verification_required: '平台要求验证', dependency_missing: '采集依赖缺失', extraction_failed: '平台解析失败',
+  content_timeout: '内容读取超时', video_timeout: '视频查询超时', audio_timeout: '音频读取超时',
+  transcription_timeout: '转写超时', content_unavailable: '内容未取得', audio_unavailable: '音频未取得',
+  download_too_large: '媒体文件超过下载上限', transcription_empty: '未识别到语音内容',
+  metadata_unavailable: '视频信息未取得',
 }
 const adviceLabels = { lodging: '住宿', restaurant: '餐饮', pitfall: '避坑', checkin: '打卡', route: '游览' }
 
@@ -29,7 +37,9 @@ function travelServiceMessage(code: string | null | undefined) {
   if (code?.includes('timeout')) return '查询超时。'
   if (code === 'not_configured') return '服务尚未配置。'
   if (code === 'http_401' || code === 'http_403' || code === 'provider_rejected') return '服务访问被拒绝，请检查凭证与权限。'
-  if (code === 'http_429') return '请求受限或额度不足，请稍后刷新。'
+  if (code === 'http_429') return '触发请求频率或并发限制，请稍后刷新。'
+  if (code === 'http_402' || code === 'credits_exhausted') return '服务额度不足，请检查余额或计费状态。'
+  if (code === 'no_eligible_videos' || code === 'no_candidates') return '暂无符合条件的视频，请查看候选筛选结果。'
   return '服务查询未全部完成。'
 }
 
@@ -72,6 +82,9 @@ export function TravelPanel({ project, locked = false }: { project: ProjectDetai
   const [conditions, setConditions] = useState<TravelConditions>({ ...EMPTY_TRAVEL, ...project.travel_conditions })
   const research = query.data
   const plan = research?.data.plan
+  const videos = research?.data.videos ?? []
+  const eligibleVideos = videos.filter((video) => video.eligible || video.selected).length
+  const adviceVideos = new Set(research?.data.video_advice?.map((advice) => advice.video_id)).size
   const running = research?.status === 'queued' || research?.status === 'researching'
   const error = refresh.error ?? update.error ?? booking.error ?? query.error
   return (
@@ -86,7 +99,7 @@ export function TravelPanel({ project, locked = false }: { project: ProjectDetai
         </Button>}
       </div>
       {editing && <>
-        <TravelForm value={conditions} onChange={setConditions} disabled={update.isPending} />
+        <TravelForm value={conditions} onChange={setConditions} disabled={update.isPending} showCostSettings />
         <Button className="mt-3" size="sm" disabled={!conditions.confirmed || !conditions.destination?.trim() || update.isPending} onClick={() => update.mutate({ travel_conditions: conditions }, {
           onSuccess: () => { setEditing(false); void client.invalidateQueries({ queryKey: key }) },
         })}><Check className="size-4" />保存条件</Button>
@@ -109,7 +122,7 @@ export function TravelPanel({ project, locked = false }: { project: ProjectDetai
         {research.data.issues.map((issue, index) => <div key={`${issue.code}-${index}`}><p className="text-xs text-warning">{issue.stage}：{issue.message}</p><p className="mt-1 text-xs text-ink-muted">{issue.action}</p></div>)}
       </div>}
       {research && !research.stale && !!research.data.videos?.length && <details className="mt-4 text-sm" open>
-        <summary className="cursor-pointer font-medium">视频攻略 · {research.data.videos.filter((video) => video.selected).length} 条入选</summary>
+        <summary className="cursor-pointer font-medium">视频攻略 · {videos.length} 条候选 · {eligibleVideos} 条达标 · {adviceVideos} 条提取到建议</summary>
         <ul className="mt-3 divide-y divide-line">
           {research.data.videos.map((video) => <li key={video.id} className="min-w-0 py-3">
             <a href={video.url} target="_blank" rel="noreferrer" className="break-words text-accent hover:underline">{video.title || video.url}</a>
@@ -121,6 +134,7 @@ export function TravelPanel({ project, locked = false }: { project: ProjectDetai
               <span>时长 {video.duration_seconds == null ? '未知' : `${Math.floor(video.duration_seconds / 60)}:${String(Math.floor(video.duration_seconds % 60)).padStart(2, '0')}`}</span>
               <span>{videoStatusLabels[video.error_code ?? video.status ?? 'candidate'] ?? '读取未完成'}</span>
             </p>
+            {video.metadata_error_code && <p className="mt-1 text-xs text-warning">采集：{videoStatusLabels[video.metadata_error_code] ?? '元数据采集失败'}</p>}
             {video.content_kind && <p className="mt-1 text-xs text-ink-muted">{{ subtitles: '平台字幕', transcription: '语音转写', platform_summary: '平台 AI 章节摘要' }[video.content_kind]}{video.content_truncated ? ' · 部分内容' : ''} · 体验参考</p>}
             {research.data.video_advice?.filter((item) => item.video_id === video.id).map((item) => <p key={item.id} className="mt-2 break-words text-xs text-ink-soft">
               {adviceLabels[item.kind]} · {item.place}：{item.suggestion}

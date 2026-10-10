@@ -21,6 +21,7 @@ def stock_provider(client: httpx.AsyncClient) -> UnsplashImageProvider:
         client=client,
         access_key=settings.unsplash_access_key,
         timeout_seconds=settings.image_timeout_seconds,
+        search_timeout_seconds=settings.stock_search_timeout_seconds,
     )
 
 

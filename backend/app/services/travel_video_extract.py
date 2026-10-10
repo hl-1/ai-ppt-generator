@@ -61,8 +61,13 @@ def parse_subtitles(content: str, ext: str) -> list[dict]:
 
 
 class QuietLogger:
-    def debug(self, *args):
-        pass
+    def __init__(self):
+        self.download_too_large = False
+
+    def debug(self, message, *args):
+        # yt-dlp skips oversized files without raising an exception.
+        if "larger than max-filesize" in message:
+            self.download_too_large = True
 
     def warning(self, *args):
         pass
@@ -100,6 +105,17 @@ def inspect_video(payload: dict) -> dict:
 
     with YoutubeDL(ydl_options(payload)) as ydl:
         info = ydl.extract_info(payload["url"], download=False)
+        metadata = {
+            "title": info.get("title"),
+            "author": info.get("uploader"),
+            "timestamp": info.get("timestamp"),
+            "upload_date": info.get("upload_date"),
+            "duration_seconds": info.get("duration"),
+            "likes": info.get("like_count"),
+            "favorites": info.get("favorite_count"),
+        }
+        if payload.get("metadata_only"):
+            return metadata
         subtitles = []
         for source in ("subtitles", "automatic_captions"):
             for language, tracks in (info.get(source) or {}).items():
@@ -124,16 +140,7 @@ def inspect_video(payload: dict) -> dict:
                     break
             except (httpx.HTTPError, ValueError, TypeError):
                 continue
-        return {
-            "title": info.get("title"),
-            "author": info.get("uploader"),
-            "timestamp": info.get("timestamp"),
-            "upload_date": info.get("upload_date"),
-            "duration_seconds": info.get("duration"),
-            "likes": info.get("like_count"),
-            "favorites": info.get("favorite_count"),
-            "segments": segments,
-        }
+        return {**metadata, "segments": segments}
 
 
 def options_headers(info: dict, payload: dict) -> dict:
@@ -170,6 +177,8 @@ def download_audio(payload: dict) -> dict:
         if duration is not None and duration > payload["max_duration"]:
             raise ValueError("video_too_long")
         ydl.process_info(info)
+    if options["logger"].download_too_large:
+        raise ValueError("download_too_large")
     path = Path(payload["work_dir"]) / "audio.mp3"
     if not path.is_file() or path.stat().st_size > limit:
         raise ValueError("audio_unavailable")
@@ -236,13 +245,19 @@ def main():
         result = {
             "error_type": type(error).__name__,
             "error_code": "dependency_missing"
-            if isinstance(error, ImportError)
+            if isinstance(error, ImportError) or ("ffmpeg" in message and "not found" in message)
+            else "verification_required"
+            if any(word in message for word in ("captcha", "verify", "验证码", "安全验证"))
+            else "metadata_timeout"
+            if any(word in message for word in ("timed out", "timeout"))
             else "access_restricted"
             if any(word in message for word in ("cookie", "login", "403", "412"))
             else "download_too_large"
             if "download_too_large" in message
             else "video_too_long"
             if "video_too_long" in message
+            else "audio_unavailable"
+            if "audio_unavailable" in message or "unable to obtain file audio codec" in message
             else "extraction_failed",
         }
     print(json.dumps(result, ensure_ascii=True))

@@ -23,6 +23,9 @@ interface SlideViewProps {
   selectedBlockId?: string | null
   onSelectBlock?: (blockId: string | null) => void
   onCommit?: (blockId: string, body: EditableBlockCommit) => void
+  showImageStatus?: boolean
+  onImageRetry?: (blockId: string) => Promise<void>
+  imageRetryDisabled?: boolean
   /** clip=演示/缩略图裁切；reveal=编辑态溢出可见 + 分割线 */
   overflowMode?: 'clip' | 'reveal'
   /** 槽位/块 id：在其底边画溢出分割线 */
@@ -91,6 +94,9 @@ export function SlideView({
   selectedBlockId = null,
   onSelectBlock,
   onCommit,
+  showImageStatus = false,
+  onImageRetry,
+  imageRetryDisabled,
   overflowMode = 'clip',
   overflowSlotIds,
   slideIndex = 0,
@@ -220,6 +226,9 @@ export function SlideView({
               editable={editable}
               onCommit={onCommit}
               onSelect={onSelectBlock ?? undefined}
+              showImageStatus={showImageStatus}
+              onImageRetry={onImageRetry}
+              imageRetryDisabled={imageRetryDisabled}
             />
             {markOverflow && (
               <div

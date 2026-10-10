@@ -88,6 +88,7 @@ async def test_outline_worker_loads_full_topic_independent_of_title(monkeypatch)
         audience=None,
         tone="professional",
         page_count=5,
+        travel_booking_states={},
         sources=[
             SimpleNamespace(
                 id=uuid.uuid4(), kind="topic", sections=[s.model_dump() for s in document.sections]

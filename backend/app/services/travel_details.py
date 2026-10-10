@@ -73,7 +73,10 @@ def ticket_applies(fact, conditions):
         return bool(conditions.children)
     return not any(
         word in text
-        for word in ("学生", "残疾", "军人", "武警", "消防", "导游", "社保", "社会保障", "妇女节")
+        for word in (
+            "学生", "残疾", "军人", "武警", "消防", "导游", "社保", "社会保障", "妇女节",
+            "人才", "警察", "记者", "教师", "干部", "遗属", "市民", "献血", "荣誉卡",
+        )
     )
 
 
@@ -94,9 +97,21 @@ def official_lines(data, plan, place_id):
     ]
     text = "；".join(dict.fromkeys(fact.quote for fact in usable))
     hours = next(
-        (fact for fact in usable if fact.kind == "hours" and fact.opens and fact.closes), None
+        (fact for fact in usable if fact.kind == "hours" and (fact.opens or fact.closes)), None
     )
-    opening = f"{hours.opens:%H:%M}–{hours.closes:%H:%M}" if hours else "开放时间待确认"
+    opening = (
+        f"{hours.opens:%H:%M}–{hours.closes:%H:%M}"
+        if hours and hours.opens and hours.closes
+        else f"{hours.opens:%H:%M}开放；闭园时间待确认"
+        if hours and hours.opens
+        else f"{hours.closes:%H:%M}闭园；开园时间待确认"
+        if hours and hours.closes
+        else "开放时间待确认"
+    )
+    if hours:
+        stopped = re.search(r"(\d{1,2}[:：]\d{2})\s*[（(]\s*(?:停票|停止售票)", hours.quote)
+        if stopped:
+            opening += f"；{stopped.group(1)}停止售票"
     cutoff = next(
         (
             fact.last_entry
@@ -109,7 +124,10 @@ def official_lines(data, plan, place_id):
         opening += f"\n{cutoff:%H:%M}停止入馆/园"
     prices = []
     for fact in usable:
-        if fact.kind != "price" or fact.amount is None or not ticket_applies(fact, plan.conditions):
+        if (
+            fact.kind != "price" or fact.amount is None
+            or not ticket_applies(fact, plan.conditions)
+        ):
             continue
         extra = re.search(r"([\u4e00-\u9fff]{2,8}馆)[，,、\s]*(?:参观)?门票", fact.quote)
         label = extra.group(1) if extra else "优惠票" if "优惠" in fact.quote else "门票"

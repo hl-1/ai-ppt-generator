@@ -78,7 +78,11 @@ def travel_service_issue(service: str, code: str | None) -> OutlineIssue:
     elif value in {"http_401", "http_403", "provider_rejected"}:
         reason, action = "访问被拒绝", "请联系管理员检查服务凭证与访问权限。"
     elif value == "http_429":
-        reason, action = "请求受限或额度不足", "请稍后刷新资料；持续失败时联系管理员检查额度。"
+        reason, action = "触发请求频率或并发限制", "系统已按限流规则等待重试；仍未完成时稍后刷新资料。"
+    elif value in {"http_402", "credits_exhausted"}:
+        reason, action = "额度不足", "请检查该服务剩余额度或计费状态后刷新资料。"
+    elif value in {"no_eligible_videos", "no_candidates"}:
+        reason, action = "暂无符合条件的视频", "查看候选视频的热度、发布时间和读取状态后刷新。"
     elif value.startswith("http_5"):
         reason, action = "暂时不可用", "请稍后刷新旅行资料。"
     elif value == "invalid_response":

@@ -1,7 +1,7 @@
 import { AlertTriangle, Loader2, RefreshCw, RotateCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
-import { useRetrySlide } from '@/features/deck/api'
+import { useImageAction, useRetrySlide } from '@/features/deck/api'
 import { ChartDataEditor } from '@/features/deck/ChartDataEditor'
 import { ElementToolbar } from '@/features/deck/ElementToolbar'
 import { FlexEditLayer } from '@/features/deck/FlexEditLayer'
@@ -60,6 +60,7 @@ export function SlidePage({
     refresh,
   } = useSlideSaveQueue(projectId, slide.id)
   const retry = useRetrySlide(projectId)
+  const imageAction = useImageAction(projectId)
   const editable = slide.status === 'ready' && !locked && status !== 'conflict'
   const isFlex = slide.layout_mode === 'flex' && slide.layout_tree != null
 
@@ -236,6 +237,16 @@ export function SlidePage({
               selectedBlockId={selectedBlockId}
               onSelectBlock={onSelectBlock}
               onCommit={commit}
+              showImageStatus
+              imageRetryDisabled={!editable || status === 'saving' || imageAction.isPending}
+              onImageRetry={async (blockId) => {
+                const block = slide.blocks.find((item) => item.id === blockId)
+                if (block?.type !== 'image' || block.locked) return
+                await imageAction.mutateAsync({ action: 'generate', slideId: slide.id, blockId,
+                  revision: slide.revision, query: block.image_plan?.subject ?? block.alt,
+                  source: block.image_plan?.source === 'stock' && !block.image_plan.require_real
+                    ? 'auto' : block.image_plan?.source ?? 'auto' })
+              }}
               overflowMode={editable ? 'reveal' : 'clip'}
               overflowSlotIds={overflowSlotIds}
             />

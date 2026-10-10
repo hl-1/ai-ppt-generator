@@ -20,7 +20,7 @@ async def main():
     parser.add_argument("--destination", default="北京")
     parser.add_argument("--interest", action="append", default=[])
     parser.add_argument("--platform", choices=["douyin", "bilibili"], default="douyin")
-    parser.add_argument("--min-likes", type=int, default=10000)
+    parser.add_argument("--min-likes", type=int, default=1000)
     parser.add_argument("--min-favorites", type=int, default=1000)
     parser.add_argument("--lookback-days", type=int, default=180)
     parser.add_argument("--max-candidates", type=int, default=6)
