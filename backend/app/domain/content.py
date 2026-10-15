@@ -84,12 +84,24 @@ class FinancialTableRow(BaseModel):
     spacer: bool = False
 
 
+class TableGeometry(BaseModel):
+    column_widths: list[float]
+    row_heights: list[float]
+    cells: list[list[str]]
+    font_size: float
+    line_height: float = 1.25
+    padding: float = 7
+    width: float
+    height: float
+
+
 class FinancialTableBlock(BlockBase):
     type: Literal["financial_table"] = "financial_table"
     unit: str | None = None
     columns: list[str]
     rows: list[FinancialTableRow]
     highlight_columns: list[int] = Field(default_factory=list)
+    geometry: TableGeometry | None = None
 
 
 class WaterfallItem(BaseModel):
@@ -128,6 +140,35 @@ class DiagramNode(BaseModel):
     title: str
     desc: str = ""
     status: Literal["default", "active", "done", "risk"] = "default"
+    kind: Literal["process", "decision"] = "process"
+
+
+class DiagramNodeGeometry(BaseModel):
+    id: str
+    x: float
+    y: float
+    width: float
+    height: float
+    title_lines: list[str]
+    desc_lines: list[str]
+
+
+class DiagramEdgeGeometry(BaseModel):
+    points: list[tuple[float, float]]
+    label: str | None = None
+    label_x: float = 0
+    label_y: float = 0
+    label_width: float = 0
+    label_height: float = 0
+
+
+class DiagramGeometry(BaseModel):
+    version: int = 1
+    width: float
+    height: float
+    font_size: float
+    nodes: list[DiagramNodeGeometry]
+    edges: list[DiagramEdgeGeometry]
 
 
 class DiagramEdge(BaseModel):
@@ -139,17 +180,19 @@ class DiagramEdge(BaseModel):
 class DiagramBlock(BlockBase):
     type: Literal["diagram"] = "diagram"
     diagram_type: DiagramKind
-    # Mermaid is the source of truth for visual rendering; nodes/edges remain
-    # as a structured editing and validation fallback.
+    # Authored Mermaid is parsed into nodes/edges; shared geometry is derived.
     mermaid: str | None = None
+    direction: Literal["TB", "LR", "BT", "RL"] = "TB"
     nodes: list[DiagramNode] = Field(min_length=1)
     edges: list[DiagramEdge] = Field(default_factory=list)
+    geometry: DiagramGeometry | None = None
 
 
 class TableBlock(BlockBase):
     type: Literal["table"] = "table"
     header: list[str]
     rows: list[list[str]]
+    geometry: TableGeometry | None = None
 
 
 class KpiBlock(BlockBase):

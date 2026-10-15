@@ -7,6 +7,36 @@ from app.llm.base import SlideEditInput
 from app.workflows.slide_edit import build_slide_edit_workflow, run_slide_edit_workflow
 
 
+@pytest.mark.asyncio
+async def test_ai_edit_cannot_create_linear_flowchart():
+    from app.domain.content import DiagramBlock
+    from app.llm.base import SlideEditResult
+    from app.llm.errors import InvalidSlideEditOutputError
+
+    diagram = DiagramBlock(
+        id="b1",
+        slot_id="body",
+        diagram_type="flow",
+        nodes=[
+            {"id": "a", "title": "输入"},
+            {"id": "b", "title": "处理"},
+            {"id": "c", "title": "输出"},
+        ],
+        edges=[{"source": "a", "target": "b"}, {"source": "b", "target": "c"}],
+    )
+    result = SlideEditResult(operations=[], blocks=[_blocks()[0], diagram])
+    generator = ScriptedEditGenerator([result])
+    with pytest.raises(InvalidSlideEditOutputError, match="线性内容禁止生成流程图"):
+        await run_slide_edit_workflow(
+            build_slide_edit_workflow(generator),
+            payload=_payload(instruction="将输入、处理、输出做成流程图"),
+            slide_id="s",
+            layout_id="bullets",
+            blocks=_blocks(),
+        )
+    assert len(generator.prompts) == 2
+
+
 def _blocks() -> list[TextBlock | BulletsBlock]:
     return [
         TextBlock(id="t1", slot_id="title", text="现状与问题", locked=False),

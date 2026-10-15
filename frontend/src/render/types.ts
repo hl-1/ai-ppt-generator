@@ -36,6 +36,7 @@ export type FinancialTableBlock = {
   columns: string[]
   rows: FinancialTableRow[]
   highlight_columns?: number[]
+  geometry?: Schemas['TableGeometry'] | null
 }
 export type WaterfallItem = {
   label: string
@@ -77,6 +78,7 @@ export type DiagramNode = {
   title: string
   desc: string
   status: 'default' | 'active' | 'done' | 'risk'
+  kind?: 'process' | 'decision'
 }
 export type DiagramEdge = {
   source: string
@@ -91,8 +93,10 @@ export type DiagramBlock = {
   type: 'diagram'
   diagram_type: 'flow' | 'timeline' | 'cycle'
   mermaid?: string | null
+  direction?: 'TB' | 'LR' | 'BT' | 'RL'
   nodes: DiagramNode[]
   edges: DiagramEdge[]
+  geometry?: Schemas['DiagramGeometry'] | null
 }
 export type TableBlock = Schemas['TableBlock']
 export type KpiBlock = Schemas['KpiBlock']

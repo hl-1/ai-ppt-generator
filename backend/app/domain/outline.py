@@ -133,3 +133,4 @@ class OutlineDraft(BaseModel):
 
 class OutlinePage(OutlinePageDraft):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    continuation_of: uuid.UUID | None = None

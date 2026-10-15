@@ -285,6 +285,21 @@ def measure_text(
     )
 
 
+def wrap_text(text: str, *, width_pt: float, size_pt: float) -> list[str]:
+    """Lossless line wrapping, including long identifiers without spaces."""
+    latin = _load_face(str(_latin_font_path())) if _latin_font_path().is_file() else None
+    cjk = _load_face(str(_cjk_font_path())) if _cjk_font_path().is_file() else None
+    lines, _ = _wrap_lines(
+        text,
+        max_width_pt=max(1, width_pt),
+        size_pt=size_pt,
+        letter_spacing_pt=0,
+        latin=latin,
+        cjk=cjk,
+    )
+    return lines or [""]
+
+
 def measure_bullets(
     items: list[str],
     *,

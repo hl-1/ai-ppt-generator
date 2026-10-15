@@ -11,6 +11,7 @@ from collections.abc import Mapping
 
 from app.domain.content import (
     Block,
+    BulletsBlock,
     CardsBlock,
     ChartBlock,
     ComboChartBlock,
@@ -98,6 +99,14 @@ def _block_plain_text(block: Block) -> str:
         case "table":
             rows = ["\t".join(block.header), *["\t".join(row) for row in block.rows]]
             return "\n".join(rows)
+        case "financial_table":
+            return "\n".join(
+                [
+                    block.unit or "",
+                    *block.columns,
+                    *["\t".join([row.label, *row.values]) for row in block.rows],
+                ]
+            )
         case "chart":
             series = " ".join(
                 f"{item.name}:{'/'.join(str(v) for v in item.values)}" for item in block.series
@@ -283,9 +292,20 @@ def check_evidence_alignment(
             "应包含构成或分类比较图表",
         ),
         "comparison": (chart_present, "应包含对比图表"),
-        "flow": (any(isinstance(block, DiagramBlock) for block in blocks), "应包含流程图"),
+        "flow": (
+            any(
+                isinstance(block, DiagramBlock)
+                and block.diagram_type == "flow"
+                or isinstance(block, BulletsBlock)
+                for block in blocks
+            ),
+            "应包含复杂流程图或线性内容对应的编号步骤",
+        ),
         "timeline": (
-            any(isinstance(block, DiagramBlock) for block in blocks),
+            any(
+                isinstance(block, DiagramBlock) and block.diagram_type == "timeline"
+                for block in blocks
+            ),
             "应包含阶段时间轴",
         ),
         "table": (
@@ -486,14 +506,13 @@ def check_deck_content_quality(
 def is_repair_worthy(issue: StructureIssue, *, topic_mode: bool = False) -> bool:
     """生成回路是否应因该问题触发充实/结构修复。
 
-    普通文档保留只提示的行为；主题生成没有可追溯的人工排版约束，
-    因此允许针对溢出/容量问题做一轮定向修复。
+    文档和主题生成都对溢出、容量问题做一轮定向修复。
     """
     if issue.severity == "error":
         return True
     if issue.code in {"thin_content", "empty_phrase"}:
         return True
     if issue.code in {"overflow", "capacity"}:
-        return topic_mode
+        return True
     # 未标注 code 的 warning 默认不修（避免容量类旧路径）
     return False

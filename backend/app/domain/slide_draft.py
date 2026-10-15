@@ -38,12 +38,11 @@ from app.domain.flex_layout import (
 from app.domain.flex_normalize import normalize
 from app.domain.flex_presets import BlockRef, seed_layout_for_blocks
 from app.domain.flow_policy import (
-    card_items_from_flow_nodes,
     compact_card_items,
-    compact_flow_nodes,
+    flow_as_steps,
     should_keep_flow_diagram,
 )
-from app.domain.mermaid import ensure_mermaid, mermaid_for_diagram, normalize_flow_edges
+from app.domain.mermaid import ensure_mermaid, normalize_flow_edges
 
 # 模型只负责"往哪个槽位放什么内容"。块 id、锁定标记、图片来源这些
 # 由服务端掌握的字段不进入模型契约：让模型编造它们只会带来无谓的校验负担。
@@ -138,6 +137,7 @@ class DiagramNodeContent(BaseModel):
     title: str
     desc: str = ""
     status: Literal["default", "active", "done", "risk"] = "default"
+    kind: Literal["process", "decision"] = "process"
 
 
 class DiagramEdgeContent(BaseModel):
@@ -459,6 +459,7 @@ def _to_block(block_id: str, content: SlotContent):  # noqa: ANN202
                     title=node.title,
                     desc=node.desc,
                     status=node.status,
+                    kind=node.kind,
                 )
                 for node in content.nodes
             ]
@@ -466,25 +467,19 @@ def _to_block(block_id: str, content: SlotContent):  # noqa: ANN202
                 DiagramEdge(source=edge.source, target=edge.target, label=edge.label)
                 for edge in content.edges
             ]
-            if content.diagram_type == "flow":
-                if not should_keep_flow_diagram(nodes, edges):
-                    return CardsBlock(
-                        **common,
-                        items=card_items_from_flow_nodes(nodes),
-                    )
-                nodes = compact_flow_nodes(nodes)
-                edges = normalize_flow_edges(content.diagram_type, nodes, edges)
-            return DiagramBlock(
+            edges = normalize_flow_edges(content.diagram_type, nodes, edges)
+            block = DiagramBlock(
                 **common,
                 diagram_type=content.diagram_type,
-                mermaid=(
-                    mermaid_for_diagram(content.diagram_type, nodes, edges)
-                    if content.diagram_type == "flow"
-                    else ensure_mermaid(content.mermaid, content.diagram_type, nodes, edges)
-                ),
+                mermaid=ensure_mermaid(content.mermaid, content.diagram_type, nodes, edges),
                 nodes=nodes,
                 edges=edges,
             )
+            if content.diagram_type in {"flow", "cycle"} and not should_keep_flow_diagram(
+                nodes, edges
+            ):
+                return flow_as_steps(block)
+            return block
         case TableContent():
             return TableBlock(**common, header=content.header, rows=content.rows)
         case KpiContent():
@@ -582,6 +577,7 @@ def _to_flex_block(block_id: str, content: FlexBlockContent):  # noqa: ANN202
                     title=node.title,
                     desc=node.desc,
                     status=node.status,
+                    kind=node.kind,
                 )
                 for node in content.nodes
             ]
@@ -589,25 +585,19 @@ def _to_flex_block(block_id: str, content: FlexBlockContent):  # noqa: ANN202
                 DiagramEdge(source=edge.source, target=edge.target, label=edge.label)
                 for edge in content.edges
             ]
-            if content.diagram_type == "flow":
-                if not should_keep_flow_diagram(nodes, edges):
-                    return CardsBlock(
-                        **common,
-                        items=card_items_from_flow_nodes(nodes),
-                    )
-                nodes = compact_flow_nodes(nodes)
-                edges = normalize_flow_edges(content.diagram_type, nodes, edges)
-            return DiagramBlock(
+            edges = normalize_flow_edges(content.diagram_type, nodes, edges)
+            block = DiagramBlock(
                 **common,
                 diagram_type=content.diagram_type,
-                mermaid=(
-                    mermaid_for_diagram(content.diagram_type, nodes, edges)
-                    if content.diagram_type == "flow"
-                    else ensure_mermaid(content.mermaid, content.diagram_type, nodes, edges)
-                ),
+                mermaid=ensure_mermaid(content.mermaid, content.diagram_type, nodes, edges),
                 nodes=nodes,
                 edges=edges,
             )
+            if content.diagram_type in {"flow", "cycle"} and not should_keep_flow_diagram(
+                nodes, edges
+            ):
+                return flow_as_steps(block)
+            return block
         case FlexTableContent():
             return TableBlock(**common, header=content.header, rows=content.rows)
         case FlexKpiContent():

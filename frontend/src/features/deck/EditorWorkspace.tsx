@@ -1,4 +1,4 @@
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { AlertTriangle, Image as ImageIcon, Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { WorkbenchHeader } from '@/components/WorkbenchHeader'
 import { Button } from '@/components/ui/Button'
@@ -12,6 +12,7 @@ import {
   useReorderSlides,
 } from '@/features/deck/api'
 import { DeleteSlideDialog } from '@/features/deck/DeleteSlideDialog'
+import { imageCoverage } from '@/features/deck/cache'
 import { EditorHeaderActions } from '@/features/deck/EditorHeaderActions'
 import { EditorRail } from '@/features/deck/EditorRail'
 import type { BlockSelection, RailTab } from '@/features/deck/editorTypes'
@@ -124,6 +125,11 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
   const ready = progress.event?.ready ?? deck?.ready ?? 0
   const failed = progress.event?.failed ?? deck?.failed ?? 0
   const total = progress.event?.total ?? deck?.total ?? 0
+  const images = deck ? imageCoverage(deck) : null
+  const incompleteImages = images && (
+    images.failed > 0 || images.duplicates > 0
+    || (!images.pending && (images.missing > 0 || images.ready < images.minimum))
+  )
   const actionError =
     generate.error ??
     cancel.error ??
@@ -171,6 +177,28 @@ export function EditorWorkspace({ project }: { project: ProjectDetail }) {
           />
         )}
       </WorkbenchHeader>
+      {!generating && images && total > 0 && project.report_brief?.scenario !== 'travel_plan' && (
+        <div role="status" className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-line bg-surface px-5 py-1.5 text-xs text-ink-muted">
+          <span className="inline-flex items-center gap-1.5 tabular-nums">
+            <ImageIcon className="size-3.5" />
+            配图 {images.ready} / {Math.max(images.planned, images.minimum)} 张
+          </span>
+          {images.pending > 0 && <span className="inline-flex items-center gap-1.5">
+            <Loader2 className="size-3 animate-spin" />{images.pending} 张处理中
+          </span>}
+          {incompleteImages && <button type="button" className="inline-flex items-center gap-1.5 text-negative hover:underline"
+            onClick={() => {
+              const target = slides.find((slide) => slide.status === 'ready' && slide.blocks.some(
+                (block) => block.type === 'image' && (!block.url || block.image_status === 'failed'),
+              )) ?? active
+              if (target) focusSlide(target.id)
+              setRail('image')
+            }}>
+            <AlertTriangle className="size-3.5" />
+            {images.failed ? `${images.failed} 张失败` : images.duplicates ? '存在重复配图' : '配图未达标'}
+          </button>}
+        </div>
+      )}
       {project.report_brief?.scenario === 'travel_plan' && <TravelResultStatus projectId={project.id}
         missingImages={slides.flatMap((slide) => slide.blocks).filter((block) => block.type === 'image' && (!block.url || block.image_status === 'failed')).length} />}
 

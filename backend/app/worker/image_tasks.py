@@ -7,6 +7,7 @@ import httpx
 from app.core.config import get_settings
 from app.core.db import async_session_factory
 from app.core.redis import get_redis
+from app.domain.theme import resolve_project_theme
 from app.images.pipeline import create_image_pipeline
 from app.models.project import Project
 from app.services.deck import load_slides, to_content_slide
@@ -62,6 +63,7 @@ async def generate_slide_images(
             if b.get("image_asset_id")
         }
         user_id, title, page_title = project.user_id, project.title, slide.title
+        theme = resolve_project_theme(project)
         await session.commit()
 
     async def reserve(asset_id: str) -> bool:
@@ -72,7 +74,7 @@ async def generate_slide_images(
         )
 
     try:
-        async with asyncio.timeout(get_settings().image_timeout_seconds * len(targets) + 30):
+        async with asyncio.timeout(get_settings().image_timeout_seconds * len(targets) * 2 + 30):
             async with httpx.AsyncClient(trust_env=False) as client:
                 pipeline = ctx.get("image_pipeline") or create_image_pipeline(
                     client, reserve=reserve
@@ -85,6 +87,9 @@ async def generate_slide_images(
                     page_title=page_title,
                     slide=content,
                     excluded_ids=used,
+                    theme=theme,
+                    attempts=2,
+                    reserve=reserve,
                 )
         updates = {}
         for block in resolved.blocks:

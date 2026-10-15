@@ -8,10 +8,12 @@ from app.core.redis import get_redis
 from app.domain.content import Block
 from app.domain.content import Slide as ContentSlide
 from app.domain.flex_layout import FlexContainer
+from app.domain.image_coverage import ImageCoverage, summarize_images
 from app.domain.outline import OutlinePage
 from app.domain.page_rhythm import assign_fixed_layouts
 from app.domain.theme import Theme
 from app.domain.validation import validate_slide
+from app.domain.visual_layout import prepare_visual_layout
 from app.models.project import Project
 from app.models.slide import Slide
 from app.schemas.deck import DeckEvent, DeckPublic, DeckStatus, SlidePublic
@@ -67,11 +69,11 @@ async def invalidate_outline_slides(
     blueprint: dict | None = None,
 ) -> None:
     previous = {
-        page.id: page.model_dump(exclude={"planning_notes"})
-        for page in outline_pages(project)
+        page.id: page.model_dump(exclude={"planning_notes"}) for page in outline_pages(project)
     }
     changed_ids = {
-        page.id for page in pages
+        page.id
+        for page in pages
         if previous.get(page.id) != page.model_dump(exclude={"planning_notes"})
     }
     blueprint_changed = blueprint is not None and blueprint != project.outline.blueprint
@@ -90,10 +92,14 @@ def refresh_slide_issues(
     theme: Theme | None = None,
 ) -> None:
     """按当前 blocks/layout/主题重算结构与溢出告警并写回 JSONB。"""
-    content = to_content_slide(slide)
+    from app.domain.theme import get_theme
+
+    content = prepare_visual_layout(
+        to_content_slide(slide), theme or get_theme(theme_id or "ivory")
+    )
+    slide.blocks = [block.model_dump(mode="json") for block in content.blocks]
     slide.issues = [
-        issue.model_dump()
-        for issue in validate_slide(content, theme_id=theme_id, theme=theme)
+        issue.model_dump() for issue in validate_slide(content, theme_id=theme_id, theme=theme)
     ]
 
 
@@ -133,6 +139,8 @@ async def sync_slides(
     for position, page in enumerate(pages, start=1):
         assigned_layout_id = fixed_layouts.get(position, page.layout_id)
         slide = existing.get(page.id)
+        if page.continuation_of and slide is not None:
+            continue
         if slide is None:
             slide = Slide(
                 project_id=project.id,
@@ -206,7 +214,21 @@ def to_deck_public(project: Project, slides: list[Slide]) -> DeckPublic:
         total=len(slides),
         ready=sum(1 for slide in slides if slide.status == "ready"),
         failed=sum(1 for slide in slides if slide.status == "failed"),
+        images=deck_image_coverage(project, slides),
         slides=[SlidePublic.model_validate(slide) for slide in slides],
+    )
+
+
+def deck_image_coverage(project: Project, slides: list[Slide]) -> ImageCoverage:
+    pages = outline_pages(project)
+    planned = {page.id for page in pages if page.image_plan}
+    filled = {slide.outline_page_id for slide in slides if any(
+        block.get("type") == "image" for block in slide.blocks
+    )}
+    return summarize_images(
+        [block for slide in slides if slide.status == "ready" for block in slide.blocks],
+        minimum=min(2, len(pages) or len(slides)),
+        unfilled_plans=len(planned - filled),
     )
 
 

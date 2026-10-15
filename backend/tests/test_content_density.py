@@ -81,7 +81,7 @@ def test_fixed_layout_skips_block_count_thin_check() -> None:
     assert issues == []
 
 
-def test_repair_worthy_skips_overflow_capacity() -> None:
+def test_document_repair_includes_overflow_capacity() -> None:
     assert is_repair_worthy(
         StructureIssue(
             severity="warning",
@@ -90,7 +90,7 @@ def test_repair_worthy_skips_overflow_capacity() -> None:
             message="溢出",
             code="overflow",
         )
-    ) is False
+    ) is True
     assert is_repair_worthy(
         StructureIssue(
             severity="warning",

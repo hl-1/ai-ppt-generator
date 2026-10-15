@@ -352,6 +352,8 @@ async def _load_generation_input(
                 level=section.get("level", 0),
                 text=section.get("text", ""),
                 locator=section.get("locator", ""),
+                diagrams=section.get("diagrams", []),
+                tables=section.get("tables", []),
             )
             for source_index, source in enumerate(project.sources, start=1)
             for section_index, section in enumerate(source.sections, start=1)

@@ -19,13 +19,14 @@ from app.domain.outline import (
 )
 from app.domain.slide_draft import FlexSlideDraft, SlideDraft
 from app.domain.slide_patch import BlockPatch
+from app.ingest.models import SourceSection
 from app.schemas.project import MAX_DECK_PAGE_COUNT
 
 ContentDensity = Literal["concise", "medium", "detailed"]
 PageRole = Literal["cover", "toc", "section", "content", "summary"]
 
 
-class OutlineSourceSection(BaseModel):
+class OutlineSourceSection(SourceSection):
     """带稳定引用编号的来源小节。
 
     ref 采用「来源编号:小节编号」（如 S1:2），生成结果只能引用这些编号，

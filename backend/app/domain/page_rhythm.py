@@ -93,8 +93,26 @@ def assign_layout_templates(
     remaining = {group: list(pool) for group, pool in pools.items()}
     assigned: dict[int, LayoutTemplate] = {}
     used_rhythms: set[str] = set()
+    image_templates = (
+        LayoutTemplate("visual_left_balanced", "标题在上，左侧图片与右侧精简说明并列，各占约一半"),
+        LayoutTemplate("visual_right_balanced", "标题在上，左侧精简说明与右侧图片并列，各占约一半"),
+        LayoutTemplate("visual_below", "标题在上，图片占主要区域，下方保留少量解读"),
+        *(
+            template for template in _TEMPLATE_POOLS["visual"]
+            if template.id not in {
+                "visual_left_balanced", "visual_right_balanced", "visual_below", "visual_focus",
+            }
+        ),
+    )
 
     for position, page in enumerate(pages, start=1):
+        if page.image_plan or page.visual_type in {"photo", "illustration"}:
+            choices = [item for item in image_templates if item.id not in used_rhythms]
+            template = (choices or list(image_templates))[0]
+            assigned[position] = template
+            used_rhythms.add(template.id)
+            remaining["visual"] = [item for item in remaining["visual"] if item.id != template.id]
+            continue
         group = _template_group(page, topic_mode=topic_mode)
         pool = pools[group]
         choices = remaining[group]

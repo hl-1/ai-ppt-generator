@@ -181,7 +181,7 @@ def _copied_outline_page(outline: ProjectOutline, source: Slide) -> dict:
         None,
     )
     if existing is not None:
-        return {**existing, "id": str(uuid.uuid4())}
+        return {**existing, "id": str(uuid.uuid4()), "continuation_of": None}
     fallback = blank_outline_page().model_dump(mode="json")
     return {**fallback, "title": source.title, "layout_id": source.layout_id}
 

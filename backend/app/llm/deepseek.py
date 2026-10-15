@@ -8,6 +8,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.domain.content_density import PAGE_ROLES, outline_density_hint
+from app.domain.deck_images import image_budget
 from app.domain.layout import load_layouts
 from app.domain.outline import (
     DeckBlueprint,
@@ -47,6 +48,11 @@ logger = logging.getLogger(__name__)
 
 _VISUAL_RULE = (
     "配图规则：根据主题规划与本页直接相关的画面，没有表达价值时 visual/image_plan 留 null。"
+    "结合用户给定的 image_budget 在整份中安排不同的配图主体，至少覆盖封面和一个内容页；"
+    "优先场景、案例、实物与产品介绍，分散安排，不重复使用同一画面。"
+    "图表和流程不计入配图数量。不要为配图替换可靠数据、接口明细或复杂流程。"
+    "软件功能有真实截图时优先截图，缺少截图可规划无文字的交互场景插图，"
+    "禁止伪造可读界面、品牌标识和产品截图。"
     "旅游、景点、建筑、产品与人物优先真实照片，visual_type=photo；抽象概念可用 illustration。"
     "visual 只能是描述具体画面的字符串（不超过 120 字）或 null，禁止填写对象或数组。"
     "图片页同时填写 image_plan 对象：subject（具体画面的描述字符串）、"
@@ -288,6 +294,8 @@ class DeepSeekOutlineGenerator:
                             "ref": section.ref,
                             "heading": section.heading,
                             "text": section.text,
+                            "diagrams": [d.model_dump() for d in section.diagrams],
+                            "tables": [t.model_dump() for t in section.tables],
                         }
                         for section in payload.sections
                     ],
@@ -395,6 +403,8 @@ class DeepSeekOutlineGenerator:
                     "heading": section.heading,
                     "text": section.text,
                     "locator": section.locator,
+                    "diagrams": [d.model_dump() for d in section.diagrams],
+                    "tables": [t.model_dump() for t in section.tables],
                 }
                 for section in sections
             ],
@@ -569,6 +579,8 @@ class DeepSeekOutlineGenerator:
                 "level": section.level,
                 "text": section.text,
                 "locator": section.locator,
+                "diagrams": [d.model_dump() for d in section.diagrams],
+                "tables": [t.model_dump() for t in section.tables],
             }
             for section in payload.sections
         ]
@@ -577,6 +589,12 @@ class DeepSeekOutlineGenerator:
             "audience": payload.audience,
             "tone": payload.tone,
             "page_count": payload.page_count,
+            "image_budget": dict(zip(
+                ("minimum", "target"),
+                image_budget(
+                    payload.page_count, scenario=payload.report_brief.scenario, title=payload.title
+                ), strict=True,
+            )),
             "content_density": payload.content_density,
             "topic_mode": payload.topic_mode,
             "topic_request": (

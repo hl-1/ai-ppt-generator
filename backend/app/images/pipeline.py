@@ -33,7 +33,12 @@ class ImagePipeline:
             if not provider.available():
                 continue
             try:
-                asset = await provider.fetch(request)
+                # Automatic stock fallbacks must still match the planned subject.
+                provider_request = (
+                    request.model_copy(update={"preferred_source": "stock"})
+                    if provider.source == "stock" and request.subject else request
+                )
+                asset = await provider.fetch(provider_request)
             except ImageFetchError as error:
                 failures.append(str(error))
                 continue

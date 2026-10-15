@@ -44,8 +44,11 @@ export function FinancialTableView({
   const cell: CSSProperties = {
     padding: `${pt(7)} ${pt(12)}`,
     borderBottom: `${pt(0.75)} solid ${line}`,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'anywhere',
+    lineHeight: block.geometry?.line_height ?? 1.25,
+    ...(block.geometry ? { fontSize: pt(block.geometry.font_size),
+      padding: pt(block.geometry.padding) } : {}),
   }
 
   return (
@@ -53,30 +56,31 @@ export function FinancialTableView({
       <table
         style={{
           width: '100%',
-          height: '100%',
           tableLayout: 'fixed',
           borderCollapse: 'collapse',
           borderBottom: `${pt(2.5)} solid ${accent}`,
         }}
       >
+        <colgroup>{(block.geometry?.column_widths ?? [1, ...block.columns.map(() => 1)]).map((w, i, widths) =>
+          <col key={i} style={{ width: `${w / widths.reduce((a, b) => a + b, 0) * 100}%` }} />)}</colgroup>
         <thead>
-          <tr>
-            <th style={{ ...headerStyle, ...cell, width: '52%', color: '#fff', background: accent, textAlign: 'left' }}>
-              {block.unit ?? ''}
+          <tr style={{ height: block.geometry ? pt(block.geometry.row_heights[0]!) : undefined }}>
+            <th style={{ ...headerStyle, ...cell, color: '#fff', background: accent, textAlign: 'left' }}>
+              {block.geometry?.cells[0]?.[0] ?? block.unit ?? ''}
             </th>
-            {block.columns.map((column) => (
+            {block.columns.map((column, index) => (
               <th
                 key={column}
-                style={{ ...headerStyle, ...cell, color: '#fff', background: accent, textAlign: 'right' }}
+                style={{ ...headerStyle, ...cell, color: '#fff', background: accent, textAlign: 'left' }}
               >
-                {column}
+                {block.geometry?.cells[0]?.[index + 1] ?? column}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
           {block.rows.map((row, rowIndex) => (
-            <tr key={`${row.label}-${rowIndex}`}>
+            <tr key={`${row.label}-${rowIndex}`} style={{ height: block.geometry ? pt(block.geometry.row_heights[rowIndex + 1]!) : undefined }}>
               <td
                 style={{
                   ...cellStyle,
@@ -88,7 +92,7 @@ export function FinancialTableView({
                   textAlign: 'left',
                 }}
               >
-                {row.label}
+                {block.geometry?.cells[rowIndex + 1]?.[0] ?? row.label}
               </td>
               {block.columns.map((_column, valueIndex) => {
                 const col = valueIndex + 1
@@ -100,11 +104,11 @@ export function FinancialTableView({
                       ...cell,
                       background: highlights.has(col) ? accentSoft : background,
                       fontWeight: row.emphasis ? 700 : cellStyle.fontWeight,
-                      textAlign: 'right',
+                      textAlign: 'left',
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    {row.values[valueIndex] ?? ''}
+                    {block.geometry?.cells[rowIndex + 1]?.[valueIndex + 1] ?? row.values[valueIndex] ?? ''}
                   </td>
                 )
               })}

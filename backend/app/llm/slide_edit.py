@@ -85,9 +85,7 @@ class DeepSeekSlideEditGenerator:
                     result = await tool.ainvoke(args)
                 messages.append(ToolMessage(content=str(result), tool_call_id=str(call_id)))
 
-        operations = _diff_operations(
-            originals, session.blocks, payload.layout_tree, session.tree
-        )
+        operations = _diff_operations(originals, session.blocks, payload.layout_tree, session.tree)
         return SlideEditResult(
             operations=operations,
             blocks=session.blocks,
@@ -117,6 +115,8 @@ class DeepSeekSlideEditGenerator:
             "3. 正文使用中文，写具体结论与事实，不写空话。\n"
             "4. 数字必须来自给定内容，缺少数据时不要编造。\n"
             "5. locked 块不可 replace / delete / change_type。\n"
+            "6. 线性内容禁止生成流程图，使用编号步骤。只有原文支持条件分支、"
+            "并行汇合或循环回退时才可创建流程图，禁止编造关系。\n"
             f"{layout_note}"
         )
 

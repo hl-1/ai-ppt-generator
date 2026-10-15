@@ -326,12 +326,13 @@ function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ta
   const wrapping: CSSProperties = {
     whiteSpace: 'pre-wrap',
     wordBreak: 'normal',
-    overflowWrap: 'normal',
+    overflowWrap: 'anywhere',
+    ...(block.geometry ? { fontSize: pt(block.geometry.font_size), lineHeight: 1.25 } : {}),
   }
   const headerStyle = { ...mergeTextCss(theme, 'table_header', block.style), ...wrapping }
   const cellStyle = { ...mergeTextCss(theme, 'table_cell', block.style), ...wrapping }
   const border = `${pt(theme.shape.border_width_pt)} solid ${resolveColor(theme, 'line')}`
-  const cellPadding: CSSProperties = { padding: `${pt(9)} ${pt(12)}`, textAlign: 'left' }
+  const cellPadding: CSSProperties = { padding: pt(block.geometry?.padding ?? 7), textAlign: 'left' }
   if (block.style?.align) {
     cellPadding.textAlign = block.style.align
   }
@@ -339,8 +340,10 @@ function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ta
   return (
     <div style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+      {block.geometry && <colgroup>{block.geometry.column_widths.map((width, i) =>
+        <col key={i} style={{ width: `${width / block.geometry!.width * 100}%` }} />)}</colgroup>}
       <thead>
-        <tr>
+        <tr style={{ height: block.geometry ? pt(block.geometry.row_heights[0]!) : undefined }}>
           {block.header.map((cell, index) => (
             <th
               key={`h-${index}`}
@@ -363,7 +366,7 @@ function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ta
                   }
                 />
               ) : (
-                cell
+                block.geometry?.cells[0]?.[index] ?? cell
               )}
             </th>
           ))}
@@ -371,7 +374,7 @@ function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ta
       </thead>
       <tbody>
         {block.rows.map((row, rowIndex) => (
-          <tr key={`r-${rowIndex}`}>
+          <tr key={`r-${rowIndex}`} style={{ height: block.geometry ? pt(block.geometry.row_heights[rowIndex + 1]!) : undefined }}>
             {row.map((cell, cellIndex) => (
               <td
                 key={`c-${rowIndex}-${cellIndex}`}
@@ -400,7 +403,7 @@ function TableView({ block, theme, editable, onCommit, onSelect }: BlockProps<Ta
                     }
                   />
                 ) : (
-                  cell
+                  block.geometry?.cells[rowIndex + 1]?.[cellIndex] ?? cell
                 )}
               </td>
             ))}

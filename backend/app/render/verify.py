@@ -26,6 +26,7 @@ from app.domain.content import (
     ChartBlock,
     Deck,
     DiagramBlock,
+    FinancialTableBlock,
     ImageBlock,
     KpiBlock,
     Slide,
@@ -258,7 +259,9 @@ def _check_native_tables(
     source: Slide,
     shapes: list[BaseShape],
 ) -> list[VerifyIssue]:
-    expected = sum(1 for block in source.blocks if isinstance(block, TableBlock))
+    expected = sum(
+        1 for block in source.blocks if isinstance(block, (TableBlock, FinancialTableBlock))
+    )
     if expected == 0:
         return []
 
@@ -382,18 +385,28 @@ def key_texts_from_block(block: Block) -> list[str]:
             for row in rows:
                 texts.extend(row)
             return [item for item in texts if item.strip()]
+        case FinancialTableBlock():
+            return [
+                value
+                for value in [
+                    block.unit or "",
+                    *block.columns,
+                    *[value for row in block.rows for value in [row.label, *row.values]],
+                ]
+                if value.strip()
+            ]
         case ChartBlock(categories=categories, series=series):
             texts = list(categories)
             texts.extend(item.name for item in series if item.name)
             return [item for item in texts if item.strip()]
-        case DiagramBlock(nodes=nodes):
+        case DiagramBlock(nodes=nodes, edges=edges):
             texts: list[str] = []
             for node in nodes:
                 if node.title.strip():
                     texts.append(node.title)
                 if node.desc.strip():
                     texts.append(node.desc)
-            return texts
+            return [*texts, *[edge.label for edge in edges if edge.label]]
         case ImageBlock():
             return []
         case CardsBlock(items=items):
@@ -419,6 +432,8 @@ def _collect_text_frame_strings(shapes: list[BaseShape]) -> list[str]:
             continue
         if not shape.has_text_frame:
             continue
+        if shape.text_frame.text.strip():
+            texts.append(shape.text_frame.text.strip())
         for paragraph in shape.text_frame.paragraphs:
             value = paragraph.text.strip()
             if value:
@@ -468,7 +483,8 @@ def _text_present(expected: str, haystack: list[str]) -> bool:
     if needle in haystack:
         return True
     # 允许段落合并或单元格拼接后的包含关系
-    return any(needle in item for item in haystack)
+    compact = "".join(needle.split())
+    return any(compact in "".join(item.split()) for item in haystack)
 
 
 def _shape_label(shape: BaseShape) -> str:

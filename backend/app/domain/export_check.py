@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import struct
 from collections.abc import Callable, Mapping
+from hashlib import sha256
 
 from pydantic import BaseModel, Field
 
@@ -141,17 +142,24 @@ def check_images(
     *,
     load_image: ImageLoader | None,
     media_key_from_url: Callable[[str], str | None] | None,
+    minimum_images: int = 0,
 ) -> list[StructureIssue]:
     """图片资源不存在/无法读取 → error；分辨率偏低 → warning。"""
     if load_image is None or media_key_from_url is None:
         return []
 
     issues: list[StructureIssue] = []
+    seen: set[str] = set()
     for slide in deck.slides:
         for block in slide.blocks:
             if not isinstance(block, ImageBlock):
                 continue
             if block.source == "placeholder" or not block.url:
+                issues.append(StructureIssue(
+                    severity="warning", slide_id=slide.id, slot_id=block.slot_id,
+                    message="配图仍在处理中" if block.image_status == "queued"
+                    else "配图尚未完成，当前仍是占位，请重试或上传图片",
+                ))
                 continue
             key = media_key_from_url(block.url)
             if key is None:
@@ -200,6 +208,13 @@ def check_images(
                 continue
 
             width_px, height_px = size
+            identity = sha256(data).hexdigest()
+            if identity in seen:
+                issues.append(StructureIssue(
+                    severity="warning", slide_id=slide.id, slot_id=block.slot_id,
+                    message="图片与其他页面重复，建议换成与本页内容相关的不同画面",
+                ))
+            seen.add(identity)
             if min(width_px, height_px) < _LOW_RES_MIN_PX:
                 issues.append(
                     StructureIssue(
@@ -209,6 +224,11 @@ def check_images(
                         message=(f"图片分辨率偏低（{width_px}×{height_px}），投影时可能发糊"),
                     )
                 )
+    if len(seen) < minimum_images:
+        issues.append(StructureIssue(
+            severity="warning", slide_id="", slot_id=None,
+            message=f"整份 PPT 仅有 {len(seen)} 张不同且可读取的图片，建议至少 {minimum_images} 张",
+        ))
     return issues
 
 
@@ -303,6 +323,7 @@ def run_export_check(
     slide_evidence: Mapping[str, str] | None = None,
     load_image: ImageLoader | None = None,
     media_key_from_url: Callable[[str], str | None] | None = None,
+    minimum_images: int = 0,
 ) -> ExportCheckReport:
     """产出导出前分级报告。"""
     from app.domain.text_metrics import fonts_available
@@ -317,7 +338,10 @@ def run_export_check(
     issues.extend(validate_deck(deck, theme=resolved))
     issues.extend(check_slot_bounds(deck))
     issues.extend(check_content_overflows_canvas(deck, theme=resolved))
-    issues.extend(check_images(deck, load_image=load_image, media_key_from_url=media_key_from_url))
+    issues.extend(check_images(
+        deck, load_image=load_image, media_key_from_url=media_key_from_url,
+        minimum_images=minimum_images,
+    ))
     issues.extend(
         check_deck_content_quality(
             deck,

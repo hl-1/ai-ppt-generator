@@ -5,7 +5,7 @@ from docx import Document
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
-from app.ingest.models import ParsedDocument, SourceSection
+from app.ingest.models import ParsedDocument, SourceSection, SourceTable
 
 _HEADING_STYLE = re.compile(r"^(?:Heading|标题)\s*(\d+)$", re.IGNORECASE)
 
@@ -21,17 +21,23 @@ class DocxParser:
         texts: list[str] = []
         locator = "第 1 段"
         para_index = 0
+        tables: list[SourceTable] = []
 
         def flush() -> None:
-            nonlocal heading, level, texts, locator
+            nonlocal heading, level, texts, locator, tables
             body = "\n".join(part for part in texts if part).strip()
             if heading is None and not body:
                 texts = []
                 return
-            sections.append(SourceSection(level=level, heading=heading, text=body, locator=locator))
+            sections.append(
+                SourceSection(
+                    level=level, heading=heading, text=body, locator=locator, tables=tables
+                )
+            )
             heading = None
             level = 0
             texts = []
+            tables = []
 
         for block in document.iter_inner_content():
             if isinstance(block, Paragraph):
@@ -58,6 +64,8 @@ class DocxParser:
                 table_text = _table_to_text(block)
                 if table_text:
                     texts.append(table_text)
+                    rows = [[cell.text for cell in row.cells] for row in block.rows]
+                    tables.append(SourceTable(header=rows[0], rows=rows[1:], locator=locator))
 
         flush()
         return ParsedDocument(sections=sections)

@@ -77,9 +77,7 @@ def fit_tree_to_content(
     """
     block_map = {block.id: block for block in blocks}
     # 叶子宽度只由 row ratios 决定，与 grow 无关，因此求解一次即可定
-    widths_pt = {
-        placed.block_id: placed.rect.w * CANVAS_WIDTH_PT for placed in solve(tree)
-    }
+    widths_pt = {placed.block_id: placed.rect.w * CANVAS_WIDTH_PT for placed in solve(tree)}
     ctx = _FitContext(
         block_map=block_map,
         widths_pt=widths_pt,
@@ -118,23 +116,28 @@ def _fit_container(
 
     if node.type == "overlay":
         return node.model_copy(
-            update={
-                "children": [_fit_child(child, avail_h_pt, ctx) for child in node.children]
-            }
+            update={"children": [_fit_child(child, avail_h_pt, ctx) for child in node.children]}
         )
 
     if node.type == "row":
         # 同一行的子项共享整行高度，横向比例不在本函数职责内
         return node.model_copy(
-            update={
-                "children": [_fit_child(child, avail_h_pt, ctx) for child in node.children]
-            }
+            update={"children": [_fit_child(child, avail_h_pt, ctx) for child in node.children]}
         )
 
     children = list(node.children)
     gaps_pt = max(len(children) - 1, 0) * node.gap_pt
     targets = [_natural_height_pt(child, ctx) for child in children]
     surplus = avail_h_pt - gaps_pt - sum(targets)
+
+    if surplus < 0:
+        absorbers = [i for i, child in enumerate(children) if _is_absorbing(child, ctx)]
+        room = sum(max(0, targets[i] - 100) for i in absorbers)
+        take = min(-surplus, room)
+        if room:
+            for i in absorbers:
+                targets[i] -= take * max(0, targets[i] - 100) / room
+            surplus += take
 
     if surplus > 0 and is_root and ctx.centered:
         children, targets = _center_vertically(children, targets, surplus, node.gap_pt)
@@ -174,9 +177,7 @@ def _absorb_surplus(
         return children, _distribute(targets, remaining, absorbers)
 
     # 2) KPI/表/卡片有限吸收（偏好高度 × 1.6）
-    limited = [
-        index for index, child in enumerate(children) if _is_limited_absorber(child, ctx)
-    ]
+    limited = [index for index, child in enumerate(children) if _is_limited_absorber(child, ctx)]
     if limited:
         room = [
             max(0.0, targets[index] * _LIMITED_ABSORB_MAX_RATIO - targets[index])
@@ -322,12 +323,13 @@ def _leaf_height_pt(leaf: FlexLeaf, ctx: _FitContext) -> float:
         return _measured_height_pt(leaf, block, ctx, kind="text")
     if block.type == "bullets":
         return _measured_height_pt(leaf, block, ctx, kind="bullets")
-    if block.type == "table":
-        rows = 1 + len(block.rows)
-        return max(_MIN_LEAF_HEIGHT_PT, rows * _TABLE_ROW_HEIGHT_PT)
-    if block.type == "financial_table":
-        rows = 1 + len(block.rows)
-        return max(_PREFERRED_HEIGHT_PT["financial_table"], rows * 32.0)
+    if block.type in {"table", "financial_table"}:
+        from app.domain.table_layout import layout_table
+
+        measured = layout_table(
+            block, ctx.widths_pt.get(block.id, SAFE_AREA_WIDTH_PT), CANVAS_HEIGHT_PT, max_font=16
+        )
+        return max(_MIN_LEAF_HEIGHT_PT, measured.height)
     if block.type == "waterfall":
         return max(_PREFERRED_HEIGHT_PT["waterfall"], 190.0 + len(block.items) * 18.0)
     if block.type == "combo_chart":

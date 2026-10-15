@@ -1,0 +1,32 @@
+{
+  "version": 3,
+  "background": "#FFFFFF",
+  "node_fill": "#E5F2FF",
+  "node_border": "#D5DDE3",
+  "text": "#329BFF",
+  "connector": "#8C8C8C",
+  "radius": 12,
+  "connector_radius": 5,
+  "stroke_width": 0.8,
+  "font_size": 14,
+  "label_font_ratio": 0.8571428571428571,
+  "line_height": 1.25,
+  "node_widths": [132, 166, 190],
+  "node_padding": 12,
+  "label_padding_x": 7,
+  "label_padding_y": 3,
+  "layout_options": {
+    "elk.algorithm": "layered",
+    "elk.edgeRouting": "ORTHOGONAL",
+    "elk.padding": "[top=12,left=12,bottom=12,right=12]",
+    "elk.spacing.nodeNode": "16",
+    "elk.layered.spacing.nodeNodeBetweenLayers": "22",
+    "elk.layered.spacing.edgeNodeBetweenLayers": "10",
+    "elk.spacing.edgeNode": "10",
+    "elk.spacing.edgeEdge": "8",
+    "elk.layered.wrapping.multiEdge.improveWrappedEdges": "false",
+    "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+    "elk.layered.mergeEdges": "false",
+    "elk.randomSeed": "1"
+  }
+}

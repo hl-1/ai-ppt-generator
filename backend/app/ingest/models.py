@@ -1,4 +1,17 @@
-from pydantic import BaseModel, Field, field_validator
+import re
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class SourceDiagram(BaseModel):
+    source: str
+    locator: str
+
+
+class SourceTable(BaseModel):
+    header: list[str]
+    rows: list[list[str]]
+    locator: str
 
 
 def _strip_null_bytes(value: object) -> object:
@@ -21,6 +34,22 @@ class SourceSection(BaseModel):
     text: str
     # 来源位置，用于让用户追溯某段内容出自原文何处，例如"第 3 页""第 12 段"
     locator: str
+    diagrams: list[SourceDiagram] = Field(default_factory=list)
+    tables: list[SourceTable] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def recover_legacy_diagrams(self):
+        # Older stored sources kept Mermaid as plain text without fences.
+        if not self.diagrams:
+            for match in re.finditer(
+                r"(?m)^(?:flowchart|graph)\s+(?:TD|TB|BT|LR|RL)\b[^\n]*"
+                r"(?:\n(?!\s*$|```|\||#)[^\n]*(?:--|==|[\"}\]])[^\n]*)*",
+                self.text,
+            ):
+                self.diagrams.append(
+                    SourceDiagram(source=match.group().strip(), locator=self.locator)
+                )
+        return self
 
     @field_validator("heading", "text", "locator", mode="before")
     @classmethod

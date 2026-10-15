@@ -8,6 +8,7 @@ from app.domain.content import (
     CardsBlock,
     Deck,
     DiagramBlock,
+    FinancialTableBlock,
     KpiBlock,
     Slide,
     TableBlock,
@@ -143,7 +144,9 @@ def _overflow_issues(
         estimate_note = "（估算值）" if used_estimate else ""
         issues.append(
             StructureIssue(
-                severity="warning",
+                severity="error"
+                if isinstance(block, (TableBlock, FinancialTableBlock))
+                else "warning",
                 slide_id=slide_id,
                 slot_id=ref_id,
                 message=(
@@ -189,11 +192,18 @@ def _measure_block_overflow(
         results.extend(_measure_cards(block, width_pt=avail_w, height_pt=avail_h, theme=theme))
         return results
 
-    if isinstance(block, TableBlock):
-        results.extend(_measure_table(block, width_pt=avail_w, height_pt=avail_h, theme=theme))
+    if isinstance(block, (TableBlock, FinancialTableBlock)):
+        from app.domain.table_layout import layout_table
+
+        geometry = block.geometry or layout_table(block, width_pt, height_pt)
+        results.append(("表格", geometry.height, height_pt, len(geometry.cells), False))
         return results
 
     if isinstance(block, DiagramBlock):
+        if block.geometry:
+            if block.geometry.font_size < 10:
+                results.append(("流程图文字小于 10 pt", 10, block.geometry.font_size, 1, False))
+            return results
         results.extend(_measure_diagram(block, width_pt=avail_w, height_pt=avail_h, theme=theme))
         return results
 
@@ -259,21 +269,25 @@ def _measure_cards(
     results = []
     for index, item in enumerate(block.items):
         title = f"{item.icon} {item.title}".strip() if item.icon else item.title
-        title_result = measure_text(
-            title, style=title_style, width_pt=inner_w, height_pt=inner_h
-        )
-        desc_result = measure_text(
-            item.desc, style=body_style, width_pt=inner_w, height_pt=inner_h
-        )
+        title_result = measure_text(title, style=title_style, width_pt=inner_w, height_pt=inner_h)
+        desc_result = measure_text(item.desc, style=body_style, width_pt=inner_w, height_pt=inner_h)
         used = title_result.height_pt + 6.0 + desc_result.height_pt
         if financial:
             from app.domain.financial_tech import panel_header_height
 
             header = panel_header_height(card_h, title_style.size_pt, title_style.line_height)
-            title_result = measure_text(title, style=title_style,
-                                        width_pt=max(1, card_w - 48), height_pt=max(1, header - 12))
-            desc_result = measure_text(item.desc, style=body_style, width_pt=inner_w,
-                                       height_pt=max(1, card_h - header - 2 * pad - 18))
+            title_result = measure_text(
+                title,
+                style=title_style,
+                width_pt=max(1, card_w - 48),
+                height_pt=max(1, header - 12),
+            )
+            desc_result = measure_text(
+                item.desc,
+                style=body_style,
+                width_pt=inner_w,
+                height_pt=max(1, card_h - header - 2 * pad - 18),
+            )
             used = max(header, title_result.height_pt + 12) + 18 + desc_result.height_pt
         results.append(
             (
@@ -342,13 +356,17 @@ def _measure_diagram(
         from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, Rect
         from app.domain.mermaid import normalize_flow_edges
 
-        financial_boxes, _ = platform_node_rects(block.nodes,
+        financial_boxes, _ = platform_node_rects(
+            block.nodes,
             normalize_flow_edges(block.diagram_type, block.nodes, block.edges),
-            Rect(x=0, y=0, w=width_pt / CANVAS_WIDTH_PT, h=height_pt / CANVAS_HEIGHT_PT))
+            Rect(x=0, y=0, w=width_pt / CANVAS_WIDTH_PT, h=height_pt / CANVAS_HEIGHT_PT),
+        )
     if block.diagram_type == "timeline":
-        node_h = max((height_pt - gap_y * (count - 1)) / count, 1.0)
-        node_w = width_pt * 0.82
-        geometry_height = node_h * count + gap_y * (count - 1)
+        columns = count if count <= 3 else 2 if count <= 4 else 3
+        rows = (count + columns - 1) // columns
+        node_h = max((height_pt - gap_y * (rows - 1)) / rows, 1.0)
+        node_w = (width_pt - gap_x * (columns - 1)) / columns
+        geometry_height = node_h * rows + gap_y * (rows - 1)
     else:
         node_w = max((width_pt - gap_x * (count - 1)) / count, 120.0)
         node_h = height_pt * 0.64
@@ -358,10 +376,13 @@ def _measure_diagram(
     title_style = merge_text_style(theme, "subtitle", block.style)
     body_style = merge_text_style(theme, "body", block.style)
     results = []
-    if financial_boxes is None and (geometry_height > height_pt + 0.5 or (
-        block.diagram_type != "timeline"
-        and node_w * count + gap_x * (count - 1) > width_pt + 0.5
-    )):
+    if financial_boxes is None and (
+        geometry_height > height_pt + 0.5
+        or (
+            block.diagram_type != "timeline"
+            and node_w * count + gap_x * (count - 1) > width_pt + 0.5
+        )
+    ):
         results.append(("结构图节点区域", geometry_height, height_pt, count, False))
     for index, node in enumerate(block.nodes):
         if financial_boxes is not None:
@@ -371,9 +392,11 @@ def _measure_diagram(
         title_result = measure_text(
             node.title, style=title_style, width_pt=inner_w, height_pt=inner_h
         )
-        desc_result = measure_text(
-            node.desc, style=body_style, width_pt=inner_w, height_pt=inner_h
-        ) if node.desc else None
+        desc_result = (
+            measure_text(node.desc, style=body_style, width_pt=inner_w, height_pt=inner_h)
+            if node.desc
+            else None
+        )
         used = title_result.height_pt + (6.0 + desc_result.height_pt if desc_result else 0.0)
         results.append(
             (
@@ -467,9 +490,7 @@ def _geometry_issues(
     return issues
 
 
-def _validate_fixed_slide(
-    slide: Slide, *, theme: Theme
-) -> list[StructureIssue]:
+def _validate_fixed_slide(slide: Slide, *, theme: Theme) -> list[StructureIssue]:
     try:
         layout = get_layout(slide.layout_id)
     except KeyError as error:
@@ -586,6 +607,16 @@ def _validate_flex_slide(slide: Slide, *, theme: Theme) -> list[StructureIssue]:
         ]
 
     for block in slide.blocks:
+        if isinstance(block, DiagramBlock) and block.geometry and block.geometry.font_size < 10:
+            issues.append(
+                StructureIssue(
+                    severity="error",
+                    slide_id=slide.id,
+                    slot_id=block.id,
+                    code="diagram_readability",
+                    message="流程图文字小于 10 pt，请扩大图区域或拆分流程图",
+                )
+            )
         placement = placed.get(block.id)
         if placement is None:
             issues.append(

@@ -31,6 +31,7 @@ from app.schemas.deck import DeckEvent
 from app.services.deck import (
     clear_cancel,
     deck_events,
+    deck_image_coverage,
     deck_status,
     is_cancelled,
     load_slides,
@@ -72,7 +73,7 @@ async def generate_deck(ctx: dict[str, Any], project_id: str, slide_ids: list[st
             await _generate_one(project_uuid, slide_id, context, workflow, queue=ctx.get("redis"))
 
     await asyncio.gather(*(run_one(slide_id) for slide_id in targets))
-    await _finish(project_uuid, cancelled=cancelled)
+    await _finish(project_uuid, cancelled=cancelled, generated_ids=set(targets))
 
 
 async def _generate_one(
@@ -302,6 +303,8 @@ async def _load_context(project_id: uuid.UUID) -> DeckContext | None:
                 level=section.get("level", 0),
                 text=section.get("text", ""),
                 locator=section.get("locator", ""),
+                diagrams=section.get("diagrams", []),
+                tables=section.get("tables", []),
             )
             for source_index, source in enumerate(project.sources, start=1)
             for section_index, section in enumerate(source.sections, start=1)
@@ -430,15 +433,22 @@ async def _publish(
     )
 
 
-async def _finish(project_id: uuid.UUID, *, cancelled: bool) -> None:
+async def _finish(
+    project_id: uuid.UUID, *, cancelled: bool, generated_ids: set[uuid.UUID] | None = None
+) -> None:
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         slides = await load_slides(session, project_id)
+        if project is not None:
+            from app.services.table_pagination import paginate_tables
+
+            slides = await paginate_tables(session, project, slides, generated_ids=generated_ids)
         # 收尾时不再把 project.generating 算进去：任务已结束，剩余 pending 应落为 partial
         status = deck_status(slides)
         if project is not None:
             project.status = "ready" if status == "ready" else "outline_ready"
             await session.commit()
+        images = deck_image_coverage(project, slides) if project is not None else None
 
     if cancelled:
         await clear_cancel(project_id)
@@ -453,7 +463,13 @@ async def _finish(project_id: uuid.UUID, *, cancelled: bool) -> None:
         message = f"生成结束，{failed} 页失败，可单独重试"
         event_type = "completed"
     else:
-        message = "全部页面已生成"
+        message = "全部页面正文已生成"
+        if images is not None:
+            message += f"，已配图 {images.ready} 张"
+            if images.pending:
+                message += f"，{images.pending} 张图片处理中"
+            elif images.failed or images.missing or images.ready < images.minimum:
+                message += "，配图尚未完成，请查看图片状态"
         event_type = "completed"
 
     await deck_events.publish(

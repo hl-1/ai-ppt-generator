@@ -40,6 +40,8 @@ def _section_index(project: Project) -> dict[str, OutlineSourceSection]:
             level=section.get("level", 0),
             text=section.get("text", ""),
             locator=section.get("locator", ""),
+            diagrams=section.get("diagrams", []),
+            tables=section.get("tables", []),
         )
         for source_index, source in enumerate(project.sources, start=1)
         for section_index, section in enumerate(source.sections, start=1)
@@ -134,6 +136,7 @@ def build_quality_report(project: Project, slides: list[Slide]) -> ExportCheckRe
         slide_evidence=slide_evidence_map(project, slides),
         load_image=load_image,
         media_key_from_url=media_key_from_url,
+        minimum_images=min(2, len(deck.slides)),
     )
     topic_mode = any(source.kind == "topic" for source in project.sources)
     if topic_mode:
@@ -161,6 +164,15 @@ def build_quality_report(project: Project, slides: list[Slide]) -> ExportCheckRe
                 )
             )
     pages = _page_by_outline_id(project)
+    for slide in slides:
+        page = pages.get(slide.outline_page_id)
+        if slide.status == "ready" and page and page.image_plan and not any(
+            block.get("type") == "image" for block in slide.blocks
+        ):
+            report.issues.append(StructureIssue(
+                severity="warning", slide_id=str(slide.id), slot_id=None,
+                message="本页计划的配图缺失，请添加图片或重新生成该页",
+            ))
     plans = {str(s.id): pages[s.outline_page_id] for s in slides if s.outline_page_id in pages}
     extra = check_report_quality(
         deck,

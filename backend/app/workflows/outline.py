@@ -4,6 +4,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from app.domain.deck_images import plan_deck_images
 from app.domain.evidence import prepare_page_plan
 from app.domain.image_planning import plan_page_image
 from app.domain.outline import OutlineDraft
@@ -72,6 +73,8 @@ def prepare_outline_input(
                 level=section.level,
                 text=text,
                 locator=locator,
+                diagrams=section.diagrams,
+                tables=section.tables,
             )
         )
         used_chars += section_cost
@@ -128,6 +131,10 @@ def build_outline_workflow(generator: OutlineGenerator):
             pages = [
                 prepare_page_plan(page, sources, topic_mode=payload.topic_mode) for page in pages
             ]
+            if not payload.travel_context:
+                pages = plan_deck_images(
+                    pages, deck_title=payload.title, scenario=payload.report_brief.scenario
+                )
             draft = draft.model_copy(update={"pages": pages})
             duplicates = (
                 find_duplicate_topic_pages(pages, travel_mode=bool(payload.travel_context))

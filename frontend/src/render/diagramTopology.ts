@@ -16,32 +16,13 @@ export function normalizeFlowEdges(
   nodes: DiagramNode[],
   edges: DiagramEdge[],
 ): DiagramEdge[] {
-  if (diagramType !== 'flow' || nodes.length < 4) return [...edges]
+  if (diagramType === 'timeline') return []
   const valid = edges.filter(
     (edge) =>
       nodes.some((node) => node.id === edge.source) &&
-      nodes.some((node) => node.id === edge.target) &&
-      edge.source !== edge.target,
+      nodes.some((node) => node.id === edge.target),
   )
-  if (hasBranchingEdges(nodes, valid)) return valid
-  if (!shouldKeepFlowDiagram(nodes, valid)) return valid
-
-  const branchIndex = nodes.length >= 6 ? 1 : 0
-  const mergeIndex = nodes.length >= 6 ? nodes.length - 3 : nodes.length - 1
-  if (mergeIndex <= branchIndex + 1) return [...edges]
-
-  const result: DiagramEdge[] = []
-  if (branchIndex > 0) {
-    result.push({ source: nodes[0]!.id, target: nodes[branchIndex]!.id, label: null })
-  }
-  for (const node of nodes.slice(branchIndex + 1, mergeIndex)) {
-    result.push({ source: nodes[branchIndex]!.id, target: node.id, label: null })
-    result.push({ source: node.id, target: nodes[mergeIndex]!.id, label: null })
-  }
-  for (let index = mergeIndex; index < nodes.length - 1; index++) {
-    result.push({ source: nodes[index]!.id, target: nodes[index + 1]!.id, label: null })
-  }
-  return result
+  return valid
 }
 
 export function hasBranchingEdges(nodes: DiagramNode[], edges: DiagramEdge[]): boolean {

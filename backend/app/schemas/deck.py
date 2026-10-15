@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.domain.block_style import BlockStyle
 from app.domain.content import Block
 from app.domain.flex_layout import FlexContainer
+from app.domain.image_coverage import ImageCoverage
 from app.domain.slide_patch import BlockPatch
 from app.domain.validation import StructureIssue
 
@@ -43,6 +44,7 @@ class DeckPublic(BaseModel):
     total: int
     ready: int
     failed: int
+    images: ImageCoverage = Field(default_factory=ImageCoverage)
     slides: list[SlidePublic]
 
 
@@ -124,6 +126,7 @@ class DiagramNodeUpdate(BaseModel):
     title: str
     desc: str = ""
     status: Literal["default", "active", "done", "risk"] = "default"
+    kind: Literal["process", "decision"] = "process"
 
 
 class DiagramEdgeUpdate(BaseModel):

@@ -1,14 +1,14 @@
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
-from app.ingest.models import ParsedDocument, SourceSection
+from app.ingest.models import ParsedDocument, SourceDiagram, SourceSection, SourceTable
 
 
 class MarkdownParser:
     extensions = (".md", ".markdown")
 
     def __init__(self) -> None:
-        self._md = MarkdownIt("commonmark")
+        self._md = MarkdownIt("commonmark").enable("table")
 
     def parse(self, data: bytes) -> ParsedDocument:
         # Markdown 源文件几乎总是 utf-8；这里只做最小解码，避免引入误判的编码回退
@@ -25,17 +25,30 @@ def _tokens_to_sections(tokens: list[Token]) -> list[SourceSection]:
     texts: list[str] = []
     locator = "第 1 段"
     block_index = 0
+    diagrams: list[SourceDiagram] = []
+    tables: list[SourceTable] = []
 
     def flush() -> None:
-        nonlocal heading, level, texts, locator
+        nonlocal heading, level, texts, locator, diagrams, tables
         body = "\n".join(part for part in texts if part).strip()
         if heading is None and not body:
             texts = []
             return
-        sections.append(SourceSection(level=level, heading=heading, text=body, locator=locator))
+        sections.append(
+            SourceSection(
+                level=level,
+                heading=heading,
+                text=body,
+                locator=locator,
+                diagrams=diagrams,
+                tables=tables,
+            )
+        )
         heading = None
         level = 0
         texts = []
+        diagrams = []
+        tables = []
 
     index = 0
     while index < len(tokens):
@@ -70,6 +83,28 @@ def _tokens_to_sections(tokens: list[Token]) -> list[SourceSection]:
             code = token.content.rstrip("\n")
             if code:
                 texts.append(code)
+                if token.info.strip().lower() == "mermaid":
+                    diagrams.append(SourceDiagram(source=code, locator=f"行 {token.map[0] + 1}"))
+            index += 1
+            continue
+
+        if token.type == "table_open":
+            rows: list[list[str]] = []
+            current: list[str] = []
+            table_locator = f"行 {token.map[0] + 1}"
+            index += 1
+            while index < len(tokens) and tokens[index].type != "table_close":
+                entry = tokens[index]
+                if entry.type == "tr_open":
+                    current = []
+                elif entry.type == "inline":
+                    current.append(_inline_to_plain(entry))
+                elif entry.type == "tr_close":
+                    rows.append(current)
+                index += 1
+            if rows:
+                tables.append(SourceTable(header=rows[0], rows=rows[1:], locator=table_locator))
+                texts.append("\n".join(" | ".join(row) for row in rows))
             index += 1
             continue
 

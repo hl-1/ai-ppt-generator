@@ -1,54 +1,9 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
-from app.domain.content import CardItem, DiagramEdge, DiagramNode
-
-COMPLEX_FLOW_KEYWORDS = (
-    "故障",
-    "预警",
-    "分流",
-    "分类",
-    "分支",
-    "并行",
-    "汇聚",
-    "判断",
-    "条件",
-    "决策",
-    "审批",
-    "应急",
-    "处置",
-    "排查",
-    "恢复",
-    "复盘",
-    "上报",
-    "异常",
-    "失败",
-    "成功",
-    "通过",
-    "驳回",
-    "回退",
-    "派单",
-    "流转",
-)
-
-SIMPLE_STEP_KEYWORDS = (
-    "步骤",
-    "路径",
-    "推进",
-    "路线",
-    "阶段",
-    "第一步",
-    "第二步",
-    "第三步",
-    "第四步",
-    "第五步",
-    "前两步",
-    "最后",
-    "先",
-    "再",
-    "然后",
-)
+from app.domain.content import BulletsBlock, CardItem, DiagramBlock, DiagramEdge, DiagramNode, Slide
 
 _STEP_PREFIXES = (
     "第一步",
@@ -71,13 +26,13 @@ _STEP_PREFIXES = (
 
 
 def has_branching_edges(edges: Sequence[DiagramEdge]) -> bool:
-    outgoing: dict[str, int] = {}
-    incoming: dict[str, int] = {}
+    outgoing: dict[str, set[str]] = {}
+    incoming: dict[str, set[str]] = {}
     for edge in edges:
-        outgoing[edge.source] = outgoing.get(edge.source, 0) + 1
-        incoming[edge.target] = incoming.get(edge.target, 0) + 1
-    return any(count > 1 for count in outgoing.values()) or any(
-        count > 1 for count in incoming.values()
+        outgoing.setdefault(edge.source, set()).add(edge.target)
+        incoming.setdefault(edge.target, set()).add(edge.source)
+    return any(len(targets) > 1 for targets in outgoing.values()) or any(
+        len(sources) > 1 for sources in incoming.values()
     )
 
 
@@ -87,19 +42,110 @@ def should_keep_flow_diagram(
     *,
     context: Sequence[str] = (),
 ) -> bool:
-    """Only keep flowcharts for real branching, decisions or exception handling."""
-    if len(nodes) < 3:
+    """Require connected nonlinear topology and, when supplied, original text evidence."""
+    ids = {node.id for node in nodes}
+    if len(ids) < 3 or len(ids) != len(nodes) or not edges:
         return False
-    blob = _text_blob(nodes, edges, context)
-    if has_branching_edges(edges):
-        return not _looks_like_simple_steps(blob, nodes)
-    if _looks_like_simple_steps(blob, nodes):
+    if any(edge.source not in ids or edge.target not in ids for edge in edges):
         return False
-    if len(nodes) < 4:
+    neighbors: dict[str, set[str]] = {node_id: set() for node_id in ids}
+    outgoing: dict[str, set[str]] = {node_id: set() for node_id in ids}
+    for edge in edges:
+        neighbors[edge.source].add(edge.target)
+        neighbors[edge.target].add(edge.source)
+        outgoing[edge.source].add(edge.target)
+    visited: set[str] = set()
+    pending = [nodes[0].id]
+    while pending:
+        current = pending.pop()
+        if current not in visited:
+            visited.add(current)
+            pending.extend(neighbors[current] - visited)
+    if visited != ids:
         return False
-    if any(keyword in blob for keyword in COMPLEX_FLOW_KEYWORDS):
+
+    # Kahn's algorithm also detects pure cycles with no branch/merge node.
+    indegree = {node_id: 0 for node_id in ids}
+    for targets in outgoing.values():
+        for target in targets:
+            indegree[target] += 1
+    pending = [node_id for node_id, degree in indegree.items() if degree == 0]
+    removed = 0
+    while pending:
+        current = pending.pop()
+        removed += 1
+        for target in outgoing[current]:
+            indegree[target] -= 1
+            if indegree[target] == 0:
+                pending.append(target)
+    cyclic = removed != len(ids)
+    branching = has_branching_edges(edges)
+    if not branching and not cyclic:
+        return False
+    if not context:
         return True
-    return False
+    # Generated labels cannot serve as evidence for their own invented relationships.
+    blob = "\n".join(context).lower()
+    conditional = bool(
+        re.search(
+            r"(?:如果|假如|若|是否|有无|能否|条件|if\b|when\b)[\s\S]{0,160}"
+            r"(?:否则|不通过|未通过|失败|驳回|则|那么|分别|else\b|then\b)",
+            blob,
+        )
+        or re.search(r"(?:通过|成功)[\s\S]{0,100}(?:不通过|未通过|失败|驳回)", blob)
+    )
+    parallel = bool(
+        re.search(
+            r"(?:并行|并发)(?:地)?(?:执行|处理|校验|检索|查询|调用|运行)"
+            r"|(?:并行|并发)[^\n。；]{0,80}(?:汇总|合并|汇合|汇聚)"
+            r"|同时[\s\S]{0,60}(?:调用|执行|处理|校验|检索|查询)"
+            r"|\b(?:parallel|concurrent)(?:ly)?\b[\s\S]{0,100}\b(?:run|execute|process|merge|join)\b",
+            blob,
+        )
+    )
+    loop = bool(
+        re.search(
+            r"(?:失败|超时|未通过|不满足)[\s\S]{0,100}(?:重试|返回|回到|重新|再次)"
+            r"|(?:循环|重复)[\s\S]{0,100}(?:直到|直至|满足|条件)"
+            r"|\b(?:fail\w*|timeout|until)\b[\s\S]{0,100}\b(?:retry|repeat|return)\b",
+            blob,
+        )
+    )
+    return (branching and (conditional or parallel)) or (cyclic and loop)
+
+
+def flow_as_steps(block: DiagramBlock) -> BulletsBlock:
+    """Keep the block identity and every node's complete text when declining a flowchart."""
+    return BulletsBlock(
+        **block.model_dump(include={"id", "slot_id", "locked", "style"}),
+        items=[
+            f"{index}. {node.title}" + (f"\n{node.desc}" if node.desc else "")
+            for index, node in enumerate(block.nodes, start=1)
+        ],
+    )
+
+
+def enforce_text_flow_policy(slide: Slide, *, context: Sequence[str]) -> Slide:
+    return slide.model_copy(
+        update={
+            "blocks": [
+                flow_as_steps(block)
+                if isinstance(block, DiagramBlock)
+                and block.diagram_type in {"flow", "cycle"}
+                and not should_keep_flow_diagram(block.nodes, block.edges, context=context or ("",))
+                else block
+                for block in slide.blocks
+            ]
+        }
+    )
+
+
+def is_numbered_steps(block) -> bool:
+    return (
+        isinstance(block, BulletsBlock)
+        and bool(block.items)
+        and all(item.startswith(f"{index}. ") for index, item in enumerate(block.items, 1))
+    )
 
 
 def compact_flow_nodes(
@@ -109,19 +155,7 @@ def compact_flow_nodes(
     desc_limit: int = 24,
     max_nodes: int = 9,
 ) -> list[DiagramNode]:
-    result: list[DiagramNode] = []
-    for node in nodes[:max_nodes]:
-        title = _clean_step_title(node.title)
-        desc = node.desc.strip()
-        result.append(
-            node.model_copy(
-                update={
-                    "title": _compact_text(title or node.title, title_limit),
-                    "desc": _compact_text(desc, desc_limit),
-                }
-            )
-        )
-    return result
+    return list(nodes)
 
 
 def card_items_from_flow_nodes(
@@ -162,32 +196,6 @@ def compact_card_items(
         )
         for item in items[:max_items]
     ]
-
-
-def _text_blob(
-    nodes: Sequence[DiagramNode],
-    edges: Sequence[DiagramEdge],
-    context: Sequence[str],
-) -> str:
-    return " ".join(
-        [
-            *context,
-            *[node.title for node in nodes],
-            *[node.desc for node in nodes],
-            *[edge.label or "" for edge in edges],
-        ]
-    )
-
-
-def _looks_like_simple_steps(blob: str, nodes: Sequence[DiagramNode]) -> bool:
-    if any(keyword in blob for keyword in SIMPLE_STEP_KEYWORDS):
-        return True
-    stepish = 0
-    for node in nodes:
-        title = node.title.strip()
-        if title.startswith(_STEP_PREFIXES) or title.startswith("第"):
-            stepish += 1
-    return stepish >= max(2, len(nodes) // 2)
 
 
 def _clean_step_title(text: str) -> str:

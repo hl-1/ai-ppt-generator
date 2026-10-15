@@ -5,7 +5,6 @@ from collections.abc import Sequence
 from html import escape
 
 from app.domain.content import DiagramEdge, DiagramKind, DiagramNode
-from app.domain.flow_policy import should_keep_flow_diagram
 
 
 def normalize_flow_edges(
@@ -13,22 +12,16 @@ def normalize_flow_edges(
     nodes: Sequence[DiagramNode],
     edges: Sequence[DiagramEdge],
 ) -> list[DiagramEdge]:
-    """把有复杂语义但仍为线性拓扑的流程补成分流/汇聚结构。"""
-    original = list(edges)
-    if diagram_type != "flow" or len(nodes) < 4:
-        return original
-
+    """Validate references without inventing, reordering or dropping graph semantics."""
     node_ids = {node.id for node in nodes}
-    valid = [
-        edge
-        for edge in original
-        if edge.source in node_ids and edge.target in node_ids and edge.source != edge.target
-    ]
-    if _has_branch_or_merge(valid):
-        return valid
-    if not should_keep_flow_diagram(nodes, valid):
-        return valid
-    return _branch_merge_edges(nodes)
+    seen = set()
+    result = []
+    for edge in edges:
+        key = (edge.source, edge.target, edge.label)
+        if edge.source in node_ids and edge.target in node_ids and key not in seen:
+            result.append(edge)
+            seen.add(key)
+    return result
 
 
 def _has_branch_or_merge(edges: Sequence[DiagramEdge]) -> bool:
@@ -89,7 +82,9 @@ def mermaid_for_diagram(
     for index, node in enumerate(nodes, start=1):
         node_id = _safe_node_id(node.id, index)
         node_ids[node.id] = node_id
-        lines.append(f'    {node_id}["{_label(node.title, node.desc)}"]')
+        label = _label(node.title, node.desc)
+        shape = f'{{"{label}"}}' if node.kind == "decision" else f'["{label}"]'
+        lines.append(f"    {node_id}{shape}")
 
     for edge in normalized_edges:
         source = node_ids.get(edge.source)

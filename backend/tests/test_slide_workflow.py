@@ -75,18 +75,19 @@ def test_prepare_trims_sections_within_budget() -> None:
 
 
 @pytest.mark.asyncio
-async def test_workflow_skips_repair_for_capacity_overflow() -> None:
-    """容量/溢出 warning 只提示，不触发整页重写。"""
+async def test_document_workflow_repairs_capacity_overflow_once() -> None:
+    """Document pages also receive a targeted overflow repair."""
     too_long = ["超出容量的要点" * 12] * 9
-    generator = ScriptedGenerator([_draft(too_long)])
+    generator = ScriptedGenerator([_draft(too_long), _draft(["完整展示资料", "确认内容可读"])])
     workflow = build_slide_workflow(generator)
 
     slide, issues = await run_slide_workflow(workflow, _payload(), uuid.uuid4())
 
-    assert len(generator.prompts) == 1
+    assert len(generator.prompts) == 2
     assert generator.prompts[0] == []
-    assert any(issue.code == "capacity" for issue in issues)
-    assert slide.blocks[1].items == too_long
+    assert generator.prompts[1]
+    assert not any(issue.code == "capacity" for issue in issues)
+    assert slide.blocks[1].items == ["完整展示资料", "确认内容可读"]
 
 
 @pytest.mark.asyncio
@@ -97,6 +98,58 @@ async def test_fixed_workflow_preserves_confirmed_title() -> None:
     slide, _ = await run_slide_workflow(build_slide_workflow(generator), _payload(), uuid.uuid4())
 
     assert next(block for block in slide.blocks if block.slot_id == "title").text == "现状与问题"
+
+
+@pytest.mark.asyncio
+async def test_workflow_rejects_invented_branch_in_linear_source_even_when_flow_requested():
+    from app.domain.slide_draft import DiagramContent
+
+    draft = SlideDraft(
+        blocks=[
+            TextContent(slot_id="title", text="处理步骤"),
+            DiagramContent(
+                slot_id="body",
+                diagram_type="flow",
+                nodes=[
+                    {"id": "a", "title": "采集输入"},
+                    {"id": "b", "title": "校验内容"},
+                    {"id": "c", "title": "形成报告"},
+                    {"id": "d", "title": "发布归档"},
+                ],
+                edges=[
+                    {"source": "a", "target": "b"},
+                    {"source": "b", "target": "c"},
+                    {"source": "b", "target": "d", "label": "否则"},
+                ],
+            ),
+        ]
+    )
+    generator = ScriptedGenerator([draft])
+    slide, _ = await run_slide_workflow(
+        build_slide_workflow(generator),
+        _payload(
+            page_title="处理步骤",
+            visual_type="flow",
+            evidence_kind="flow",
+            key_points=["先采集输入，再校验内容", "最后形成报告并发布归档"],
+            sections=[
+                OutlineSourceSection(
+                    ref="S1:1",
+                    level=1,
+                    locator="p1",
+                    text="按顺序采集输入、校验内容、形成报告、发布归档。",
+                )
+            ],
+        ),
+        uuid.uuid4(),
+    )
+    assert not any(block.type == "diagram" for block in slide.blocks)
+    assert next(b for b in slide.blocks if b.type == "bullets").items == [
+        "1. 采集输入",
+        "2. 校验内容",
+        "3. 形成报告",
+        "4. 发布归档",
+    ]
 
 
 @pytest.mark.asyncio

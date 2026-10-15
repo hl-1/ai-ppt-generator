@@ -6,7 +6,7 @@ import { mergeBlockCommit } from '@/features/deck/mergeBlockCommit'
 import type { DeckSlide } from '@/features/deck/types'
 import { themeList } from '@/render/design'
 import { SlideView } from '@/render/SlideView'
-import type { Deck, EditableBlockCommit } from '@/render/types'
+import type { Block, Deck, EditableBlockCommit } from '@/render/types'
 
 export default function ThemePreviewPage() {
   const { themeId = 'financial-tech' } = useParams()
@@ -36,7 +36,7 @@ export default function ThemePreviewPage() {
           ? {
               ...page,
               blocks: page.blocks.map((block) =>
-                block.id === blockId ? { ...block, ...update } : block,
+                block.id === blockId ? { ...block, ...update, geometry: null } as Block : block,
               ),
             }
           : page

@@ -5,8 +5,9 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 from pydantic import TypeAdapter
 
-from app.domain.content import Block, Slide
+from app.domain.content import Block, DiagramBlock, Slide
 from app.domain.flex_layout import FlexContainer
+from app.domain.flow_policy import should_keep_flow_diagram
 from app.domain.slide_patch import (
     BlockPatch,
     DiscardedPatch,
@@ -86,16 +87,45 @@ def build_slide_edit_workflow(generator: SlideEditGenerator):
             layout_tree=state.get("layout_tree"),
             blocks=patched,
         )
+        issues = validate_slide(
+            slide,
+            theme=resolve_theme(state.get("theme_id") or "ivory", state.get("theme_overrides")),
+        )
+        originals = {block.id: block for block in state["original_blocks"]}
+        context = [
+            state["input"].instruction,
+            *[
+                block.model_dump_json()
+                for block in state["original_blocks"]
+                if not isinstance(block, DiagramBlock)
+            ],
+        ]
+        for block in patched:
+            if not isinstance(block, DiagramBlock) or block.diagram_type not in {"flow", "cycle"}:
+                continue
+            original = originals.get(block.id)
+            if (
+                isinstance(original, DiagramBlock)
+                and original.diagram_type == "flow"
+                and original.nodes == block.nodes
+                and original.edges == block.edges
+            ):
+                continue
+            if not should_keep_flow_diagram(block.nodes, block.edges, context=context):
+                issues.append(
+                    StructureIssue(
+                        severity="error",
+                        slide_id=slide.id,
+                        slot_id=block.slot_id,
+                        code="flow_complexity",
+                        message="线性内容禁止生成流程图；请改用完整编号步骤。流程图须有原文支持的分支、并行或循环，禁止编造关系。",
+                    )
+                )
         return {
             "operations": operations,
             "discarded": discarded,
             "patched_blocks": patched,
-            "issues": validate_slide(
-                slide,
-                theme=resolve_theme(
-                    state.get("theme_id") or "ivory", state.get("theme_overrides")
-                ),
-            ),
+            "issues": issues,
         }
 
     async def repair(state: SlideEditWorkflowState) -> dict:

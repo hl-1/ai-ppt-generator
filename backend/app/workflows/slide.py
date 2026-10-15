@@ -13,12 +13,14 @@ from app.domain.enterprise_layout import bind_planned_evidence, compose_report_s
 from app.domain.enterprise_quality import check_page_readability, check_planned_data
 from app.domain.flex_fit import fit_tree_to_content
 from app.domain.flex_width import fit_row_widths
+from app.domain.flow_policy import enforce_text_flow_policy
 from app.domain.image_planning import bind_page_image
 from app.domain.outline import OutlinePageDraft
 from app.domain.quality import check_evidence_alignment, check_slide_richness, is_repair_worthy
 from app.domain.slide_draft import FlexSlideDraft, SlideDraft, draft_to_slide, flex_draft_to_slide
 from app.domain.theme import resolve_theme
 from app.domain.validation import StructureIssue, validate_slide
+from app.domain.visual_layout import bind_source_diagram, prepare_visual_layout
 from app.llm.base import SlideGenerationInput, SlideGenerator
 from app.llm.errors import (
     InvalidModelOutputError,
@@ -28,7 +30,7 @@ from app.llm.errors import (
     safe_error_details,
 )
 
-# 只修一轮：结构 error 或过瘦/空话；主题模式额外修复溢出/容量 warning。
+# 结构、可读性、容量问题最多修一轮。
 # generate 节点内部是 LCEL json_mode；校验与条件修复留在 Graph。
 MAX_REPAIR_ROUNDS = 1
 MAX_GENERATION_ATTEMPTS = 2
@@ -78,7 +80,8 @@ def prepare_slide_input(
     if payload.travel_page and payload.layout_mode == "fixed":
         kind = payload.travel_page.kind
         updates["layout_id"] = (
-            "travel-attraction" if kind == "attraction"
+            "travel-attraction"
+            if kind == "attraction"
             else "travel-photo"
             if kind == "cover"
             else "travel-overview"
@@ -188,6 +191,23 @@ def build_slide_workflow(generator: SlideGenerator):
             slide = draft_to_slide(slide_id, state["input"].layout_id, draft)
         theme = resolve_theme(state.get("theme_id") or "ivory", state.get("theme_overrides"))
         payload = state["input"]
+        slide = enforce_text_flow_policy(
+            slide,
+            context=[section.text for section in payload.sections]
+            or [payload.page_title, payload.objective, *payload.key_points],
+        )
+        if (
+            slide.layout_mode == "flex"
+            or any(b.type == "diagram" for b in slide.blocks)
+            or payload.evidence_kind == "flow"
+            or payload.visual_type == "flow"
+        ):
+            slide = await asyncio.to_thread(
+                bind_source_diagram,
+                slide,
+                payload.sections,
+                requested=payload.evidence_kind == "flow" or payload.visual_type == "flow",
+            )
         if slide.layout_mode == "fixed":
             slide = slide.model_copy(
                 update={
@@ -312,6 +332,7 @@ def build_slide_workflow(generator: SlideGenerator):
                     )
                 }
             )
+        slide = await asyncio.to_thread(prepare_visual_layout, slide, theme)
         issues = validate_slide(slide, theme=theme)
         if payload.travel_context:
             from app.services.travel_planning import travel_claim_issues

@@ -200,9 +200,7 @@ class DeepSeekSlideGenerator:
             "neighbor_titles": payload.neighbor_titles,
             "other_pages": payload.other_page_briefs if payload.topic_mode else [],
             "slots": [_slot_spec(slot) for slot in layout.slots],
-            "sections": [
-                {"ref": s.ref, "heading": s.heading, "text": s.text} for s in payload.sections
-            ],
+            "sections": [s.model_dump(mode="json") for s in payload.sections],
         }
         prompt = (
             "请为以下页面生成正文 JSON。\n"
@@ -251,9 +249,7 @@ class DeepSeekSlideGenerator:
             "layout_template": payload.layout_template,
             "hint_layout_id": payload.layout_id,
             "visual": payload.visual_hint,
-            "sections": [
-                {"ref": s.ref, "heading": s.heading, "text": s.text} for s in payload.sections
-            ],
+            "sections": [s.model_dump(mode="json") for s in payload.sections],
         }
         prompt = (
             "请为以下页面生成灵活布局正文 JSON（blocks + layout_tree）。\n"
@@ -384,7 +380,8 @@ def _page_directives(payload: SlideGenerationInput) -> str:
     if payload.visual_hint:
         rules.append(
             f"本页必须包含且仅包含一个 image 块，alt 严格写成「{payload.visual_hint}」，"
-            "且不得设 bleed。"
+            "且不得设 bleed。图片是本页主视觉，图文并列时图片约占一半宽度；"
+            "正文只保留2–3条具体解读，不重复描述画面，较长说明放进 speaker_notes。"
         )
     if payload.skeleton_hint:
         rules.append(f"本页版式必须按此骨架组织：{payload.skeleton_hint}。")
@@ -400,9 +397,10 @@ def _page_directives(payload: SlideGenerationInput) -> str:
             "pie": "解释占比最高项、最低项和结构偏向，不要写成时间趋势。",
             "bar": "写最高项、最低项和差距，不要把分类比较写成时间趋势。",
             "column": "写分类项之间的高低差异，不要把分类比较写成时间趋势。",
-            "flow": "使用 flow diagram 表达本页要点，顺序步骤可使用线性连接；"
-            "节点标题控制在 8–14 字，描述控制在 24 字内。"
-            "保留大纲中的步骤与关系，不得改成 cards 或 numbered steps。",
+            "flow": "先检查原文逻辑复杂度。只有原文明确支持条件分支、并行汇合或循环回退，"
+            "且 nodes/edges 确实包含这些关系时才生成 flow diagram。"
+            "纯线性顺序、阶段清单和并列规则必须改用编号步骤或正文；"
+            "即使指定 flow 也不得生成线性流程图，不得为通过校验编造分支。保留完整文字。",
             "timeline": "使用并列卡片网格表达阶段、时间和交付物；禁止纵向串联节点、连接轴和箭头。",
             "financial_table": "使用财务明细表表达同一指标在多个期间的对照，突出最新期间和重点行。",
             "waterfall": "使用起点、增减项和终点表达桥接变化；增减项必须来自 evidence。",
@@ -437,6 +435,9 @@ def _enterprise_writing_rules(payload: SlideGenerationInput) -> str:
         "汇聚等关系才使用 flow diagram。"
         "flow diagram 只连接有依据的分支、判断、并行或汇聚关系，不要把单一路径画成箭头流程；"
         "节点只保留短标题和短描述，不把解释段落塞进节点。"
+        "来源 diagrams 是已确认的原始关系，必须保留节点、方向、条件标签与回路；"
+        "判断节点 kind=decision，其余 kind=process。表格字段名、标识符和数据不得用省略号截断；"
+        "过长表格由服务端续页，不得丢弃行或列。"
         "修复时参考 previous_draft 保留证据和核心结论，优先重排、精简重复措辞，"
         "不要通过添加无依据内容或不断缩小字号满足检查。"
     )
@@ -446,7 +447,7 @@ def _enterprise_writing_rules(payload: SlideGenerationInput) -> str:
             "不能只改写标题、卡片名称或句式来制造表面差异。"
         )
     if payload.visual_type == "flow":
-        rules += "本页明确指定 flow，优先遵循此选择；简单步骤也保留流程图，不自动改为卡片。"
+        rules += "指定 flow 不能覆盖复杂度限制；线性内容必须输出编号步骤，禁止编造分支或回路。"
     return rules
 
 

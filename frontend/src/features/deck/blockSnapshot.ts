@@ -113,6 +113,7 @@ export function applyContentBody(block: Block, body: BlockUpdateBody): Block {
       mermaid: body.mermaid ?? null,
       nodes: body.nodes,
       edges: body.edges,
+      geometry: null,
     }
   }
   return block

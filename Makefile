@@ -8,6 +8,7 @@ down:
 
 install:
 	cd backend && uv sync
+	cd backend/diagram_engine && npm ci --no-audit --no-fund
 	cd frontend && npm install
 
 # 文字溢出度量字体：本地下载，不进仓库。已存在则跳过。

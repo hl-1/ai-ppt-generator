@@ -35,6 +35,8 @@ from app.domain.flow_policy import (
     card_items_from_flow_nodes,
     compact_card_items,
     compact_flow_nodes,
+    flow_as_steps,
+    is_numbered_steps,
     should_keep_flow_diagram,
 )
 from app.domain.mermaid import ensure_mermaid, normalize_flow_edges
@@ -156,26 +158,27 @@ def bind_planned_evidence(
                 not in {"chart", "image", "diagram", "financial_table", "waterfall", "combo_chart"}
             ]
             blocks.append(combo)
-    if evidence_kind in {"flow", "timeline"}:
-        blocks = [b for b in blocks if b.type != "diagram"]
+    if evidence_kind in {"flow", "timeline"} and not any(
+        isinstance(b, DiagramBlock) for b in blocks
+    ):
         nodes = _diagram_nodes(page, blocks=blocks)
         if len(nodes) >= 2:
             block_id = _unique_id("report-diagram", blocks)
-            if (
-                evidence_kind == "flow"
-                and page.visual_type != "flow"
-                and not should_keep_flow_diagram(
-                    nodes,
-                    _sequential_edges(nodes),
-                    context=_page_flow_context(page),
-                )
+            if evidence_kind == "flow" and not should_keep_flow_diagram(
+                nodes,
+                _sequential_edges(nodes),
+                context=_page_flow_context(page),
             ):
-                if not any(isinstance(block, CardsBlock) for block in blocks):
+                if not any(isinstance(block, (CardsBlock, BulletsBlock)) for block in blocks):
                     blocks.append(
-                        CardsBlock(
-                            id=block_id,
-                            slot_id="visual",
-                            items=card_items_from_flow_nodes(nodes),
+                        flow_as_steps(
+                            DiagramBlock(
+                                id=block_id,
+                                slot_id="visual",
+                                diagram_type="flow",
+                                nodes=nodes,
+                                edges=[],
+                            )
                         )
                     )
             else:
@@ -423,7 +426,9 @@ def compose_report_slide(
     composition = report_layouts().get(family, report_layouts()["supporting"])["composition"]
 
     if curate:
-        if page.page_role == "toc":
+        if any(is_numbered_steps(block) for block in body) and not visuals:
+            hidden_notes = []
+        elif page.page_role == "toc":
             body, hidden_notes = _agenda_body(body, page)
         elif (
             page.page_role not in {"cover", "section"}
@@ -861,6 +866,13 @@ def _image_support_tree(
     layout_template: str | None = None,
 ) -> FlexContainer:
     children = _header_nodes(title, page)
+    if any(b.type in {"diagram", "table", "financial_table"} for b in visuals):
+        children.append(_column(visuals, "visual-pane", grow=2.4))
+        children.extend(_leaf(b) for b in support)
+        children.extend(_footer_nodes(footers))
+        return FlexContainer(
+            type="column", id=f"visual-only-{family}", gap_pt=10, children=children
+        )
     if not support:
         children.append(_column(visuals, "visual-pane", grow=2.4))
         children.extend(_footer_nodes(footers))
@@ -1375,18 +1387,15 @@ def _curate_report_body(
     if (
         diagram is not None
         and diagram.diagram_type == "flow"
-        and page.visual_type != "flow"
+        and not diagram.edges
+        and not diagram.mermaid
         and not should_keep_flow_diagram(
             diagram.nodes,
             diagram.edges,
             context=_page_flow_context(page),
         )
     ):
-        replacement = CardsBlock(
-            id=diagram.id,
-            slot_id=diagram.slot_id,
-            items=card_items_from_flow_nodes(diagram.nodes),
-        )
+        replacement = flow_as_steps(diagram)
         body = [replacement if block is diagram else block for block in body]
         support, hidden = _visual_support_blocks(
             [
@@ -1446,6 +1455,11 @@ def _curate_report_body(
             page,
         )
         return [advanced, *support], hidden
+
+    if (page.evidence_kind == "flow" or page.visual_type == "flow") and any(
+        isinstance(block, BulletsBlock) for block in body
+    ):
+        return body, []
 
     if page.evidence_kind in {"actions", "table"} or page.narrative_role in {"action", "risk"}:
         structured = _choose_structured_block(body, page)
@@ -1615,43 +1629,11 @@ def _limit_cards(block: CardsBlock | None, limit: int) -> CardsBlock | None:
 
 
 def _limit_table(block: TableBlock | None) -> TableBlock | None:
-    if block is None:
-        return None
-    header = [_compact_text(value, 24) for value in block.header[:6]]
-    rows = [[_compact_text(value, 42) for value in row[: len(header)]] for row in block.rows[:8]]
-    rows = [row + [""] * (len(header) - len(row)) for row in rows]
-    return block.model_copy(update={"header": header, "rows": rows})
+    return block
 
 
 def _compact_diagram(block: DiagramBlock) -> DiagramBlock:
-    nodes = (
-        compact_flow_nodes(block.nodes)
-        if block.diagram_type == "flow"
-        else [
-            node.model_copy(
-                update={
-                    "title": _compact_text(node.title, 20),
-                    "desc": _compact_text(node.desc, 32),
-                }
-            )
-            for node in block.nodes[:9]
-        ]
-    )
-    node_ids = {node.id for node in nodes}
-    edges = [edge for edge in block.edges if edge.source in node_ids and edge.target in node_ids]
-    return block.model_copy(
-        update={
-            "nodes": nodes,
-            "edges": edges,
-            "mermaid": ensure_mermaid(
-                None,
-                block.diagram_type,
-                nodes,
-                edges,
-                direction=_diagram_direction_from_mermaid(block.mermaid),
-            ),
-        }
-    )
+    return block
 
 
 def _compact_text(text: str, limit: int) -> str:
@@ -1730,7 +1712,7 @@ def _diagram_nodes(
         return structured
 
     nodes: list[DiagramNode] = []
-    for index, point in enumerate(page.key_points[:6], start=1):
+    for index, point in enumerate(page.key_points, start=1):
         title, _, desc = point.partition("：")
         if not desc:
             title, _, desc = point.partition(":")

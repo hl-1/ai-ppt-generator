@@ -150,9 +150,15 @@ async def update_slide_block(
         updated["series"] = [item.model_dump() for item in body.series]
         updated["unit"] = body.unit
     elif body.type == "diagram":
+        updated["geometry"] = None
         updated["diagram_type"] = body.diagram_type
         nodes = [DiagramNode(**item.model_dump()) for item in body.nodes]
         edges = [DiagramEdge(**item.model_dump()) for item in body.edges]
+        if body.mermaid:
+            from app.domain.diagram_layout import parse_mermaid
+
+            nodes, edges, direction = parse_mermaid(body.mermaid)
+            updated["direction"] = direction
         updated["mermaid"] = ensure_mermaid(body.mermaid, body.diagram_type, nodes, edges)
         updated["nodes"] = [node.model_dump() for node in nodes]
         updated["edges"] = [edge.model_dump() for edge in edges]

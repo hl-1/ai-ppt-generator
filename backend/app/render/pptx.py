@@ -6,6 +6,7 @@ from pptx import Presentation
 from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.oxml.ns import qn
+from pptx.oxml.xmlchemy import OxmlElement
 from pptx.parts.image import Image as PptxImage
 from pptx.presentation import Presentation as PresentationType
 from pptx.shapes.base import BaseShape
@@ -34,6 +35,8 @@ from app.domain.content import (
     TextBlock,
     WaterfallBlock,
 )
+from app.domain.diagram_layout import layout_diagram
+from app.domain.diagram_style import rounded_route, themed_flowchart_style
 from app.domain.financial_tech import (
     financial_tech_style,
     panel_grid,
@@ -51,6 +54,7 @@ from app.domain.geometry import (
 from app.domain.layout import get_layout
 from app.domain.mermaid import normalize_flow_edges
 from app.domain.slide_geometry import placed_by_block_id
+from app.domain.table_layout import layout_table
 from app.domain.text_metrics import measure_bullets, measure_text
 from app.domain.theme import TextStyle, Theme, get_theme
 from app.render.chart import render_chart
@@ -162,8 +166,11 @@ class PptxRenderer:
                 continue
             self._render_block(pptx_slide, block, rect=placed.rect, text_style=placed.text_style)
 
-        credits = [f"{b.credit} {b.credit_url or ''}" for b in slide.blocks
-                   if b.type == "image" and b.credit]
+        credits = [
+            f"{b.credit} {b.credit_url or ''}"
+            for b in slide.blocks
+            if b.type == "image" and b.credit
+        ]
         notes = "\n\n".join(part for part in [slide.speaker_notes, *credits] if part)
         if notes:
             pptx_slide.notes_slide.notes_text_frame.text = notes
@@ -651,36 +658,56 @@ class PptxRenderer:
         self._fit_stack(target, [(style, text)])
 
     def _render_table(self, pptx_slide: PptxSlide, block: TableBlock, *, rect: Rect) -> None:
-        left, top, width, height = (Emu(value) for value in rect.to_emu())
-        row_count = len(block.rows) + 1
-        column_count = len(block.header)
+        self._render_measured_table(pptx_slide, block, rect=rect)
 
+    def _render_measured_table(
+        self, pptx_slide: PptxSlide, block: TableBlock | FinancialTableBlock, *, rect: Rect
+    ) -> None:
+        _, _, width_pt, height_pt = rect.to_points()
+        geometry = block.geometry or layout_table(block, width_pt, height_pt)
+        if geometry.height > height_pt + 0.5:
+            raise ValueError("Table overflows its slide; paginate the table before export")
+        left, top, width, height = (Emu(value) for value in rect.to_emu())
         graphic_frame = pptx_slide.shapes.add_table(
-            row_count, column_count, left, top, width, height
+            len(geometry.cells),
+            len(geometry.column_widths),
+            left,
+            top,
+            width,
+            Pt(geometry.height),
         )
         table = graphic_frame.table
         use_plain_style(table)
-
-        header_style = merge_text_style(self.theme, "table_header", block.style)
-        cell_style = merge_text_style(self.theme, "table_cell", block.style)
-        header_rule = (1.5, self.theme.palette.accent)
-        row_rule = (self.theme.shape.border_width_pt, self.theme.palette.line)
-        align = block.style.align if block.style else None
-
-        for column_index, title in enumerate(block.header):
-            self._write_cell(
-                table.cell(0, column_index), title, header_style, header_rule, align=align
-            )
-
-        for row_index, row in enumerate(block.rows, start=1):
-            for column_index, value in enumerate(row):
-                self._write_cell(
-                    table.cell(row_index, column_index),
-                    value,
-                    cell_style,
-                    row_rule,
-                    align=align,
+        financial = isinstance(block, FinancialTableBlock)
+        for i, column_width in enumerate(geometry.column_widths):
+            table.columns[i].width = Pt(column_width)
+        for r, row in enumerate(geometry.cells):
+            table.rows[r].height = Pt(geometry.row_heights[r])
+            for c, value in enumerate(row):
+                style = merge_text_style(
+                    self.theme, "table_header" if r == 0 else "table_cell", block.style
+                ).model_copy(
+                    update={
+                        "size_pt": geometry.font_size,
+                        "line_height": 1.25,
+                        "letter_spacing_pt": 0,
+                    }
                 )
+                cell = table.cell(r, c)
+                self._write_cell(cell, value, style, (0.75, self.theme.palette.line), align="left")
+                cell.margin_left = cell.margin_right = Pt(geometry.padding)
+                cell.margin_top = cell.margin_bottom = Pt(geometry.padding)
+                cell.text_frame.word_wrap = False
+                cell.vertical_anchor = MSO_ANCHOR.TOP
+                if financial and r == 0:
+                    cell.fill.fore_color.rgb = to_rgb(self.theme.palette.accent)
+                    for run in cell.text_frame.paragraphs[0].runs:
+                        run.font.color.rgb = to_rgb("#FFFFFF")
+                elif financial and c - 1 in block.highlight_columns and c > 0:
+                    cell.fill.fore_color.rgb = to_rgb(self.theme.palette.accent_soft)
+                if financial and r > 0 and block.rows[r - 1].emphasis:
+                    for run in cell.text_frame.paragraphs[0].runs:
+                        run.font.bold = True
 
     def _write_cell(
         self,
@@ -834,72 +861,7 @@ class PptxRenderer:
     def _render_financial_table(
         self, pptx_slide: PptxSlide, block: FinancialTableBlock, *, rect: Rect
     ) -> None:
-        """财报表格：强调期间列、重点行和底部规则线，接近上市公司附录页观感。"""
-        if not block.columns or not block.rows:
-            return
-        cols = 1 + len(block.columns)
-        rows = 1 + len(block.rows)
-        left, top, width, height = (Emu(value) for value in rect.to_emu())
-        graphic_frame = pptx_slide.shapes.add_table(rows, cols, left, top, width, height)
-        table = graphic_frame.table
-        use_plain_style(table)
-
-        first_col = 0.52
-        remaining = max(0.48, 1.0 - first_col)
-        table.columns[0].width = Emu(round(width * first_col))
-        for index in range(1, cols):
-            table.columns[index].width = Emu(round(width * remaining / max(1, cols - 1)))
-
-        header_style = merge_text_style(self.theme, "table_header", block.style)
-        cell_style = merge_text_style(self.theme, "table_cell", block.style)
-        accent = self.theme.palette.accent
-        accent_soft = self.theme.palette.accent_soft
-        background = self.theme.palette.background
-        line = self.theme.palette.line
-
-        def write(cell, text: str, style: TextStyle, *, fill: str, bold: bool = False) -> None:
-            cell.fill.solid()
-            cell.fill.fore_color.rgb = to_rgb(fill)
-            cell.margin_left = Pt(12)
-            cell.margin_right = Pt(12)
-            cell.margin_top = Pt(6)
-            cell.margin_bottom = Pt(6)
-            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
-            set_cell_borders(cell, (0.75, line))
-            paragraph = cell.text_frame.paragraphs[0]
-            paragraph.clear()
-            run = paragraph.add_run()
-            run.text = text
-            apply_text_style(run, self.theme, style)
-            run.font.bold = bold or style.weight >= 600
-
-        write(table.cell(0, 0), block.unit or "", header_style, fill=accent, bold=True)
-        table.cell(0, 0).text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
-        for col_index, column in enumerate(block.columns, start=1):
-            write(table.cell(0, col_index), column, header_style, fill=accent, bold=True)
-            table.cell(0, col_index).text_frame.paragraphs[0].alignment = PP_ALIGN.RIGHT
-
-        highlights = {index + 1 for index in block.highlight_columns}
-        for row_index, row in enumerate(block.rows, start=1):
-            fill = background
-            if row.spacer:
-                fill = mix(self.theme.palette.surface, background, 0.5)
-            write(table.cell(row_index, 0), row.label, cell_style, fill=fill, bold=row.emphasis)
-            table.cell(row_index, 0).text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
-            for col_index in range(1, cols):
-                value = row.values[col_index - 1] if col_index - 1 < len(row.values) else ""
-                cell_fill = accent_soft if col_index in highlights else fill
-                write(
-                    table.cell(row_index, col_index),
-                    value,
-                    cell_style,
-                    fill=cell_fill,
-                    bold=row.emphasis,
-                )
-                table.cell(row_index, col_index).text_frame.paragraphs[0].alignment = PP_ALIGN.RIGHT
-
-        rule = Rect(x=rect.x, y=rect.y + rect.h - 0.006, w=rect.w, h=0.006)
-        self._add_filled_rect(pptx_slide, rule, accent)
+        self._render_measured_table(pptx_slide, block, rect=rect)
 
     def _render_waterfall(
         self, pptx_slide: PptxSlide, block: WaterfallBlock, *, rect: Rect
@@ -923,7 +885,9 @@ class PptxRenderer:
         max_v = max(0.0, *(max(start, end) for start, end, _delta in values))
         if max_v - min_v <= 0:
             max_v += 1
-        plot = Rect(x=rect.x + rect.w * 0.03, y=rect.y + rect.h * 0.18, w=rect.w * 0.94, h=rect.h * 0.58)
+        plot = Rect(
+            x=rect.x + rect.w * 0.03, y=rect.y + rect.h * 0.18, w=rect.w * 0.94, h=rect.h * 0.58
+        )
         label_y = rect.y + rect.h * 0.78
         n = len(block.items)
         gap = plot.w / max(n, 1)
@@ -996,10 +960,14 @@ class PptxRenderer:
                 MSO_SHAPE.RECTANGLE,
             )
             text = "\n".join([item for item in [callout.title, *callout.lines] if item])
-            self._add_small_text(pptx_slide, self._padded_rect(box, 8), text, bold=bool(callout.title))
+            self._add_small_text(
+                pptx_slide, self._padded_rect(box, 8), text, bold=bool(callout.title)
+            )
 
         if block.end_badge:
-            badge = Rect(x=rect.x + rect.w * 0.78, y=rect.y + rect.h * 0.02, w=rect.w * 0.19, h=rect.h * 0.14)
+            badge = Rect(
+                x=rect.x + rect.w * 0.78, y=rect.y + rect.h * 0.02, w=rect.w * 0.19, h=rect.h * 0.14
+            )
             self._add_filled_rect(
                 pptx_slide,
                 badge,
@@ -1007,7 +975,9 @@ class PptxRenderer:
                 MSO_SHAPE.ROUNDED_RECTANGLE,
                 radius_pt=10,
             )
-            self._add_small_text(pptx_slide, self._padded_rect(badge, 8), block.end_badge, bold=True, align="center")
+            self._add_small_text(
+                pptx_slide, self._padded_rect(badge, 8), block.end_badge, bold=True, align="center"
+            )
 
     def _render_combo_chart(
         self, pptx_slide: PptxSlide, block: ComboChartBlock, *, rect: Rect
@@ -1027,7 +997,9 @@ class PptxRenderer:
         if max_v - min_v <= 0:
             max_v += 1
 
-        plot = Rect(x=rect.x + rect.w * 0.08, y=rect.y + rect.h * 0.13, w=rect.w * 0.84, h=rect.h * 0.64)
+        plot = Rect(
+            x=rect.x + rect.w * 0.08, y=rect.y + rect.h * 0.13, w=rect.w * 0.84, h=rect.h * 0.64
+        )
         base_y = plot.y + plot.h
         step = plot.w / count
         bar_w = step * 0.42
@@ -1036,13 +1008,17 @@ class PptxRenderer:
         def y_of(value: float) -> float:
             return plot.y + plot.h * (1 - (value - min_v) / (max_v - min_v))
 
-        self._add_filled_rect(pptx_slide, Rect(x=plot.x, y=base_y, w=plot.w, h=0.002), self.theme.palette.line_strong)
+        self._add_filled_rect(
+            pptx_slide, Rect(x=plot.x, y=base_y, w=plot.w, h=0.002), self.theme.palette.line_strong
+        )
         points_by_line: list[list[tuple[float, float]]] = []
         for index, value in enumerate(values):
             x = plot.x + step * index + (step - bar_w) / 2
             y = y_of(value)
             color = colors[index % 2] if count <= 2 else colors[0]
-            self._add_filled_rect(pptx_slide, Rect(x=x, y=y, w=bar_w, h=max(base_y - y, 0.006)), color)
+            self._add_filled_rect(
+                pptx_slide, Rect(x=x, y=y, w=bar_w, h=max(base_y - y, 0.006)), color
+            )
             self._add_small_text(
                 pptx_slide,
                 Rect(x=x - step * 0.12, y=max(y - 0.055, rect.y), w=step * 1.24, h=0.045),
@@ -1083,7 +1059,12 @@ class PptxRenderer:
         for index, note in enumerate(block.annotations[:2]):
             self._add_small_text(
                 pptx_slide,
-                Rect(x=rect.x + rect.w * (0.35 + index * 0.32), y=rect.y + rect.h * 0.02, w=rect.w * 0.26, h=rect.h * 0.08),
+                Rect(
+                    x=rect.x + rect.w * (0.35 + index * 0.32),
+                    y=rect.y + rect.h * 0.02,
+                    w=rect.w * 0.26,
+                    h=rect.h * 0.08,
+                ),
                 note,
                 bold=True,
                 align="center",
@@ -1181,9 +1162,13 @@ class PptxRenderer:
             )
             panel.name = f"financial-panel-{block.id}-{index}"
             header_color = (
-                mix(self.theme.palette.accent, self.theme.palette.accent_soft,
-                    spec["secondary_header_accent_mix"])
-                if index % 2 else self.theme.palette.accent
+                mix(
+                    self.theme.palette.accent,
+                    self.theme.palette.accent_soft,
+                    spec["secondary_header_accent_mix"],
+                )
+                if index % 2
+                else self.theme.palette.accent
             )
             builder = pptx_slide.shapes.build_freeform(0, 0, scale=EMU_PER_POINT)
             builder.add_line_segments(
@@ -1384,8 +1369,8 @@ class PptxRenderer:
         if not block.nodes:
             return
 
-        if self.theme.visual_style == "financial-tech" and block.diagram_type != "timeline":
-            self._render_financial_diagram(pptx_slide, block, rect=rect)
+        if block.diagram_type != "timeline":
+            self._render_shared_diagram(pptx_slide, block, rect=rect)
             return
 
         edges = normalize_flow_edges(block.diagram_type, block.nodes, block.edges)
@@ -1438,6 +1423,140 @@ class PptxRenderer:
 
         # 避免图边界处残留虚构节点被误以为是数据，变量只用于明确校验边引用。
         _ = by_id
+
+    def _render_shared_diagram(self, slide: PptxSlide, block: DiagramBlock, *, rect: Rect) -> None:
+        _, _, width, height = rect.to_points()
+        reference = themed_flowchart_style(self.theme)
+        g = block.geometry
+        if (
+            g is None
+            or g.version != reference["version"]
+            or abs(g.width - width) > 0.5
+            or abs(g.height - height) > 0.5
+        ):
+            g = layout_diagram(block, width, height)
+        if g.font_size < 10:
+            raise ValueError("Diagram text would be below 10 pt; give the diagram more space")
+        scale = g.font_size / (
+            block.style.size_pt if block.style and block.style.size_pt else reference["font_size"]
+        )
+        self._add_filled_rect(slide, rect, reference["background"])
+
+        def box(x, y, w, h):
+            return Rect(
+                x=rect.x + x / CANVAS_WIDTH_PT,
+                y=rect.y + y / CANVAS_HEIGHT_PT,
+                w=w / CANVAS_WIDTH_PT,
+                h=h / CANVAS_HEIGHT_PT,
+            )
+
+        def text(lines, bounds, size, *, bold=False, color=None):
+            frame = self._add_textbox(slide, bounds)
+            frame.word_wrap = False
+            style = self.theme.text_style("body").model_copy(
+                update={
+                    "size_pt": size,
+                    "line_height": 1.25,
+                    "weight": 600 if bold else 400,
+                    "letter_spacing_pt": 0,
+                    "color": color or reference["text"],
+                }
+            )
+            for i, line in enumerate(lines):
+                paragraph = frame.paragraphs[0] if i == 0 else frame.add_paragraph()
+                write_paragraph(paragraph, line, self.theme, style)
+                paragraph.alignment = PP_ALIGN.CENTER
+                paragraph.space_before = paragraph.space_after = Pt(0)
+
+        for index, edge in enumerate(g.edges):
+            # Use native custom geometry so each rounded route remains editable in PPTX.
+            coordinates = [(int(Pt(x)), int(Pt(y))) for x, y in edge.points]
+            builder = slide.shapes.build_freeform(*coordinates[0])
+            builder.add_line_segments(coordinates[1:], close=False)
+            connector = builder.convert_to_shape(
+                Pt(rect.x * CANVAS_WIDTH_PT), Pt(rect.y * CANVAS_HEIGHT_PT)
+            )
+            connector.name = f"diagram-edge-{index}"
+            path = connector._element.xpath(".//a:path")[0]
+            for child in list(path):
+                path.remove(child)
+            path.set("fill", "none")
+            left = min(x for x, _ in coordinates)
+            top = min(y for _, y in coordinates)
+            for command, values in rounded_route(edge.points):
+                element = OxmlElement({"M": "a:moveTo", "L": "a:lnTo", "Q": "a:quadBezTo"}[command])
+                for x, y in zip(values[::2], values[1::2], strict=True):
+                    point = OxmlElement("a:pt")
+                    point.set("x", str(int(Pt(x)) - left))
+                    point.set("y", str(int(Pt(y)) - top))
+                    element.append(point)
+                path.append(element)
+            connector.fill.background()
+            connector.line.color.rgb = to_rgb(reference["connector"])
+            connector.line.width = Pt(reference["stroke_width"])
+            arrow = OxmlElement("a:tailEnd")
+            arrow.set("type", "arrow")
+            connector.line._get_or_add_ln().append(arrow)
+            if edge.label:
+                bounds = box(edge.label_x, edge.label_y, edge.label_width, edge.label_height)
+                self._add_filled_rect(
+                    slide,
+                    bounds,
+                    reference["background"],
+                    MSO_SHAPE.ROUNDED_RECTANGLE,
+                    radius_pt=edge.label_height / 2,
+                    border_width_pt=reference["stroke_width"],
+                    border_color=reference["condition_border"],
+                )
+                label_bounds = box(
+                    edge.label_x,
+                    edge.label_y + reference["label_padding_y"] * scale,
+                    edge.label_width,
+                    edge.label_height,
+                )
+                text(
+                    edge.label.split("\n"),
+                    label_bounds,
+                    g.font_size * reference["label_font_ratio"],
+                    bold=True,
+                )
+        by_id = {node.id: node for node in block.nodes}
+        for node in g.nodes:
+            original = by_id[node.id]
+            bounds = box(node.x, node.y, node.width, node.height)
+            shape = self._add_filled_rect(
+                slide,
+                bounds,
+                reference["background"] if original.kind == "decision" else reference["node_fill"],
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                radius_pt=reference["radius"] * scale,
+                border_width_pt=reference["stroke_width"],
+                border_color=reference["condition_border"]
+                if original.kind == "decision"
+                else reference["node_border"],
+            )
+            shape.name = (
+                f"financial-platform-node-{node.id}"
+                if self.theme.visual_style == "financial-tech"
+                else f"diagram-node-{node.id}"
+            )
+            if original.kind == "decision" and shape is not None:
+                from pptx.enum.dml import MSO_LINE_DASH_STYLE
+
+                shape.line.dash_style = MSO_LINE_DASH_STYLE.DASH
+            lines = [*node.title_lines, *node.desc_lines]
+            text_height = len(lines) * g.font_size * 1.25
+            top = node.y + (node.height - text_height) / 2
+            for group, bold in ((node.title_lines, True), (node.desc_lines, False)):
+                if group:
+                    group_height = len(group) * g.font_size * reference["line_height"]
+                    text(
+                        group,
+                        box(node.x + 4, top, node.width - 8, group_height + 2),
+                        g.font_size,
+                        bold=bold,
+                    )
+                    top += group_height
 
     def _diagram_node_rects(
         self,

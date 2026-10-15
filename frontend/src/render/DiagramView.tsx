@@ -1,425 +1,63 @@
-import { useEffect, useId, useMemo, useState } from 'react'
-import { EditableText } from '@/render/EditableText'
-import { FinancialDiagramView } from '@/render/FinancialTechViews'
-import { isFinancialTech } from '@/render/financialTech'
-import { resolveColor, pt } from '@/render/style'
-import { flowLevels, hasBranchingEdges, normalizeFlowEdges } from '@/render/diagramTopology'
-import {
-  CANVAS_HEIGHT_PT,
-  CANVAS_WIDTH_PT,
-  type DiagramBlock,
-  type DiagramEdge,
-  type DiagramNode,
-  type EditableBlockCommit,
-  type Slot,
-  type Theme,
-} from '@/render/types'
+import { useEffect, useState } from 'react'
+import { EditableText } from './EditableText'
+import { SharedDiagramView } from './SharedDiagramView'
+import { layoutLegacyDiagram } from './diagramLayout'
+import { flowchartStyle, themedFlowchartStyle } from './diagramStyle'
+import { pt, resolveColor, webFontStack } from './style'
+import { CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, type DiagramBlock, type EditableBlockCommit, type Slot, type Theme } from './types'
 
-type NodeRect = { x: number; y: number; w: number; h: number }
+type Props = { block: DiagramBlock; slot: Slot; theme: Theme; editable?: boolean
+  onCommit?: (id: string, body: EditableBlockCommit) => void; onSelect?: (id: string) => void }
 
-function nodeRects(
-  block: DiagramBlock,
-  width: number,
-  height: number,
-  edges: DiagramEdge[],
-): Map<string, NodeRect> {
-  const result = new Map<string, NodeRect>()
-  const gap = block.diagram_type === 'timeline' ? 16 : 18
-  if (block.diagram_type === 'timeline') {
-    const count = block.nodes.length
-    const columns = count <= 3 ? count : count <= 4 ? 2 : 3
-    const rows = Math.ceil(count / columns)
-    const rowGap = gap
-    const nodeWidth = Math.max((width - gap * (columns - 1)) / columns, 1)
-    const nodeHeight = Math.max((height - rowGap * (rows - 1)) / rows, 1)
-    block.nodes.forEach((node, index) => {
-      const row = Math.floor(index / columns)
-      const rowStart = row * columns
-      const rowCount = Math.min(columns, count - rowStart)
-      const rowWidth = rowCount * nodeWidth + (rowCount - 1) * gap
-      const startX = (width - rowWidth) / 2
-      result.set(node.id, {
-        x: startX + (index - rowStart) * (nodeWidth + gap),
-        y: row * (nodeHeight + rowGap),
-        w: nodeWidth,
-        h: nodeHeight,
-      })
-    })
-    return result
-  }
-
-  if (block.diagram_type === 'flow' && hasBranchingEdges(block.nodes, edges)) {
-    const levels = flowLevels(block.nodes, edges)
-    const rows = new Map<number, DiagramNode[]>()
-    block.nodes.forEach((node) => {
-      const level = levels.get(node.id) ?? 0
-      rows.set(level, [...(rows.get(level) ?? []), node])
-    })
-    const rowCount = Math.max(...rows.keys()) + 1
-    const rowGap = 24
-    const rowHeight = Math.max((height - rowGap * (rowCount - 1)) / rowCount, 72)
-    rows.forEach((row, level) => {
-      const nodeWidth = Math.max((width - gap * (row.length - 1)) / row.length, 120)
-      const totalWidth = nodeWidth * row.length + gap * (row.length - 1)
-      const startX = (width - totalWidth) / 2
-      row.forEach((node, index) => {
-        result.set(node.id, {
-          x: startX + index * (nodeWidth + gap),
-          y: level * (rowHeight + rowGap),
-          w: nodeWidth,
-          h: rowHeight,
-        })
-      })
-    })
-    return result
-  }
-
-  const nodeWidth = Math.max((width - gap * (block.nodes.length - 1)) / block.nodes.length, 120)
-  block.nodes.forEach((node, index) => {
-    result.set(node.id, {
-      x: index * (nodeWidth + gap),
-      y: height * 0.18,
-      w: nodeWidth,
-      h: height * 0.64,
-    })
-  })
-  return result
-}
-
-function connectorPoints(source: NodeRect, target: NodeRect) {
-  if (target.y >= source.y + source.h) {
-    return {
-      x1: source.x + source.w / 2,
-      y1: source.y + source.h,
-      x2: target.x + target.w / 2,
-      y2: target.y,
-    }
-  }
-  if (target.x >= source.x + source.w) {
-    return {
-      x1: source.x + source.w,
-      y1: source.y + source.h / 2,
-      x2: target.x,
-      y2: target.y + target.h / 2,
-    }
-  }
-  return {
-    x1: source.x + source.w / 2,
-    y1: source.y + source.h,
-    x2: target.x + target.w / 2,
-    y2: target.y,
-  }
-}
-
-function nodeFill(theme: Theme, status: DiagramNode['status']) {
-  if (status === 'active') return resolveColor(theme, 'accent_soft')
-  if (status === 'risk') return `color-mix(in srgb, ${resolveColor(theme, 'accent')} 16%, ${resolveColor(theme, 'background')})`
-  return resolveColor(theme, 'surface')
-}
-
-function generatedMermaid(block: DiagramBlock, edges = normalizeFlowEdges(block.diagram_type, block.nodes, block.edges)): string {
-  const direction = 'TB'
-  const ids = new Map<string, string>()
-  const safe = (value: string) =>
-    value
-      .replace(/[^a-zA-Z0-9_]/g, '_')
-      .replace(/^_+|_+$/g, '') || 'node'
-  const label = (title: string, desc: string) =>
-    [title, desc]
-      .filter(Boolean)
-      .map((value) => value.replace(/["|]/g, "'").replace(/\s+/g, ' ').trim())
-      .join('<br/>')
-
-  const lines = [`flowchart ${direction}`]
-  block.nodes.forEach((node, index) => {
-    const id = `node_${safe(node.id)}_${index + 1}`
-    ids.set(node.id, id)
-    lines.push(`    ${id}["${label(node.title, node.desc)}"]`)
-  })
-  edges.forEach((edge) => {
-    const source = ids.get(edge.source)
-    const target = ids.get(edge.target)
-    if (!source || !target) return
-    const edgeLabel = edge.label?.replace(/[|]/g, '/').replace(/\s+/g, ' ').trim()
-    lines.push(edgeLabel ? `    ${source} -->|${edgeLabel}| ${target}` : `    ${source} --> ${target}`)
-  })
-  return lines.join('\n')
-}
-
-function responsiveMermaidSvg(svg: string): string {
-  return svg.replace(/<svg\b([^>]*)>/i, (_match, attrs: string) => {
-    const cleaned = attrs
-      .replace(/\sstyle="[^"]*"/i, '')
-      .replace(/\swidth="[^"]*"/i, '')
-      .replace(/\sheight="[^"]*"/i, '')
-      .replace(/\spreserveAspectRatio="[^"]*"/i, '')
-    return `<svg${cleaned} width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="display:block;width:100%;height:100%;max-width:none;">`
-  })
-}
-
-function commitNodes(
-  block: DiagramBlock,
-  nodes: DiagramNode[],
-  onCommit?: (blockId: string, body: EditableBlockCommit) => void,
-) {
-  onCommit?.(block.id, {
-    type: 'diagram',
-    diagram_type: block.diagram_type,
-    mermaid: null,
-    nodes,
-    edges: block.edges,
-  })
-}
-
-export function DiagramView({
-  block,
-  slot,
-  theme,
-  editable,
-  onCommit,
-  onSelect,
-}: {
-  block: DiagramBlock
-  slot: Slot
-  theme: Theme
-  editable?: boolean
-  onCommit?: (blockId: string, body: EditableBlockCommit) => void
-  onSelect?: (blockId: string) => void
-}) {
-  const width = slot.rect.w * CANVAS_WIDTH_PT
-  const height = slot.rect.h * CANVAS_HEIGHT_PT
-  const reactId = useId()
-  const mermaidId = `mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, '')}`
-  const [mermaidSvg, setMermaidSvg] = useState<string | null>(null)
-  const [mermaidError, setMermaidError] = useState(false)
-  const renderEdges = useMemo(
-    () => normalizeFlowEdges(block.diagram_type, block.nodes, block.edges),
-    [block.diagram_type, block.nodes, block.edges],
-  )
-  const financial = isFinancialTech(theme) && block.diagram_type !== 'timeline'
-  const mermaidSource = block.diagram_type === 'timeline' || financial
-    ? ''
-    : block.diagram_type === 'flow'
-      ? generatedMermaid(block, renderEdges)
-      : block.mermaid?.trim() || generatedMermaid(block, renderEdges)
-  const rects = useMemo(
-    () => nodeRects(block, width, height, renderEdges),
-    [block, width, height, renderEdges],
-  )
-  const byId = new Map(block.nodes.map((node) => [node.id, node]))
-
+function FlowDiagramView({ block, slot, theme, editable, onCommit, onSelect }: Props) {
+  const width = slot.rect.w * CANVAS_WIDTH_PT, height = slot.rect.h * CANVAS_HEIGHT_PT
+  const fontFamily = webFontStack(theme.fonts.body)
+  const saved = block.geometry?.version === flowchartStyle.version
+    && Math.abs(block.geometry.width - width) < 0.5 && Math.abs(block.geometry.height - height) < 0.5
+    ? block.geometry : null
+  const [computed, setComputed] = useState<{ block: DiagramBlock; width: number; height: number; geometry: NonNullable<DiagramBlock['geometry']> } | null>(null)
+  const [failed, setFailed] = useState(false)
   useEffect(() => {
+    if (saved) return
     let cancelled = false
-    setMermaidSvg(null)
-    setMermaidError(false)
-    if (block.diagram_type === 'timeline' || financial) {
-      setMermaidError(true)
-      return () => {
-        cancelled = true
-      }
-    }
-    void import('mermaid')
-      .then(({ default: mermaid }) => {
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: 'strict',
-          theme: 'base',
-          flowchart: { htmlLabels: true, useMaxWidth: true, curve: 'basis' },
-          themeVariables: {
-            primaryColor: resolveColor(theme, 'accent_soft'),
-            primaryBorderColor: resolveColor(theme, 'accent'),
-            primaryTextColor: resolveColor(theme, 'ink'),
-            lineColor: resolveColor(theme, 'accent'),
-            secondaryColor: resolveColor(theme, 'surface'),
-            tertiaryColor: resolveColor(theme, 'background'),
-            fontFamily: theme.fonts.body.web,
-          },
-        })
-        return mermaid.render(mermaidId, mermaidSource)
-      })
-      .then(({ svg }) => {
-        if (!cancelled) setMermaidSvg(responsiveMermaidSvg(svg))
-      })
-      .catch(() => {
-        if (!cancelled) setMermaidError(true)
-      })
+    setFailed(false)
+    void layoutLegacyDiagram(block, width, height, fontFamily).then(geometry => {
+      if (!cancelled) setComputed({ block, width, height, geometry })
+    }).catch(() => { if (!cancelled) setFailed(true) })
+    return () => { cancelled = true }
+  }, [saved, block, width, height, fontFamily])
+  const geometry = saved || (computed?.block === block && computed.width === width && computed.height === height ? computed.geometry : null)
+  const colors = themedFlowchartStyle(theme)
+  if (!geometry) return <div role="status" style={{ width: '100%', height: '100%', background: colors.background,
+    color: colors.connector, display: 'grid', placeItems: 'center', fontSize: pt(12) }}>
+    {failed ? '流程图布局失败' : ''}
+  </div>
+  return <SharedDiagramView block={{ ...block, geometry }} theme={theme} editable={editable} onCommit={onCommit} onSelect={onSelect} />
+}
 
-    return () => {
-      cancelled = true
-      document.getElementById(mermaidId)?.remove()
-    }
-  }, [block.diagram_type, mermaidId, mermaidSource, theme, financial])
+function TimelineView({ block, theme, editable, onCommit, onSelect }: Props) {
+  const columns = block.nodes.length <= 3 ? block.nodes.length : block.nodes.length <= 4 ? 2 : 3
+  return <div data-diagram-engine="timeline" style={{ display: 'grid', width: '100%', height: '100%',
+    gridTemplateColumns: `repeat(${Math.max(1, columns * 2)},minmax(0,1fr))`, gridAutoRows: '1fr', columnGap: pt(8), rowGap: pt(16) }}>
+    {block.nodes.map((node, i) => <div key={node.id} onClick={() => onSelect?.(block.id)} style={{
+      position: 'relative', gridColumn: `${columns - Math.min(columns, block.nodes.length - Math.floor(i / columns) * columns) + (i % columns) * 2 + 1} / span 2`,
+      minWidth: 0, minHeight: 0, padding: pt(12), display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: pt(6),
+      background: resolveColor(theme, node.status === 'active' ? 'accent_soft' : 'surface'),
+      border: `${pt(1)} solid ${resolveColor(theme, 'line')}`, borderRadius: pt(Math.min(theme.shape.radius_pt, 8)),
+      color: resolveColor(theme, 'ink'), fontFamily: webFontStack(theme.fonts.body), overflow: 'hidden',
+    }}>
+      {(['title', 'desc'] as const).map(field => node[field] && <div key={field} style={{
+        fontSize: pt(block.style?.size_pt || (field === 'title' ? theme.text_styles.subtitle.size_pt : theme.text_styles.body.size_pt)),
+        fontWeight: field === 'title' ? 600 : 400, lineHeight: 1.25, overflowWrap: 'anywhere',
+      }}>{editable && onCommit ? <EditableText value={node[field]} multiline ariaLabel={`编辑阶段 ${i + 1} ${field}`}
+        onCommit={value => onCommit(block.id, { type: 'diagram', diagram_type: 'timeline', mermaid: null,
+          nodes: block.nodes.map(n => n.id === node.id ? { ...n, [field]: value } : n), edges: block.edges })} /> : node[field]}</div>)}
+      {node.status === 'done' && <span style={{ position: 'absolute', right: pt(10), top: pt(8),
+        fontSize: pt(theme.text_styles.caption.size_pt), color: resolveColor(theme, 'accent') }}>已完成</span>}
+    </div>)}
+  </div>
+}
 
-  if (financial) return <FinancialDiagramView block={block} slot={slot} theme={theme}
-    editable={editable} onCommit={onCommit} onSelect={onSelect} edges={renderEdges} />
-
-  if (!mermaidError && block.diagram_type !== 'timeline') {
-    return (
-      <div
-        className="mermaid-diagram"
-        role="img"
-        aria-label="Mermaid 流程图"
-        onClick={() => onSelect?.(block.id)}
-        style={{
-          width: '100%',
-          height: '100%',
-          minWidth: 0,
-          minHeight: 0,
-          overflow: 'hidden',
-        }}
-        dangerouslySetInnerHTML={mermaidSvg ? { __html: mermaidSvg } : undefined}
-      />
-    )
-  }
-
-  return (
-    <div
-      style={{
-        position: 'relative',
-        width: '100%',
-        height: '100%',
-        minWidth: 0,
-        minHeight: 0,
-        overflow: 'hidden',
-      }}
-    >
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-        aria-hidden
-        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-      >
-        <defs>
-          <marker
-            id={`arrow-${block.id}`}
-            markerWidth="8"
-            markerHeight="8"
-            refX="7"
-            refY="4"
-            orient="auto"
-            markerUnits="strokeWidth"
-          >
-            <path d="M0,0 L8,4 L0,8 z" fill={resolveColor(theme, 'accent')} />
-          </marker>
-        </defs>
-        {block.diagram_type === 'timeline' ? null : renderEdges.map((edge: DiagramEdge) => {
-          const source = rects.get(edge.source)
-          const target = rects.get(edge.target)
-          if (!source || !target) return null
-          const points = connectorPoints(source, target)
-          return (
-            <line
-              key={`${edge.source}-${edge.target}`}
-              {...points}
-              stroke={resolveColor(theme, 'accent')}
-              strokeWidth="2"
-              markerEnd={`url(#arrow-${block.id})`}
-            />
-          )
-        })}
-      </svg>
-
-      {block.nodes.map((node, index) => {
-        const rect = rects.get(node.id)
-        if (!rect) return null
-        const nodeIndex = block.nodes.findIndex((item) => item.id === node.id)
-        const updateNode = (field: 'title' | 'desc', value: string) => {
-          const nodes = block.nodes.map((item, current) =>
-            current === nodeIndex ? { ...item, [field]: value } : item,
-          )
-          commitNodes(block, nodes, onCommit)
-        }
-        return (
-          <div
-            key={node.id}
-            style={{
-              position: 'absolute',
-              left: `${(rect.x / width) * 100}%`,
-              top: `${(rect.y / height) * 100}%`,
-              width: `${(rect.w / width) * 100}%`,
-              height: `${(rect.h / height) * 100}%`,
-              boxSizing: 'border-box',
-              padding: pt(12),
-              display: 'flex',
-              flexDirection: 'column',
-              gap: pt(6),
-              justifyContent: 'center',
-              minWidth: 0,
-              overflow: 'hidden',
-              color: resolveColor(theme, 'ink'),
-              background: nodeFill(theme, node.status),
-              border: `${pt(1)} solid ${resolveColor(theme, 'line')}`,
-              borderRadius: pt(theme.shape.radius_pt),
-            }}
-            onClick={() => onSelect?.(block.id)}
-          >
-            <span
-              style={{
-                fontSize: pt(theme.text_styles.subtitle.size_pt),
-                fontFamily: theme.fonts.body.web,
-                fontWeight: theme.text_styles.subtitle.weight,
-                lineHeight: theme.text_styles.subtitle.line_height,
-                overflowWrap: 'break-word',
-                minHeight: 0,
-                overflow: 'hidden',
-                flexShrink: 1,
-              }}
-            >
-              {editable && onCommit ? (
-                <EditableText
-                  value={node.title}
-                  ariaLabel={`编辑流程节点 ${index + 1} 标题`}
-                  style={{ fontSize: pt(theme.text_styles.subtitle.size_pt), fontWeight: theme.text_styles.subtitle.weight }}
-                  onFocus={() => onSelect?.(block.id)}
-                  onCommit={(value) => updateNode('title', value)}
-                />
-              ) : (
-                node.title
-              )}
-            </span>
-            {node.desc ? (
-              <span
-                style={{
-                  fontSize: pt(theme.text_styles.body.size_pt),
-                  fontFamily: theme.fonts.body.web,
-                  lineHeight: theme.text_styles.body.line_height,
-                  color: resolveColor(theme, 'ink_soft'),
-                  overflowWrap: 'break-word',
-                  minHeight: 0,
-                  overflow: 'hidden',
-                  flexShrink: 1,
-                }}
-              >
-                {editable && onCommit ? (
-                  <EditableText
-                    value={node.desc}
-                    ariaLabel={`编辑流程节点 ${index + 1} 描述`}
-                    multiline
-                    style={{ fontSize: pt(theme.text_styles.body.size_pt) }}
-                    onFocus={() => onSelect?.(block.id)}
-                    onCommit={(value) => updateNode('desc', value)}
-                  />
-                ) : (
-                  node.desc
-                )}
-              </span>
-            ) : null}
-            {block.diagram_type === 'timeline' && byId.get(node.id)?.status === 'done' ? (
-              <span
-                style={{
-                  position: 'absolute',
-                  right: pt(10),
-                  top: pt(8),
-                  fontSize: pt(theme.text_styles.caption.size_pt),
-                  color: resolveColor(theme, 'accent'),
-                }}
-              >
-                已完成
-              </span>
-            ) : null}
-          </div>
-        )
-      })}
-    </div>
-  )
+export function DiagramView(props: Props) {
+  return props.block.diagram_type === 'timeline' ? <TimelineView {...props} /> : <FlowDiagramView {...props} />
 }
