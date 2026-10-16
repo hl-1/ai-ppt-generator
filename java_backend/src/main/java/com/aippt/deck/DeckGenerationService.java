@@ -45,6 +45,7 @@ public class DeckGenerationService {
     private final OutlineService outlines;
     private final AppProperties properties;
     private final SlideImageResolver images;
+    private final GenerationDelivery delivery;
 
     public void handle(JobPayload job) {
         Context context = loadContext(job.projectId());
@@ -122,8 +123,9 @@ public class DeckGenerationService {
                     page.title(),
                     result.slide()
             );
-            saveReady(slideId, content, result.issues(), context.layoutMode);
-            publish(projectId, "slide_completed", "第 " + target.position() + " 页已完成", slideId, target.position());
+            boolean ready = delivery.save(slideId, content, result.issues());
+            publish(projectId, ready ? "slide_completed" : "slide_failed",
+                    "第 " + target.position() + (ready ? " 页已完成" : " 页需要修复，草稿已保留"), slideId, target.position());
         } catch (Exception ex) {
             log.warn("生成页面失败 {}", slideId, ex);
             saveFailed(slideId, publicError(ex));
@@ -179,29 +181,6 @@ public class DeckGenerationService {
         slide.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         slides.updateById(slide);
         return true;
-    }
-
-    private void saveReady(UUID slideId, SlideContent content, List<StructureIssue> issues, String intendedMode) {
-        Slide slide = slides.getById(slideId);
-        if (slide == null) {
-            return;
-        }
-        String mode = "fixed".equals(intendedMode) || "flex".equals(intendedMode) ? intendedMode : content.layoutMode();
-        slide.setBlocks(content.blocks());
-        slide.setSpeakerNotes(content.speakerNotes());
-        if ("flex".equals(mode)) {
-            slide.setLayoutMode("flex");
-            slide.setLayoutTree(content.layoutTreeMap());
-        } else {
-            slide.setLayoutMode("fixed");
-            slide.setLayoutTree(null);
-        }
-        slide.setIssues(issues.stream().map(StructureIssue::toMap).toList());
-        slide.setStatus("ready");
-        slide.setError(null);
-        slide.setRevision((slide.getRevision() == null ? 1 : slide.getRevision()) + 1);
-        slide.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
-        slides.updateById(slide);
     }
 
     private void saveFailed(UUID slideId, String message) {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.domain.card_layout import card_grid
 from app.domain.content import Block, BulletsBlock, CardItem, CardsBlock, ImageBlock, TextBlock
 from app.domain.flex_layout import FlexContainer, FlexLeaf
 from app.domain.flex_solve import solve
@@ -158,7 +159,9 @@ def test_overconstrained_single_cards_column_still_gets_priority_width() -> None
     after = _widths_pt(after_tree)
 
     assert after["cards"] > before["cards"]
-    assert after["cards"] >= 2 * before["cards"]
+    columns, card_width, _ = card_grid(4, after["cards"], 300)
+    assert columns == 2
+    assert card_width >= 176
     assert sum(after.values()) + 16 <= CANVAS_WIDTH_PT + 1
 
 

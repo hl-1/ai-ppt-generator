@@ -117,7 +117,7 @@ def test_estimate_measure_when_fonts_missing(monkeypatch: pytest.MonkeyPatch) ->
     assert result.used_estimate is True
 
 
-def test_overflow_warning_marks_estimate(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_overflow_blocks_export_and_marks_estimate(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.domain import text_metrics as tm
 
     monkeypatch.setattr(tm, "FONTS_DIR", Path("/tmp/aippt-no-fonts"))
@@ -127,7 +127,7 @@ def test_overflow_warning_marks_estimate(monkeypatch: pytest.MonkeyPatch) -> Non
     issues = validate_slide(_overflow_title_slide(text=long), theme_id="ivory")
     overflow = [i for i in issues if "溢出" in i.message]
     assert overflow
-    assert all(i.severity == "warning" for i in overflow)
+    assert all(i.severity == "error" for i in overflow)
     assert any("估算" in i.message for i in overflow)
 
 
@@ -198,7 +198,10 @@ def test_structured_blocks_are_measured_for_overflow(block) -> None:
 
     issues = validate_slide(slide, theme_id="ivory")
 
-    assert any(issue.code == "overflow" and issue.slot_id == block.slot_id for issue in issues)
+    expected_code = "diagram_readability" if isinstance(block, DiagramBlock) else "overflow"
+    assert any(issue.code == expected_code and issue.slot_id == block.slot_id for issue in issues)
+    if isinstance(block, DiagramBlock):
+        assert any(issue.code == expected_code and issue.severity == "error" for issue in issues)
 
 
 def test_flex_block_collision_is_blocking_issue() -> None:

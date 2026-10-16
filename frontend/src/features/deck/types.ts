@@ -121,6 +121,13 @@ export function imageBlocks(slide: DeckSlide): ImageBlock[] {
   return slide.blocks.filter((block): block is ImageBlock => block.type === 'image')
 }
 
+export function canPreviewSlide(slide: DeckSlide): boolean {
+  return slide.status === 'ready' || (
+    slide.status === 'failed' && slide.blocks.length > 0 &&
+    (slide.layout_mode !== 'flex' || slide.layout_tree != null)
+  )
+}
+
 /** 胶片标题优先用画布上的 title 槽，避免改字后侧栏仍显示大纲旧标题 */
 export function slideDisplayTitle(slide: DeckSlide): string {
   const title = slide.blocks.find(

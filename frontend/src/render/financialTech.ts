@@ -2,6 +2,7 @@ import spec from '../../../shared/financial-tech-style.json'
 import { mixHex } from '@/render/ambient'
 import { flowLevels } from '@/render/diagramTopology'
 import type { DiagramEdge, DiagramNode, Theme } from '@/render/types'
+import { cardGrid, cardHeaderHeight } from './cardLayout'
 
 export { spec as financialTechStyle }
 export const isFinancialTech = (theme: Theme) => theme.visual_style === 'financial-tech'
@@ -20,22 +21,12 @@ export function panelHeaderBackground(theme: Theme, index: number) {
 }
 
 export function panelGrid(count: number, width: number, height: number) {
-  const gap = spec.card_gap_pt
-  const columns = Math.min(
-    count,
-    spec.card_max_columns,
-    Math.max(1, Math.floor((width + gap) / (spec.card_min_width_pt + gap))),
-  )
-  const rows = Math.ceil(count / columns)
-  return {
-    columns,
-    width: Math.max(1, (width - gap * (columns - 1)) / columns),
-    height: Math.max(1, (height - gap * (rows - 1)) / rows),
-  }
+  const { columns, width: cardWidth, height: cardHeight } = cardGrid(count, width, height, 'financial-tech')
+  return { columns, width: cardWidth, height: cardHeight }
 }
 
 export function panelHeaderHeight(height: number, size: number, lineHeight: number) {
-  return Math.min(height * 0.45, Math.max(spec.header_min_height_pt, size * lineHeight * 2 + 12))
+  return cardHeaderHeight(height, size, lineHeight)
 }
 
 export type PlatformRect = { x: number; y: number; w: number; h: number }

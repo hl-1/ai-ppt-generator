@@ -28,7 +28,7 @@ export function SharedDiagramView({ block, theme, editable, onCommit, onSelect }
     </marker></defs>
     <rect data-flowchart-background="true" width={g.width} height={g.height} fill={style.background} />
     {g.edges.map((edge, i) => <g key={i}>
-      <path d={roundedRoute(edge.points)}
+      <path data-edge-index={i} d={roundedRoute(edge.points)}
         fill="none" stroke={style.connector} strokeWidth={style.stroke_width} strokeLinejoin="round" markerEnd={`url(#elk-${id})`} />
       {edge.label && <g>
         <rect data-condition-label="true" x={edge.label_x} y={edge.label_y} width={edge.label_width}

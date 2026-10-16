@@ -50,7 +50,7 @@ export function useUpdateProjectTheme(id: string) {
     onSuccess: (project) => {
       queryClient.setQueryData(detailKey(id), project)
       void queryClient.invalidateQueries({ queryKey: listKey })
-      // 字号变化会重算 issues，刷新 deck 缓存
+      // 主题改变字体和组件尺寸后，服务端会重排并推进页 revision。
       void queryClient.invalidateQueries({ queryKey: deckKey(id) })
     },
   })

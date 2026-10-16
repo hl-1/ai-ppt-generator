@@ -184,7 +184,12 @@ def normalize_topic_pages(
             page.model_copy(
                 update={
                     "visual_type": visual_type,
-                    "evidence_kind": kind or page.evidence_kind,
+                    "evidence_kind": kind
+                    or (
+                        "narrative"
+                        if visual_type == "auto" and page.evidence_kind == "timeline"
+                        else page.evidence_kind
+                    ),
                     "evidence": evidence,
                     "planning_notes": [],
                 }
@@ -210,8 +215,12 @@ def _suggest_visual(
     page: OutlinePageDraft,
     sources: Mapping[str, str],
 ) -> str:
-    if page.evidence_kind in {"flow", "timeline"}:
-        return page.evidence_kind
+    from app.domain.content_format import has_temporal_sequence
+
+    if page.evidence_kind == "flow":
+        return "flow"
+    if has_temporal_sequence(page.key_points):
+        return "timeline"
     blob = " ".join([page.title, page.objective, page.key_message, *page.key_points])
     if any(
         word in blob for word in ("双指标", "双线", "成熟度与采用率", "指标与率")
@@ -219,7 +228,6 @@ def _suggest_visual(
         return "combo_chart"
     keyword_map = (
         (("分流", "审批", "并行", "汇聚"), "flow"),
-        (("里程碑", "阶段安排", "时间轴"), "timeline"),
         (("构成", "结构", "占比", "资源"), "pie"),
         (("对比", "比较", "对象", "差异", "排名"), "bar"),
         (("采用率", "增长", "成熟度", "变化", "趋势"), "line"),

@@ -75,19 +75,27 @@ def test_prepare_trims_sections_within_budget() -> None:
 
 
 @pytest.mark.asyncio
-async def test_document_workflow_repairs_capacity_overflow_once() -> None:
-    """Document pages also receive a targeted overflow repair."""
+async def test_document_workflow_prefers_lossless_pagination_to_rewriting() -> None:
     too_long = ["超出容量的要点" * 12] * 9
     generator = ScriptedGenerator([_draft(too_long), _draft(["完整展示资料", "确认内容可读"])])
     workflow = build_slide_workflow(generator)
 
     slide, issues = await run_slide_workflow(workflow, _payload(), uuid.uuid4())
 
-    assert len(generator.prompts) == 2
-    assert generator.prompts[0] == []
-    assert generator.prompts[1]
-    assert not any(issue.code == "capacity" for issue in issues)
-    assert slide.blocks[1].items == ["完整展示资料", "确认内容可读"]
+    from app.domain.content_pagination import split_generated_slide
+    from app.domain.theme import get_theme
+    from app.domain.validation import validate_slide
+
+    assert len(generator.prompts) == 1
+    pages = split_generated_slide(slide, get_theme("ivory"))
+    assert [
+        item
+        for page in pages
+        for block in page.blocks
+        if block.type == "bullets"
+        for item in block.items
+    ] == too_long
+    assert all(not any(i.severity == "error" for i in validate_slide(page)) for page in pages)
 
 
 @pytest.mark.asyncio
@@ -153,7 +161,7 @@ async def test_workflow_rejects_invented_branch_in_linear_source_even_when_flow_
 
 
 @pytest.mark.asyncio
-async def test_topic_workflow_repairs_capacity_overflow_once() -> None:
+async def test_topic_workflow_prefers_lossless_pagination_to_rewriting() -> None:
     too_long = ["主题页过长的要点" * 12] * 9
     generator = ScriptedGenerator(
         [
@@ -175,10 +183,31 @@ async def test_topic_workflow_repairs_capacity_overflow_once() -> None:
         uuid.uuid4(),
     )
 
+    from app.domain.content_pagination import split_generated_slide
+    from app.domain.theme import get_theme
+
+    assert len(generator.prompts) == 1
+    pages = split_generated_slide(slide, get_theme("ivory"))
+    assert [
+        item
+        for page in pages
+        for block in page.blocks
+        if block.type == "bullets"
+        for item in block.items
+    ] == too_long
+
+
+@pytest.mark.asyncio
+async def test_indivisible_overflow_still_receives_one_model_repair():
+    generator = ScriptedGenerator(
+        [
+            _draft(["不可拆分" * 2000]),
+            _draft(["明确练习目标并记录完整结果", "根据实际反馈安排下一步行动"]),
+        ]
+    )
+    _, issues = await run_slide_workflow(build_slide_workflow(generator), _payload(), uuid.uuid4())
     assert len(generator.prompts) == 2
-    assert any("超出" in message or "溢出" in message for message in generator.prompts[1])
-    assert slide.blocks[1].items[0] != too_long[0]
-    assert not any(issue.code == "capacity" for issue in issues)
+    assert not any(issue.severity == "error" for issue in issues)
 
 
 @pytest.mark.asyncio

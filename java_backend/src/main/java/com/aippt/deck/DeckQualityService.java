@@ -99,9 +99,13 @@ public class DeckQualityService {
                 media::loadImage,
                 MediaService::keyFromUrl
         );
+        var issues = new ArrayList<>(report.issues());
+        for (var row : pageRows) if (!"ready".equals(row.getStatus()))
+            issues.add(com.aippt.domain.content.StructureIssue.error(row.getId().toString(), null,
+                    "本页尚未通过生成验收，请完成修复或移除后再导出", "page_not_ready"));
         return new DeckDtos.ExportCheckReport(
-                report.issues().stream().map(com.aippt.domain.content.StructureIssue::toMap).toList(),
-                report.exportAllowed(),
+                issues.stream().map(com.aippt.domain.content.StructureIssue::toMap).toList(),
+                issues.stream().noneMatch(i -> "error".equals(i.severity())),
                 report.fontsPrecise()
         );
     }

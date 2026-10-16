@@ -92,3 +92,22 @@ def test_travel_advice_with_time_words_does_not_become_a_timeline() -> None:
 
     assert plan.visual_type == "auto"
     assert plan.evidence_kind == "narrative"
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_timeline_requires_sequence_unless_explicitly_selected(explicit: bool) -> None:
+    page = _page("timeline" if explicit else "auto").model_copy(
+        update={
+            "title": "资源与时间安排",
+            "evidence_kind": "timeline",
+            "key_points": ["资源分层建议", "筛选原则", "时间安排示例", "利用工作制度"],
+        }
+    )
+    result = normalize_topic_pages([page], {})[0]
+    assert result.visual_type == ("timeline" if explicit else "auto")
+    assert result.evidence_kind == ("timeline" if explicit else "narrative")
+
+
+def test_timeline_with_actual_phases_is_suggested() -> None:
+    page = _page().model_copy(update={"key_points": ["第一阶段：启动", "第二阶段：试点"]})
+    assert normalize_topic_pages([page], {})[0].visual_type == "timeline"

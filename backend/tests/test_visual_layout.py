@@ -13,7 +13,9 @@ from app.domain.outline import OutlinePageDraft
 from app.domain.table_layout import layout_table
 from app.domain.table_pagination import split_table_slide
 from app.domain.text_metrics import wrap_text
-from app.domain.theme import get_theme
+from app.domain.theme import get_theme, load_themes
+from app.domain.theme_layout import reflow_slide_to_theme
+from app.domain.validation import validate_slide
 from app.domain.visual_layout import bind_source_diagram
 from app.ingest.markdown import MarkdownParser
 from app.llm.base import SlideGenerationInput
@@ -24,7 +26,7 @@ from app.workflows.slide import prepare_slide_input
 SOURCE = Path(__file__).parent / "fixtures/music_execution.mmd"
 
 
-@pytest.mark.parametrize("theme", ["enterprise", "financial-tech"])
+@pytest.mark.parametrize("theme", list(load_themes()))
 def test_native_flowchart_uses_reference_style_in_every_theme(theme):
     block = DiagramBlock(
         id="g",
@@ -71,6 +73,50 @@ def test_native_flowchart_uses_reference_style_in_every_theme(theme):
         for run in paragraph.runs
     ]
     assert text_colors and set(text_colors) == {colors["text"].lstrip("#")}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "flowchart LR\n A[接收] --> B[处理] --> C[完成]",
+        "flowchart TB\n A{是否通过} -->|通过| B[执行]\n A -->|退回| C[修改]",
+        "flowchart TB\n A[输入] --> B[校验]\n A --> C[查询]\n B --> D[汇总]\n C --> D",
+        "flowchart LR\n A[执行] --> B{检查结果}\n B -->|重试| A\n B -->|完成| C[结束]",
+    ],
+)
+def test_flow_geometry_and_validation_are_identical_across_themes(source):
+    nodes, edges, direction = parse_mermaid(source)
+    block = DiagramBlock(
+        id="flow",
+        slot_id="visual",
+        diagram_type="flow",
+        nodes=nodes,
+        edges=edges,
+        direction=direction,
+        locked=True,
+    )
+    slide = Slide(
+        id="s",
+        layout_id="bullets",
+        layout_mode="flex",
+        blocks=[block],
+        layout_tree=FlexContainer(
+            id="root", type="column", children=[FlexLeaf(id="leaf", block_id="flow")]
+        ),
+    )
+    geometries = []
+    for theme in load_themes().values():
+        assert not validate_slide(slide, theme=theme)
+        fitted = reflow_slide_to_theme(slide, theme)
+        geometry = fitted.blocks[0].geometry
+        assert geometry.font_size >= 10
+        assert_attached_routes(block, geometry)
+        assert fitted.blocks[0].nodes == nodes
+        assert fitted.blocks[0].edges == edges
+        assert fitted.blocks[0].locked
+        assert not validate_slide(fitted, theme=theme)
+        geometries.append(geometry)
+    assert all(g == geometries[0] for g in geometries)
 
 
 def assert_attached_routes(block, geometry):

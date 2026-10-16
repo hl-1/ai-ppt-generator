@@ -21,6 +21,16 @@ public final class SlideIssues {
     }
 
     public static void refresh(Slide slide, SharedCatalog catalog, Theme theme) {
+        refresh(slide, catalog, theme, false);
+    }
+
+    public static void refresh(Slide slide, SharedCatalog catalog, Theme theme, boolean reflow) {
+        refresh(slide, catalog, theme, reflow, slide.getLayoutId());
+    }
+
+    public static void refresh(Slide slide, SharedCatalog catalog, Theme theme, boolean reflow, String pageRole) {
+        var previousTree = slide.getLayoutTree();
+        var previousBlocks = slide.getBlocks();
         Layout layout = catalog.layouts().get(slide.getLayoutId());
         SlideContent content = new SlideContent(
                 slide.getId() == null ? "" : slide.getId().toString(),
@@ -30,6 +40,18 @@ public final class SlideIssues {
                 slide.getBlocks() == null ? List.of() : slide.getBlocks(),
                 slide.getSpeakerNotes()
         );
+        if (reflow && "flex".equals(content.layoutMode()) && content.layoutTree() != null) {
+            var tree = com.aippt.domain.flex.FlexWidth.fitRowWidths(content.layoutTree(), content.blocks(), theme);
+            tree = com.aippt.domain.flex.FlexFit.fitTreeToContent(tree, content.blocks(), theme, pageRole);
+            slide.setLayoutTree(tree.toMap());
+            content = content.withLayoutTree(tree);
+        }
+        content = com.aippt.domain.DiagramLayout.prepare(content, layout);
+        if (reflow && (!java.util.Objects.equals(previousTree, slide.getLayoutTree())
+                || !java.util.Objects.equals(previousBlocks, content.blocks()))) {
+            slide.setRevision(slide.getRevision() + 1);
+        }
+        slide.setBlocks(content.blocks());
         slide.setIssues(SlideValidation.validate(content, layout, theme).stream()
                 .map(StructureIssue::toMap)
                 .toList());

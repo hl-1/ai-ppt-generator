@@ -14,6 +14,7 @@ from app.domain.theme import (
     load_themes,
     resolve_project_theme,
 )
+from app.domain.theme_layout import theme_requires_reflow
 from app.ingest.base import UnsupportedDocument
 from app.ingest.upload import UploadRejected
 from app.models.project import Project, ProjectSource
@@ -139,6 +140,7 @@ async def update_project_theme(
     body: ProjectThemeUpdate, project: OwnedProject, session: SessionDep
 ) -> Project:
     """更新主题预设或细粒度覆盖；大纲确认后仍可用。"""
+    previous_theme = resolve_project_theme(project)
     fields = body.model_fields_set
     if not fields:
         raise HTTPException(
@@ -164,10 +166,20 @@ async def update_project_theme(
             project.theme_overrides = dump_overrides(body.overrides)
 
     theme = resolve_project_theme(project)
+    reflow = theme_requires_reflow(previous_theme, theme)
+    page_roles = {
+        str(page["id"]): page.get("page_role", "content")
+        for page in (project.outline.pages if project.outline else [])
+    }
     slides = await load_slides(session, project.id)
     for slide in slides:
         if slide.status == "ready" and slide.blocks:
-            refresh_slide_issues(slide, theme=theme)
+            refresh_slide_issues(
+                slide,
+                theme=theme,
+                reflow=reflow,
+                page_role=page_roles.get(str(slide.outline_page_id)),
+            )
 
     await session.commit()
     await session.refresh(project)

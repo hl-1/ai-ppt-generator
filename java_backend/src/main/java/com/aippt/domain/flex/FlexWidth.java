@@ -321,7 +321,11 @@ public final class FlexWidth {
                         }
                     }
                 }
-                yield n * (card + 2 * CARD_PAD_PT) + Math.max(0, n - 1) * CARD_GAP_PT;
+                n = Math.min(n, 2);
+                double pad = com.aippt.domain.CardLayout.spec(theme, "padding_pt");
+                double single = Math.max(com.aippt.domain.CardLayout.spec(theme, "min_width_pt"), card + 2 * pad);
+                yield n == 0 ? MIN_LEAF_WIDTH_PT : n * single
+                        + (n - 1) * com.aippt.domain.CardLayout.spec(theme, "gap_pt") + padding;
             }
             case "kpi" -> {
                 double widest = Math.max(

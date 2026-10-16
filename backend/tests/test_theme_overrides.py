@@ -7,6 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.db import async_session_factory
+from app.domain.content import CardItem, CardsBlock, Slide, TextBlock
+from app.domain.flex_layout import FlexContainer, FlexLeaf
 from app.domain.theme import (
     ThemeOverrides,
     fonts_are_whitelisted,
@@ -14,6 +16,7 @@ from app.domain.theme import (
     merge_theme,
     resolve_theme,
 )
+from app.domain.theme_layout import reflow_slide_to_theme
 from app.main import app
 from app.models.project import Project, ProjectOutline
 from app.models.slide import Slide as SlideRow
@@ -195,3 +198,79 @@ async def test_theme_api_rejects_bad_hex_and_fonts(client: AsyncClient) -> None:
     )
     assert bad_fonts.status_code == 422
     assert "字体" in bad_fonts.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_theme_api_reflows_ready_pages_and_preserves_locked_content(client: AsyncClient):
+    headers = await _sign_up(client)
+    response = await client.post(
+        "/api/v1/projects", headers=headers, json={"title": "主题重排", "page_count": 5}
+    )
+    assert response.status_code == 201, response.text
+    project_id = uuid.UUID(response.json()["id"])
+    source = Slide(
+        id="s",
+        layout_id="bullets",
+        layout_mode="flex",
+        speaker_notes="保留讲稿",
+        blocks=[
+            TextBlock(id="title", slot_id="title", text="锁定内容的主题切换"),
+            CardsBlock(
+                id="cards",
+                slot_id="body",
+                locked=True,
+                items=[CardItem(title=f"任务 {i}", desc="记录结果并持续改进。") for i in range(6)],
+            ),
+        ],
+        layout_tree=FlexContainer(
+            id="root",
+            type="column",
+            gap_pt=16,
+            children=[
+                FlexLeaf(id="t", block_id="title", text_style="title", grow=3),
+                FlexLeaf(id="c", block_id="cards", grow=1),
+            ],
+        ),
+    )
+    original_tree = source.layout_tree.model_dump(mode="json")
+    original_blocks = [block.model_dump(mode="json") for block in source.blocks]
+    async with async_session_factory() as session:
+        row = SlideRow(
+            project_id=project_id,
+            outline_page_id=uuid.uuid4(),
+            position=1,
+            layout_id="bullets",
+            layout_mode="flex",
+            title="主题重排",
+            status="ready",
+            blocks=original_blocks,
+            layout_tree=original_tree,
+            issues=[],
+            revision=4,
+            speaker_notes=source.speaker_notes,
+        )
+        session.add(row)
+        await session.commit()
+        slide_id = row.id
+
+    for payload, expected_revision in [
+        ({"overrides": {"palette": {"accent": "#123456"}}}, 4),
+        ({"theme_id": "financial-tech"}, 5),
+        ({"overrides": {"text_styles": {"title": {"size_pt": 40}}}}, 6),
+    ]:
+        changed = await client.patch(
+            f"/api/v1/projects/{project_id}/theme", headers=headers, json=payload
+        )
+        assert changed.status_code == 200, changed.text
+        async with async_session_factory() as session:
+            saved = await session.get(SlideRow, slide_id)
+            assert saved.revision == expected_revision
+            assert saved.blocks == original_blocks
+            assert saved.speaker_notes == source.speaker_notes
+            if expected_revision == 4:
+                assert saved.layout_tree == original_tree
+            else:
+                theme = resolve_theme(changed.json()["theme_id"], changed.json()["theme_overrides"])
+                expected = reflow_slide_to_theme(source, theme)
+                assert saved.layout_tree == expected.layout_tree.model_dump(mode="json")
+                assert not [i for i in saved.issues if i.get("code") == "overflow"]

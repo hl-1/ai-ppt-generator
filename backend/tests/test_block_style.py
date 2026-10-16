@@ -189,7 +189,7 @@ def test_overflow_uses_merged_size() -> None:
         ],
     )
     issues = validate_slide(slide, theme=theme)
-    assert any(issue.severity == "warning" and "溢出" in issue.message for issue in issues)
+    assert any(issue.severity == "error" and "溢出" in issue.message for issue in issues)
 
 
 def test_pptx_applies_block_style() -> None:
@@ -385,7 +385,7 @@ async def test_style_api_rejects_chart_and_invalid(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_style_api_large_size_triggers_overflow_warning(client: AsyncClient) -> None:
+async def test_style_api_large_size_triggers_overflow_error(client: AsyncClient) -> None:
     headers = await _sign_up(client)
     long_title = "这是一段明显偏长的标题文字内容用来触发溢出检测ABCDEF"
     project, slide = await _project_with_slide(
@@ -416,6 +416,6 @@ async def test_style_api_large_size_triggers_overflow_warning(client: AsyncClien
     )
     assert response.status_code == 200, response.text
     assert any(
-        issue["severity"] == "warning" and "溢出" in issue["message"]
+        issue["severity"] == "error" and "溢出" in issue["message"]
         for issue in response.json()["issues"]
     )

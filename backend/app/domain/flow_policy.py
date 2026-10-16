@@ -166,15 +166,15 @@ def card_items_from_flow_nodes(
     max_items: int = 6,
 ) -> list[CardItem]:
     items: list[CardItem] = []
-    for node in nodes[:max_items]:
-        title = _clean_step_title(node.title)
+    for node in nodes:
+        title = node.title.strip()
         desc = node.desc.strip()
         if not desc and title != node.title.strip():
             desc = node.title.strip()
         items.append(
             CardItem(
-                title=_compact_text(title or node.title, title_limit),
-                desc=_compact_text(desc, desc_limit),
+                title=title or node.title,
+                desc=desc,
             )
         )
     return items
@@ -190,11 +190,11 @@ def compact_card_items(
     return [
         item.model_copy(
             update={
-                "title": _compact_text(item.title, title_limit),
-                "desc": _compact_text(item.desc, desc_limit),
+                "title": item.title.strip(),
+                "desc": item.desc.strip(),
             }
         )
-        for item in items[:max_items]
+        for item in items
     ]
 
 

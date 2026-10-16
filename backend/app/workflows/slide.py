@@ -9,11 +9,11 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from app.domain.content import Slide
+from app.domain.content_pagination import split_generated_slide
 from app.domain.enterprise_layout import bind_planned_evidence, compose_report_slide
 from app.domain.enterprise_quality import check_page_readability, check_planned_data
-from app.domain.flex_fit import fit_tree_to_content
-from app.domain.flex_width import fit_row_widths
 from app.domain.flow_policy import enforce_text_flow_policy
+from app.domain.generated_layout import fit_generated_slide, normalize_generated_diagrams
 from app.domain.image_planning import bind_page_image
 from app.domain.outline import OutlinePageDraft
 from app.domain.quality import check_evidence_alignment, check_slide_richness, is_repair_worthy
@@ -51,6 +51,7 @@ class SlideWorkflowState(TypedDict, total=False):
     issues: list[StructureIssue]
     repairs: int
     repair_failed: bool
+    pagination_ready: bool
 
 
 def prepare_slide_input(
@@ -308,7 +309,7 @@ def build_slide_workflow(generator: SlideGenerator):
                     topic_mode=payload.topic_mode,
                 )
             slide = compose_report_slide(
-                slide,
+                normalize_generated_diagrams(slide, visual_type=payload.visual_type),
                 plan,
                 layout_template=payload.layout_template,
                 curate=enterprise,
@@ -321,18 +322,11 @@ def build_slide_workflow(generator: SlideGenerator):
             and slide.layout_tree is not None
             and not payload.travel_page
         ):
-            widened = fit_row_widths(slide.layout_tree, slide.blocks, theme=theme)
-            slide = slide.model_copy(
-                update={
-                    "layout_tree": fit_tree_to_content(
-                        widened,
-                        slide.blocks,
-                        theme=theme,
-                        page_role=payload.page_role,
-                    )
-                }
+            slide = await asyncio.to_thread(
+                fit_generated_slide, slide, theme, page_role=payload.page_role
             )
-        slide = await asyncio.to_thread(prepare_visual_layout, slide, theme)
+        else:
+            slide = await asyncio.to_thread(prepare_visual_layout, slide, theme)
         issues = validate_slide(slide, theme=theme)
         if payload.travel_context:
             from app.services.travel_planning import travel_claim_issues
@@ -373,9 +367,25 @@ def build_slide_workflow(generator: SlideGenerator):
                 page_role=payload.page_role,
             )
         )
+        pagination_ready = False
+        if any(issue.code == "overflow" for issue in issues) and not any(
+            is_repair_worthy(issue) and issue.code not in {"overflow", "capacity"}
+            for issue in issues
+        ):
+            try:
+                chunks = split_generated_slide(slide, theme)
+                pagination_ready = len(chunks) > 1 and all(
+                    not any(
+                        issue.severity == "error" for issue in validate_slide(chunk, theme=theme)
+                    )
+                    for chunk in chunks
+                )
+            except ValueError:
+                pass  # A bounded model repair may still reorganize an oversized item.
         return {
             "slide": slide,
             "issues": issues,
+            "pagination_ready": pagination_ready,
         }
 
     async def check(state: SlideWorkflowState) -> dict:
@@ -406,6 +416,8 @@ def build_slide_workflow(generator: SlideGenerator):
         return {"input": repaired, "repairs": state.get("repairs", 0) + 1}
 
     def route(state: SlideWorkflowState) -> str:
+        if state.get("pagination_ready"):
+            return END
         if state.get("repairs", 0) >= MAX_REPAIR_ROUNDS:
             return END
         if any(

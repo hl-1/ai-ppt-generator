@@ -1,0 +1,799 @@
+[
+  {
+    "plan": {
+      "title": "资源与时间：把学习纳入工作节奏",
+      "layout_id": "table",
+      "objective": "让听众学会筛选学习资源并规划可持续的投入方式",
+      "page_role": "content",
+      "key_points": [
+        "资源分层建议：文档与官方手册用于查证、系统课程用于补基础、源码与实战项目用于深化，避免收藏代替学习",
+        "筛选原则：优先与当前工作目标直接相关的资源，学完即用的内容留存率远高于储备式学习",
+        "时间安排示例：建议每天固定 30–60 分钟或每周半天用于技术学习，嵌入日程而非依赖空闲（建议值，可按个人节奏调整）",
+        "利用工作制度：善用团队内的技术分享时间、内部培训与复盘会议，把组织资源转化为个人学习机会"
+      ],
+      "key_message": "资源贵在精不在多，关键是把固定的小块时间持续投入工作相关学习",
+      "visual_type": "auto",
+      "evidence_kind": "table",
+      "narrative_role": "supporting"
+    },
+    "slide": {
+      "id": "format-case-1",
+      "layout_id": "table",
+      "blocks": [
+        {
+          "id": "case-1-title",
+          "slot_id": "case-1-title",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "资源与时间：把学习纳入工作节奏"
+        },
+        {
+          "id": "case-1-lead",
+          "slot_id": "case-1-lead",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "学习资源贵在精不在多，关键是把固定的小块时间持续投入与工作直接相关的学习。"
+        },
+        {
+          "id": "semantic-diagram",
+          "slot_id": "visual",
+          "locked": false,
+          "style": null,
+          "type": "diagram",
+          "diagram_type": "timeline",
+          "mermaid": "flowchart TB\n    node_step_1_1[\"资源分层建议<br/>文档与官方手册用于查证、系统课程用于补基础、源码与实战项目用于深化，避免收藏代替学习\"]\n    node_step_2_2[\"筛选原则<br/>优先与当前工作目标直接相关的资源，学完即用的内容留存率远高于储备式学习\"]\n    node_step_3_3[\"时间安排示例<br/>建议每天固定 30–60 分钟或每周半天用于技术学习，嵌入日程而非依赖空闲（建议值，可按个人节奏调整）\"]\n    node_step_4_4[\"利用工作制度<br/>善用团队内的技术分享时间、内部培训与复盘会议，把组织资源转化为个人学习机会\"]",
+          "direction": "TB",
+          "nodes": [
+            {
+              "id": "step-1",
+              "title": "资源分层建议",
+              "desc": "文档与官方手册用于查证、系统课程用于补基础、源码与实战项目用于深化，避免收藏代替学习",
+              "status": "active",
+              "kind": "process"
+            },
+            {
+              "id": "step-2",
+              "title": "筛选原则",
+              "desc": "优先与当前工作目标直接相关的资源，学完即用的内容留存率远高于储备式学习",
+              "status": "default",
+              "kind": "process"
+            },
+            {
+              "id": "step-3",
+              "title": "时间安排示例",
+              "desc": "建议每天固定 30–60 分钟或每周半天用于技术学习，嵌入日程而非依赖空闲（建议值，可按个人节奏调整）",
+              "status": "default",
+              "kind": "process"
+            },
+            {
+              "id": "step-4",
+              "title": "利用工作制度",
+              "desc": "善用团队内的技术分享时间、内部培训与复盘会议，把组织资源转化为个人学习机会",
+              "status": "default",
+              "kind": "process"
+            }
+          ],
+          "edges": [
+            {
+              "source": "step-1",
+              "target": "step-2",
+              "label": null
+            },
+            {
+              "source": "step-2",
+              "target": "step-3",
+              "label": null
+            },
+            {
+              "source": "step-3",
+              "target": "step-4",
+              "label": null
+            }
+          ],
+          "geometry": null
+        }
+      ],
+      "speaker_notes": null,
+      "revision": 2,
+      "layout_mode": "flex",
+      "layout_tree": {
+        "type": "column",
+        "id": "visual-table",
+        "children": [
+          {
+            "type": "block",
+            "id": "leaf-case-1-title",
+            "block_id": "case-1-title",
+            "grow": 0.34396208530805694,
+            "text_style": "title",
+            "offset_x_pt": 0.0,
+            "offset_y_pt": 0.0,
+            "bleed": false
+          },
+          {
+            "type": "block",
+            "id": "leaf-semantic-diagram",
+            "block_id": "semantic-diagram",
+            "grow": 2.400113744075829,
+            "text_style": null,
+            "offset_x_pt": 0.0,
+            "offset_y_pt": 0.0,
+            "bleed": false
+          },
+          {
+            "type": "column",
+            "id": "structure-insight",
+            "children": [
+              {
+                "type": "block",
+                "id": "leaf-case-1-lead",
+                "block_id": "case-1-lead",
+                "grow": 1.0,
+                "text_style": "body",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              }
+            ],
+            "gap_pt": 14.0,
+            "ratios": null,
+            "preset": null,
+            "grow": 0.2559241706161138
+          }
+        ],
+        "gap_pt": 16.0,
+        "ratios": null,
+        "preset": null,
+        "grow": 1.0
+      }
+    }
+  },
+  {
+    "plan": {
+      "title": "常见误区与坚持策略",
+      "layout_id": "two-column",
+      "objective": "让听众识别技术提升路上的典型陷阱，并获得可落地的坚持机制",
+      "page_role": "content",
+      "key_points": [
+        "误区一：囤积课程与资料代替实际练习，'学了'不等于'会用'，应以完成输出为学习完成标准",
+        "误区二：只做熟悉的任务，长期重复既有技能会进入平台期，需定期检查任务难度是否仍带来挑战",
+        "误区三：孤立学习缺乏反馈，没有评审与对照的练习难以发现盲区，需绑定前述反馈机制",
+        "坚持策略：把目标拆到周级小步、公开承诺进度、定期回看练习日志，用可见的进步轨迹维持动力"
+      ],
+      "key_message": "避免盲目囤课与低水平重复，用小步目标和可见记录支撑长期坚持",
+      "visual_type": "auto",
+      "evidence_kind": "narrative",
+      "narrative_role": "risk"
+    },
+    "slide": {
+      "id": "format-case-2",
+      "layout_id": "two-column",
+      "blocks": [
+        {
+          "id": "case-2-kicker",
+          "slot_id": "case-2-kicker",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "风险与对策"
+        },
+        {
+          "id": "case-2-title",
+          "slot_id": "case-2-title",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "常见误区与坚持策略"
+        },
+        {
+          "id": "semantic-cards",
+          "slot_id": "visual",
+          "locked": false,
+          "style": null,
+          "type": "cards",
+          "items": [
+            {
+              "title": "误区一",
+              "desc": "囤积课程与资料代替实际练习，'学了'不等于'会用'，应以完成输出为学习完成标准",
+              "icon": null
+            },
+            {
+              "title": "误区二",
+              "desc": "只做熟悉的任务，长期重复既有技能会进入平台期，需定期检查任务难度是否仍带来挑战",
+              "icon": null
+            },
+            {
+              "title": "误区三",
+              "desc": "孤立学习缺乏反馈，没有评审与对照的练习难以发现盲区，需绑定前述反馈机制",
+              "icon": null
+            },
+            {
+              "title": "坚持策略",
+              "desc": "把目标拆到周级小步、公开承诺进度、定期回看练习日志，用可见的进步轨迹维持动力",
+              "icon": null
+            }
+          ]
+        }
+      ],
+      "speaker_notes": null,
+      "revision": 2,
+      "layout_mode": "flex",
+      "layout_tree": {
+        "type": "column",
+        "id": "text-feature-report",
+        "children": [
+          {
+            "type": "block",
+            "id": "leaf-case-2-title",
+            "block_id": "case-2-title",
+            "grow": 0.34396208530805694,
+            "text_style": "title",
+            "offset_x_pt": 0.0,
+            "offset_y_pt": 0.0,
+            "bleed": false
+          },
+          {
+            "type": "row",
+            "id": "text-feature-right",
+            "children": [
+              {
+                "type": "column",
+                "id": "text-support",
+                "children": [
+                  {
+                    "type": "block",
+                    "id": "leaf-case-2-kicker",
+                    "block_id": "case-2-kicker",
+                    "grow": 1.6643889384478145,
+                    "text_style": "body",
+                    "offset_x_pt": 0.0,
+                    "offset_y_pt": 0.0,
+                    "bleed": false
+                  },
+                  {
+                    "type": "column",
+                    "id": "spacer-fit",
+                    "children": [],
+                    "gap_pt": 0.0,
+                    "ratios": null,
+                    "preset": null,
+                    "grow": 0.33561106155218556
+                  }
+                ],
+                "gap_pt": 14.0,
+                "ratios": null,
+                "preset": null,
+                "grow": 0.8333333333333334
+              },
+              {
+                "type": "column",
+                "id": "text-feature",
+                "children": [
+                  {
+                    "type": "block",
+                    "id": "leaf-semantic-cards",
+                    "block_id": "semantic-cards",
+                    "grow": 1.6643889384478145,
+                    "text_style": null,
+                    "offset_x_pt": 0.0,
+                    "offset_y_pt": 0.0,
+                    "bleed": false
+                  },
+                  {
+                    "type": "column",
+                    "id": "spacer-fit",
+                    "children": [],
+                    "gap_pt": 0.0,
+                    "ratios": null,
+                    "preset": null,
+                    "grow": 0.33561106155218556
+                  }
+                ],
+                "gap_pt": 14.0,
+                "ratios": null,
+                "preset": null,
+                "grow": 1.1666666666666667
+              }
+            ],
+            "gap_pt": 28.0,
+            "ratios": [
+              12.571364560887687,
+              87.42863543911231
+            ],
+            "preset": null,
+            "grow": 2.13963981042654
+          },
+          {
+            "type": "column",
+            "id": "spacer-fit",
+            "children": [],
+            "gap_pt": 0.0,
+            "ratios": null,
+            "preset": null,
+            "grow": 0.5163981042654029
+          }
+        ],
+        "gap_pt": 16.0,
+        "ratios": null,
+        "preset": null,
+        "grow": 1.0
+      }
+    }
+  },
+  {
+    "plan": {
+      "title": "刻意练习：走出舒适区的具体方法",
+      "layout_id": "bullets",
+      "objective": "让听众掌握刻意练习的核心要素，并能设计自己的练习计划",
+      "page_role": "content",
+      "key_points": [
+        "刻意练习三要素：明确的小目标、略高于现有水平的难度、即时反馈；三者缺一容易退化为机械重复",
+        "拆解练习单元示例：把'提升系统设计能力'拆为每周完成一个模块的设计文档并自我评审（示例做法，可按岗位调整）",
+        "针对弱点专项练：把评审中被指出的高频问题整理成专项清单，逐项安排针对性练习而非泛泛刷题",
+        "间隔与记录：分散安排练习频率并记录练习日志，便于回看进步轨迹与调整难度"
+      ],
+      "key_message": "有目标、有反馈、有难度的重复才能带来能力增长，低水平重复无效",
+      "visual_type": "auto",
+      "evidence_kind": "narrative",
+      "narrative_role": "driver"
+    },
+    "slide": {
+      "id": "format-case-3",
+      "layout_id": "bullets",
+      "blocks": [
+        {
+          "id": "case-3-kicker",
+          "slot_id": "case-3-kicker",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "核心路径"
+        },
+        {
+          "id": "case-3-title",
+          "slot_id": "case-3-title",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "刻意练习：走出舒适区的具体方法"
+        },
+        {
+          "id": "case-3-subtitle",
+          "slot_id": "case-3-subtitle",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "有目标、有反馈、有难度的重复才带来能力增长，低水平重复无效"
+        },
+        {
+          "id": "case-3-cards",
+          "slot_id": "case-3-cards",
+          "locked": false,
+          "style": null,
+          "type": "cards",
+          "items": [
+            {
+              "title": "明确的小目标",
+              "desc": "每次练习只针对一个可验证的具体点，让进步可检验，避免泛泛地多学。",
+              "icon": null
+            },
+            {
+              "title": "略高于现状的难度",
+              "desc": "难度处在能完成但需努力的区间：太易是舒适区重复，太难则无法形成有效反馈。",
+              "icon": null
+            },
+            {
+              "title": "即时反馈",
+              "desc": "练习后立刻获得对照与指正，才能在下一轮修正；缺反馈会退化为机械重复。",
+              "icon": null
+            }
+          ]
+        },
+        {
+          "id": "case-3-bullets",
+          "slot_id": "case-3-bullets",
+          "locked": false,
+          "style": null,
+          "type": "bullets",
+          "items": [
+            "拆解练习单元（建议做法，可按岗位调整）：把提升系统设计能力拆为每周一份模块设计文档，对照评审标准自评。",
+            "针对弱点专项练：把评审中被反复指出的高频问题整理成专项清单，逐项安排练习，而非泛泛刷题或重读资料。",
+            "难度定期升级：任务顺手后主动加入新约束，如性能指标、边界场景，让难度始终略高于当前水平。",
+            "间隔与记录：分散安排练习频率并写练习日志，记录卡点与改进方向，便于回看轨迹并调整难度。",
+            "有效性标准：每轮结束能说清目标是否达成、反馈指出了什么、下一轮改什么；说不清即是低水平重复。"
+          ]
+        }
+      ],
+      "speaker_notes": null,
+      "revision": 2,
+      "layout_mode": "flex",
+      "layout_tree": {
+        "type": "column",
+        "id": "assigned-columns-report",
+        "children": [
+          {
+            "type": "block",
+            "id": "leaf-case-3-title",
+            "block_id": "case-3-title",
+            "grow": 0.25,
+            "text_style": "title",
+            "offset_x_pt": 0.0,
+            "offset_y_pt": 0.0,
+            "bleed": false
+          },
+          {
+            "type": "row",
+            "id": "assigned-columns",
+            "children": [
+              {
+                "type": "block",
+                "id": "leaf-case-3-kicker",
+                "block_id": "case-3-kicker",
+                "grow": 1.0,
+                "text_style": "body",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              },
+              {
+                "type": "block",
+                "id": "leaf-case-3-subtitle",
+                "block_id": "case-3-subtitle",
+                "grow": 1.0,
+                "text_style": "body",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              },
+              {
+                "type": "block",
+                "id": "leaf-case-3-cards",
+                "block_id": "case-3-cards",
+                "grow": 1.0,
+                "text_style": null,
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              },
+              {
+                "type": "block",
+                "id": "leaf-case-3-bullets",
+                "block_id": "case-3-bullets",
+                "grow": 1.0,
+                "text_style": "bullet",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              }
+            ],
+            "gap_pt": 28.0,
+            "ratios": [
+              8.43819393042191,
+              16.76535899333827,
+              56.36565507031829,
+              18.43079200592154
+            ],
+            "preset": null,
+            "grow": 1.75
+          }
+        ],
+        "gap_pt": 16.0,
+        "ratios": null,
+        "preset": null,
+        "grow": 1.0
+      }
+    }
+  },
+  {
+    "plan": {
+      "title": "目录",
+      "layout_id": "toc",
+      "objective": "让听众了解内容结构与推进逻辑",
+      "page_role": "toc",
+      "key_points": [
+        "看清差距：岗位能力模型与自我盘点",
+        "工作即训练：任务驱动学习与刻意练习",
+        "借力反馈：导师、同事与社区",
+        "沉淀资产：知识管理与输出",
+        "落地执行：时间安排与行动清单"
+      ],
+      "key_message": "提升技术遵循“诊断—练习—反馈—沉淀—执行”的闭环结构",
+      "visual_type": "auto",
+      "evidence_kind": "narrative",
+      "narrative_role": "cover"
+    },
+    "slide": {
+      "id": "format-case-4",
+      "layout_id": "toc",
+      "blocks": [
+        {
+          "id": "case-4-title",
+          "slot_id": "case-4-title",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "目录"
+        },
+        {
+          "id": "agenda-heading-1",
+          "slot_id": "agenda_heading",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "01  01 看清差距"
+        },
+        {
+          "id": "agenda-detail-1",
+          "slot_id": "agenda_detail",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "对照岗位能力模型盘点高频任务，找出优先补强的技术缺口"
+        },
+        {
+          "id": "agenda-heading-2",
+          "slot_id": "agenda_heading",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "02  02 工作即训练"
+        },
+        {
+          "id": "agenda-detail-2",
+          "slot_id": "agenda_detail",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "主动认领够得着的任务，用任务驱动学习与刻意练习"
+        },
+        {
+          "id": "agenda-heading-3",
+          "slot_id": "agenda_heading",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "03  03 借力反馈"
+        },
+        {
+          "id": "agenda-detail-3",
+          "slot_id": "agenda_detail",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "代码评审、导师机制与社区意见弥补自我练习的盲点"
+        },
+        {
+          "id": "agenda-heading-4",
+          "slot_id": "agenda_heading",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "04  04 沉淀资产"
+        },
+        {
+          "id": "agenda-detail-4",
+          "slot_id": "agenda_detail",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "建立可检索的知识库，用文档与作品固化经验"
+        },
+        {
+          "id": "agenda-heading-5",
+          "slot_id": "agenda_heading",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "05  05 落地执行"
+        },
+        {
+          "id": "agenda-detail-5",
+          "slot_id": "agenda_detail",
+          "locked": false,
+          "style": null,
+          "type": "text",
+          "text": "固定每周学习节奏，形成可启动的行动清单"
+        }
+      ],
+      "speaker_notes": null,
+      "revision": 2,
+      "layout_mode": "flex",
+      "layout_tree": {
+        "type": "column",
+        "id": "agenda-report",
+        "children": [
+          {
+            "type": "block",
+            "id": "leaf-case-4-title",
+            "block_id": "case-4-title",
+            "grow": 0.9154491017964074,
+            "text_style": "title",
+            "offset_x_pt": 0.0,
+            "offset_y_pt": 0.0,
+            "bleed": false
+          },
+          {
+            "type": "row",
+            "id": "agenda-row-0",
+            "children": [
+              {
+                "type": "block",
+                "id": "leaf-agenda-heading-1",
+                "block_id": "agenda-heading-1",
+                "grow": 0.5,
+                "text_style": "subtitle",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              },
+              {
+                "type": "block",
+                "id": "leaf-agenda-detail-1",
+                "block_id": "agenda-detail-1",
+                "grow": 1.5,
+                "text_style": "body",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              }
+            ],
+            "gap_pt": 28.0,
+            "ratios": [
+              44.0,
+              56.0
+            ],
+            "preset": null,
+            "grow": 0.9124311377245511
+          },
+          {
+            "type": "row",
+            "id": "agenda-row-2",
+            "children": [
+              {
+                "type": "block",
+                "id": "leaf-agenda-heading-2",
+                "block_id": "agenda-heading-2",
+                "grow": 0.5,
+                "text_style": "subtitle",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              },
+              {
+                "type": "block",
+                "id": "leaf-agenda-detail-2",
+                "block_id": "agenda-detail-2",
+                "grow": 1.5,
+                "text_style": "body",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              }
+            ],
+            "gap_pt": 28.0,
+            "ratios": [
+              44.0,
+              56.0
+            ],
+            "preset": null,
+            "grow": 0.9124311377245511
+          },
+          {
+            "type": "row",
+            "id": "agenda-row-4",
+            "children": [
+              {
+                "type": "block",
+                "id": "leaf-agenda-heading-3",
+                "block_id": "agenda-heading-3",
+                "grow": 0.5,
+                "text_style": "subtitle",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              },
+              {
+                "type": "block",
+                "id": "leaf-agenda-detail-3",
+                "block_id": "agenda-detail-3",
+                "grow": 1.5,
+                "text_style": "body",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              }
+            ],
+            "gap_pt": 28.0,
+            "ratios": [
+              44.0,
+              56.0
+            ],
+            "preset": null,
+            "grow": 0.9124311377245511
+          },
+          {
+            "type": "row",
+            "id": "agenda-row-6",
+            "children": [
+              {
+                "type": "block",
+                "id": "leaf-agenda-heading-4",
+                "block_id": "agenda-heading-4",
+                "grow": 0.5,
+                "text_style": "subtitle",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              },
+              {
+                "type": "block",
+                "id": "leaf-agenda-detail-4",
+                "block_id": "agenda-detail-4",
+                "grow": 1.5,
+                "text_style": "body",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              }
+            ],
+            "gap_pt": 28.0,
+            "ratios": [
+              44.0,
+              56.0
+            ],
+            "preset": null,
+            "grow": 0.9124311377245511
+          },
+          {
+            "type": "row",
+            "id": "agenda-row-8",
+            "children": [
+              {
+                "type": "block",
+                "id": "leaf-agenda-heading-5",
+                "block_id": "agenda-heading-5",
+                "grow": 0.5,
+                "text_style": "subtitle",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              },
+              {
+                "type": "block",
+                "id": "leaf-agenda-detail-5",
+                "block_id": "agenda-detail-5",
+                "grow": 1.5,
+                "text_style": "body",
+                "offset_x_pt": 0.0,
+                "offset_y_pt": 0.0,
+                "bleed": false
+              }
+            ],
+            "gap_pt": 28.0,
+            "ratios": [
+              44.0,
+              56.0
+            ],
+            "preset": null,
+            "grow": 0.9124311377245511
+          },
+          {
+            "type": "column",
+            "id": "spacer-fit",
+            "children": [],
+            "gap_pt": 0.0,
+            "ratios": null,
+            "preset": null,
+            "grow": 1.5223952095808384
+          }
+        ],
+        "gap_pt": 20.0,
+        "ratios": null,
+        "preset": null,
+        "grow": 1.0
+      }
+    }
+  }
+]

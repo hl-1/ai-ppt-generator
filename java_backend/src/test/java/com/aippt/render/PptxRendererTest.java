@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.aippt.domain.SharedCatalog;
 import com.aippt.domain.content.SlideContent;
@@ -76,5 +78,34 @@ class PptxRendererTest {
                 new LocalStorage(java.nio.file.Path.of("/tmp/aippt-test-media")),
                 new com.aippt.shared.config.AppProperties()
         ));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"enterprise", "enterprise-dark", "financial-tech", "ivory", "midnight", "obsidian", "scholar"})
+    void everyThemeExportsTheSameEditableFlowGeometry(String themeId) throws Exception {
+        var mapper = com.aippt.shared.json.JsonMapperHolder.MAPPER;
+        var fixtures = mapper.readTree(com.aippt.shared.config.RepoPaths.sharedDir().resolve("diagram-layout-fixtures.json").toFile());
+        var deck = mapper.createObjectNode();
+        deck.put("theme_id", themeId);
+        var slides = deck.putArray("slides");
+        for (var fixture : fixtures) {
+            var slide = slides.addObject();
+            slide.put("id", fixture.path("block").path("id").asText()).put("layout_id", "bullets").put("layout_mode", "flex");
+            slide.putArray("blocks").add(fixture.path("block"));
+            slide.set("layout_tree", mapper.valueToTree(Map.of("type", "column", "id", "root", "children",
+                    java.util.List.of(Map.of("type", "block", "id", "leaf", "block_id", fixture.path("block").path("id").asText())))));
+        }
+        byte[] bytes = renderer(new SharedCatalog()).render(deck, themeId);
+        var report = PptxVerify.verify(bytes, SlideContent.listFromDeck(deck));
+        assertTrue(report.passed(), () -> report.issueMaps().toString());
+        try (var ppt = new org.apache.poi.xslf.usermodel.XMLSlideShow(new java.io.ByteArrayInputStream(bytes))) {
+            for (int i = 0; i < fixtures.size(); i++) {
+                var shapes = ppt.getSlides().get(i).getShapes();
+                assertEquals(fixtures.get(i).path("block").path("nodes").size(),
+                        shapes.stream().filter(s -> s.getShapeName().startsWith("diagram-node-")).count());
+                assertEquals(fixtures.get(i).path("block").path("edges").size(),
+                        shapes.stream().filter(s -> s.getShapeName().startsWith("diagram-edge-")).count());
+            }
+        }
     }
 }

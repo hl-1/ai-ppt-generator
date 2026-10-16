@@ -47,6 +47,12 @@ public final class TextMetrics {
         return latinFace != null && cjkFace != null;
     }
 
+    public static List<String> wrapText(String text, double widthPt, double sizePt) {
+        ensureLoaded();
+        return wrapLines(text == null ? "" : text, Math.max(1, widthPt), sizePt, 0,
+                latinFace, cjkFace).lines();
+    }
+
     public static Result measureText(String text, Theme.TextStyle style, double widthPt, double heightPt) {
         return measureText(text, style, widthPt, heightPt, 0);
     }

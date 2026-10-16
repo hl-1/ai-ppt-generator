@@ -159,9 +159,15 @@ async def _generate_one(
         await _publish(project_id, "slide_failed", f"第 {page.position} 页生成失败", slide_id, page)
         return
 
-    await _save_ready(slide_id, slide, issues, intended_mode=context.layout_mode)
-    await _publish(project_id, "slide_completed", f"第 {page.position} 页已完成", slide_id, page)
-    if queue is None:
+    ready = await _save_ready(slide_id, slide, issues, intended_mode=context.layout_mode)
+    await _publish(
+        project_id,
+        "slide_completed" if ready else "slide_failed",
+        f"第 {page.position} 页已完成" if ready else f"第 {page.position} 页需要修复，草稿已保留",
+        slide_id,
+        page,
+    )
+    if queue is None or not ready:
         return
     image_ids = [
         b.id
@@ -361,11 +367,22 @@ async def _save_ready(
     issues: list[StructureIssue],
     *,
     intended_mode: str,
-) -> None:
+) -> bool:
     async with async_session_factory() as session:
-        slide = await session.get(Slide, slide_id, with_for_update=True)
+        slide = await session.get(Slide, slide_id)
         if slide is None:
-            return
+            return False
+        # Serialize continuation insertion and the deck's page budget, then lock
+        # the target row. Concurrent page workers must use the same lock order.
+        project = (
+            await session.execute(
+                select(Project)
+                .options(selectinload(Project.outline))
+                .where(Project.id == slide.project_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        await session.refresh(slide, with_for_update=True)
         slide.layout_id = content.layout_id
         slide.blocks = [block.model_dump(mode="json") for block in content.blocks]
         slide.speaker_notes = content.speaker_notes
@@ -381,12 +398,38 @@ async def _save_ready(
         else:
             slide.layout_mode = "fixed"
             slide.layout_tree = None
-        # 修复一轮后仍留下的问题不阻断生成，交给后续质量检查统一收口
         slide.issues = [issue.model_dump(mode="json") for issue in issues]
         slide.status = "ready"
         slide.error = None
         slide.revision += 1
+        if project is not None:
+            from app.services.table_pagination import paginate_generated_slides
+
+            slides = await load_slides(session, project.id)
+            slides = await paginate_generated_slides(
+                session, project, slides, generated_ids={slide.id}
+            )
+            page = next(
+                (page for page in outline_pages(project) if page.id == slide.outline_page_id), None
+            )
+            page_ids = {slide.outline_page_id}
+            if page:
+                page_ids.update(
+                    p.id for p in outline_pages(project) if p.continuation_of == page.id
+                )
+            for generated in slides:
+                if generated.outline_page_id in page_ids:
+                    failed = [
+                        issue for issue in generated.issues if issue.get("severity") == "error"
+                    ]
+                    generated.status = "failed" if failed else "ready"
+                    generated.error = (
+                        ("页面尚未通过格式验收，草稿已保留：" + failed[0]["message"])
+                        if failed
+                        else None
+                    )
         await session.commit()
+        return slide.status == "ready"
 
 
 async def _save_failed(slide_id: uuid.UUID, message: str) -> None:
@@ -439,10 +482,6 @@ async def _finish(
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         slides = await load_slides(session, project_id)
-        if project is not None:
-            from app.services.table_pagination import paginate_tables
-
-            slides = await paginate_tables(session, project, slides, generated_ids=generated_ids)
         # 收尾时不再把 project.generating 算进去：任务已结束，剩余 pending 应落为 partial
         status = deck_status(slides)
         if project is not None:

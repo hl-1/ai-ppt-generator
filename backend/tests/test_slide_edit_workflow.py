@@ -113,22 +113,22 @@ async def test_workflow_repairs_capacity_overflow_once() -> None:
 
 
 @pytest.mark.asyncio
-async def test_workflow_keeps_warnings_after_one_repair() -> None:
+async def test_workflow_rejects_unresolved_overflow_after_one_repair() -> None:
+    from app.llm.errors import InvalidSlideEditOutputError
     too_long = ["超出容量的要点" * 12] * 9
     generator = ScriptedEditGenerator([[BulletsPatch(block_id="b1", items=too_long)]])
     workflow = build_slide_edit_workflow(generator)
 
-    _, _, issues, _ = await run_slide_edit_workflow(
-        workflow,
-        payload=_payload(),
-        slide_id="slide-1",
-        layout_id="bullets",
-        blocks=_blocks(),
-    )
+    with pytest.raises(InvalidSlideEditOutputError, match="溢出"):
+        await run_slide_edit_workflow(
+            workflow,
+            payload=_payload(),
+            slide_id="slide-1",
+            layout_id="bullets",
+            blocks=_blocks(),
+        )
 
     assert len(generator.prompts) == 2
-    assert issues
-    assert all(issue.severity == "warning" for issue in issues)
 
 
 @pytest.mark.asyncio

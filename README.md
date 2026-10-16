@@ -106,6 +106,31 @@ uv run python scripts/smoke_travel_requirements.py --resume --layout fixed --ui-
 主题预设包含“金融科技蓝金”，提供金色标题、箭头业务面板、指标框与平台架构图。
 在大纲或编辑器的主题列表中选择即可应用，也可通过 `/themes/financial-tech` 查看、编辑和导出配套示例。
 
+七种主题共用卡片的文字度量、网格换行和空间分配，预览与原生 PPTX 导出读取
+`shared/card-layout.json`。金融主题保留箭头标题等外观参数。切换主题或修改字体、字号时，
+已有 flex 页面会按新主题重新排版并刷新告警，锁定的文字内容与讲稿会保留；仅调整配色不改变页面布局。
+
+流程图统一使用 ELK、`shared/flowchart-style.json` 和保存的节点/连线坐标，
+各主题采用相同的分支、汇合、循环、换行与可读性检查，只从主题读取颜色。
+Python 和 Java 后端都需要 Node.js 及 `backend/diagram_engine` 的依赖，导出的节点和连线仍可编辑。
+
+主题生成与文件生成共用内容规范、容量测量和最终验收。自动时间轴需要条目中存在实际的时间或阶段顺序；
+目录由程序统一编号。优先按完整内容调整布局，仍放不下的卡片、列表和段落会生成续页，
+并同步大纲与实际页数。格式错误未解决时保留草稿、显示重试入口，并阻止导出；重复使用合适的布局仅作提示。
+
+修改 Python 生成逻辑后需要重启 API 和 ARQ Worker。开发 API 的自动重载不能代替 Worker 重启。
+已生成的页面需要重新生成后才会应用新的生成逻辑。
+
+启动前端后，在 `backend` 目录运行全部主题的预览和导出检查：
+
+```bash
+uv run python scripts/check_theme_layouts.py --url http://127.0.0.1:39173
+```
+
+检查覆盖多行卡片、长标题、并列内容及流程图，包含桌面和手机尺寸、编辑与只读状态，
+结果保存在 `backend/var/theme-layout-qa/`。流程图跨后端坐标夹具可通过
+`uv run python scripts/dump_diagram_fixture.py` 更新。
+
 ## 常用命令
 
 ```bash

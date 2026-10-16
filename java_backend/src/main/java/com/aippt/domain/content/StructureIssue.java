@@ -19,6 +19,10 @@ public record StructureIssue(
         return new StructureIssue("warning", slideId, slotId, message, null);
     }
 
+    public static StructureIssue error(String slideId, String slotId, String message, String code) {
+        return new StructureIssue("error", slideId, slotId, message, code);
+    }
+
     public static StructureIssue warning(String slideId, String slotId, String message, String code) {
         return new StructureIssue("warning", slideId, slotId, message, code);
     }

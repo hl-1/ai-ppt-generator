@@ -8,7 +8,7 @@ import { FlexEditLayer } from '@/features/deck/FlexEditLayer'
 import { findLeafParent, setContainerPreset } from '@/features/deck/flexTree'
 import { registerSlideSaveHandlers } from '@/features/deck/slideSaveBridge'
 import type { DeckSlide } from '@/features/deck/types'
-import { toRenderSlide } from '@/features/deck/types'
+import { canPreviewSlide, toRenderSlide } from '@/features/deck/types'
 import { type SaveStatus, useSlideSaveQueue } from '@/features/deck/useSlideSaveQueue'
 import { cn } from '@/lib/utils'
 import type { BlockStyle } from '@/render/blockStyle'
@@ -220,7 +220,21 @@ export function SlidePage({
         )}
       </div>
 
-      {slide.status === 'ready' ? (
+      {slide.status === 'failed' && canPreviewSlide(slide) && (
+        <div role="alert" className="flex w-full max-w-[76rem] items-start gap-3 rounded-xl border border-negative/20 bg-negative/5 px-4 py-3">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-negative" />
+          <div className="min-w-0 flex-1 text-[13px]">
+            <p className="font-medium">草稿已保留，需要重新生成这一页</p>
+            <p className="mt-1 text-ink-muted">{slide.error ?? '这一页尚未通过验收，暂时无法导出。'}</p>
+          </div>
+          <Button size="sm" disabled={locked || retry.isPending} onClick={() => retry.mutate(slide.id)}>
+            <RotateCw className="size-3.5" />
+            {retry.isPending ? '重试中…' : '重试这一页'}
+          </Button>
+        </div>
+      )}
+
+      {canPreviewSlide(slide) ? (
         <div
           style={{ width: `${zoom * 100}%`, maxWidth: zoom <= 1 ? '76rem' : 'none' }}
           className={cn(

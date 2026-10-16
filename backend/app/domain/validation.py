@@ -1,7 +1,9 @@
+import re
 from typing import Literal
 
 from pydantic import BaseModel
 
+from app.domain.card_layout import card_grid, measure_cards
 from app.domain.content import (
     Block,
     CalloutBlock,
@@ -34,8 +36,8 @@ class StructureIssue(BaseModel):
     """结构问题。
 
     error 表示内容与布局的契约被破坏，必须阻断导出；
-    warning 表示内容偏长可能观感不佳，允许继续。
-    code 用于生成 repair 分流：overflow/capacity 不触发砍块重写。
+    warning 表示容量或观感建议，允许继续；已测得的内容溢出属于 error。
+    code 用于生成修复与最终交付检查。已测得的溢出必须阻断交付。
     """
 
     severity: IssueSeverity
@@ -135,7 +137,34 @@ def _overflow_issues(
     theme: Theme,
     ref_id: str | None = None,
 ) -> list[StructureIssue]:
-    """基于字体度量检测所有块的内容边界；warning，不直接阻断导出。"""
+    """基于字体度量检测所有块的内容边界；溢出阻断交付和导出。"""
+    if isinstance(block, DiagramBlock) and block.diagram_type != "timeline":
+        from app.domain.diagram_layout import resolve_diagram_geometry
+
+        try:
+            _, _, width, height = rect.to_points()
+            geometry = resolve_diagram_geometry(block, width, height)
+        except (ValueError, RuntimeError) as error:
+            return [
+                StructureIssue(
+                    severity="error",
+                    slide_id=slide_id,
+                    slot_id=ref_id,
+                    code="diagram_layout",
+                    message=f"流程图布局失败：{error}",
+                )
+            ]
+        if geometry.font_size < 10:
+            return [
+                StructureIssue(
+                    severity="error",
+                    slide_id=slide_id,
+                    slot_id=ref_id,
+                    code="diagram_readability",
+                    message="流程图文字小于 10 pt，请扩大图区域或拆分流程图",
+                )
+            ]
+        return []
     measurements = _measure_block_overflow(block, rect=rect, text_style=text_style, theme=theme)
     issues: list[StructureIssue] = []
     for label, used_height, available_height, line_count, used_estimate in measurements:
@@ -144,9 +173,7 @@ def _overflow_issues(
         estimate_note = "（估算值）" if used_estimate else ""
         issues.append(
             StructureIssue(
-                severity="error"
-                if isinstance(block, (TableBlock, FinancialTableBlock))
-                else "warning",
+                severity="error",
                 slide_id=slide_id,
                 slot_id=ref_id,
                 message=(
@@ -189,7 +216,14 @@ def _measure_block_overflow(
         return results
 
     if isinstance(block, CardsBlock):
-        results.extend(_measure_cards(block, width_pt=avail_w, height_pt=avail_h, theme=theme))
+        results.extend(
+            _measure_cards(
+                block,
+                width_pt=max(1, avail_w - 2 * box.border_width_pt),
+                height_pt=max(1, avail_h - 2 * box.border_width_pt),
+                theme=theme,
+            )
+        )
         return results
 
     if isinstance(block, (TableBlock, FinancialTableBlock)):
@@ -200,10 +234,6 @@ def _measure_block_overflow(
         return results
 
     if isinstance(block, DiagramBlock):
-        if block.geometry:
-            if block.geometry.font_size < 10:
-                results.append(("流程图文字小于 10 pt", 10, block.geometry.font_size, 1, False))
-            return results
         results.extend(_measure_diagram(block, width_pt=avail_w, height_pt=avail_h, theme=theme))
         return results
 
@@ -236,68 +266,27 @@ def _measure_cards(
     height_pt: float,
     theme: Theme,
 ) -> list[tuple[str, float, float, int, bool]]:
-    from app.domain.block_style import merge_text_style
-    from app.domain.text_metrics import measure_text
 
-    if not block.items:
-        return []
-    gap = 16.0
-    pad = 12.0
-    min_width = 96.0
-    financial = theme.visual_style == "financial-tech"
-    if financial:
-        from app.domain.financial_tech import financial_tech_style
-
-        min_width = financial_tech_style()["card_min_width_pt"]
-        pad = financial_tech_style()["card_padding_pt"]
-    columns = min(
-        len(block.items),
-        max(1, int((width_pt + gap) // (min_width + gap))),
+    # The caller has already removed the group's padding; avoid removing it twice.
+    measured_block = block.model_copy(
+        update={
+            "style": block.style.model_copy(update={"padding_pt": 0, "border_width_pt": 0})
+            if block.style
+            else None
+        }
     )
-    rows = (len(block.items) + columns - 1) // columns
-    if financial:
-        from app.domain.financial_tech import panel_grid
-
-        columns, _, _ = panel_grid(len(block.items), width_pt, height_pt)
-        rows = (len(block.items) + columns - 1) // columns
-    card_w = max((width_pt - gap * max(columns - 1, 0)) / columns, 1.0)
-    card_h = max((height_pt - gap * max(rows - 1, 0)) / rows, 1.0)
-    inner_w = max(card_w - 2 * pad, 1.0)
-    inner_h = max(card_h - 2 * pad, 1.0)
-    title_style = merge_text_style(theme, "subtitle", block.style)
-    body_style = merge_text_style(theme, "body", block.style)
-    results = []
-    for index, item in enumerate(block.items):
-        title = f"{item.icon} {item.title}".strip() if item.icon else item.title
-        title_result = measure_text(title, style=title_style, width_pt=inner_w, height_pt=inner_h)
-        desc_result = measure_text(item.desc, style=body_style, width_pt=inner_w, height_pt=inner_h)
-        used = title_result.height_pt + 6.0 + desc_result.height_pt
-        if financial:
-            from app.domain.financial_tech import panel_header_height
-
-            header = panel_header_height(card_h, title_style.size_pt, title_style.line_height)
-            title_result = measure_text(
-                title,
-                style=title_style,
-                width_pt=max(1, card_w - 48),
-                height_pt=max(1, header - 12),
-            )
-            desc_result = measure_text(
-                item.desc,
-                style=body_style,
-                width_pt=inner_w,
-                height_pt=max(1, card_h - header - 2 * pad - 18),
-            )
-            used = max(header, title_result.height_pt + 12) + 18 + desc_result.height_pt
-        results.append(
-            (
-                f"第 {index + 1} 张卡片",
-                used,
-                inner_h,
-                title_result.line_count + desc_result.line_count,
-                title_result.used_estimate or desc_result.used_estimate,
-            )
+    _, measures = measure_cards(measured_block, theme, width_pt)
+    _, _, card_h = card_grid(len(block.items), width_pt, height_pt, visual_style=theme.visual_style)
+    results = [
+        (
+            f"第 {index + 1} 张卡片",
+            item.required_height,
+            card_h,
+            item.line_count,
+            item.used_estimate,
         )
+        for index, item in enumerate(measures)
+    ]
     return results
 
 
@@ -350,17 +339,6 @@ def _measure_diagram(
         return []
     gap_x = 18.0
     gap_y = 16.0
-    financial_boxes = None
-    if theme.visual_style == "financial-tech" and block.diagram_type != "timeline":
-        from app.domain.financial_tech import platform_node_rects
-        from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, Rect
-        from app.domain.mermaid import normalize_flow_edges
-
-        financial_boxes, _ = platform_node_rects(
-            block.nodes,
-            normalize_flow_edges(block.diagram_type, block.nodes, block.edges),
-            Rect(x=0, y=0, w=width_pt / CANVAS_WIDTH_PT, h=height_pt / CANVAS_HEIGHT_PT),
-        )
     if block.diagram_type == "timeline":
         columns = count if count <= 3 else 2 if count <= 4 else 3
         rows = (count + columns - 1) // columns
@@ -376,19 +354,11 @@ def _measure_diagram(
     title_style = merge_text_style(theme, "subtitle", block.style)
     body_style = merge_text_style(theme, "body", block.style)
     results = []
-    if financial_boxes is None and (
-        geometry_height > height_pt + 0.5
-        or (
-            block.diagram_type != "timeline"
-            and node_w * count + gap_x * (count - 1) > width_pt + 0.5
-        )
+    if geometry_height > height_pt + 0.5 or (
+        block.diagram_type != "timeline" and node_w * count + gap_x * (count - 1) > width_pt + 0.5
     ):
         results.append(("结构图节点区域", geometry_height, height_pt, count, False))
     for index, node in enumerate(block.nodes):
-        if financial_boxes is not None:
-            box = financial_boxes[node.id]
-            inner_w = max(1, box.w * CANVAS_WIDTH_PT - 24)
-            inner_h = max(1, box.h * CANVAS_HEIGHT_PT - 24)
         title_result = measure_text(
             node.title, style=title_style, width_pt=inner_w, height_pt=inner_h
         )
@@ -607,16 +577,6 @@ def _validate_flex_slide(slide: Slide, *, theme: Theme) -> list[StructureIssue]:
         ]
 
     for block in slide.blocks:
-        if isinstance(block, DiagramBlock) and block.geometry and block.geometry.font_size < 10:
-            issues.append(
-                StructureIssue(
-                    severity="error",
-                    slide_id=slide.id,
-                    slot_id=block.id,
-                    code="diagram_readability",
-                    message="流程图文字小于 10 pt，请扩大图区域或拆分流程图",
-                )
-            )
         placement = placed.get(block.id)
         if placement is None:
             issues.append(
@@ -657,9 +617,74 @@ def validate_slide(
             StructureIssue(severity="error", slide_id=slide.id, slot_id=None, message=str(error))
         ]
 
-    if slide.layout_mode == "flex":
-        return _validate_flex_slide(slide, theme=resolved_theme)
-    return _validate_fixed_slide(slide, theme=resolved_theme)
+    issues = (
+        _validate_flex_slide(slide, theme=resolved_theme)
+        if slide.layout_mode == "flex"
+        else _validate_fixed_slide(slide, theme=resolved_theme)
+    )
+    for block in slide.blocks:
+        headings = (
+            [block.text]
+            if block.type == "text"
+            else [item.title for item in block.items]
+            if block.type == "cards"
+            else []
+        )
+        if any(
+            re.match(r"^\s*(\d{1,3})[\s.、．)）:-]+\1(?=[\s.、．)）:-])", text) for text in headings
+        ):
+            issues.append(
+                StructureIssue(
+                    severity="error",
+                    slide_id=slide.id,
+                    slot_id=block.id,
+                    code="duplicate_numbering",
+                    message="标题包含重复编号，请统一编号后重新生成",
+                )
+            )
+    try:
+        placed = placed_by_block_id(slide)
+    except (KeyError, ValueError, RuntimeError):
+        return issues
+    text_areas = []
+    for block in slide.blocks:
+        area = placed.get(block.id)
+        if area is None:
+            continue
+        rect = area.rect
+        if (
+            rect.x < -1e-6
+            or rect.y < -1e-6
+            or rect.right > 1.0001
+            or rect.bottom > 1.0001
+            or rect.w <= 0
+            or rect.h <= 0
+        ):
+            issues.append(
+                StructureIssue(
+                    severity="error",
+                    slide_id=slide.id,
+                    slot_id=block.id,
+                    code="layout_bounds",
+                    message="内容区域超出画布或没有可用空间",
+                )
+            )
+        if block.type in {"text", "bullets"}:
+            for previous_id, previous in text_areas:
+                width = max(0.0, min(rect.right, previous.right) - max(rect.x, previous.x))
+                height = max(0.0, min(rect.bottom, previous.bottom) - max(rect.y, previous.y))
+                if width * height > 0.15 * min(rect.w * rect.h, previous.w * previous.h) > 0:
+                    issues.append(
+                        StructureIssue(
+                            severity="error",
+                            slide_id=slide.id,
+                            slot_id=block.id,
+                            code="text_overlap",
+                            message=f"文字区域与 {previous_id} 明显重叠",
+                        )
+                    )
+            text_areas.append((block.id, rect))
+    return issues
 
 
 def validate_deck(deck: Deck, *, theme: Theme | None = None) -> list[StructureIssue]:

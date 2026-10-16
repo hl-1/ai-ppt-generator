@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.core.paths import SHARED_DIR
+from app.domain.content_format import has_temporal_sequence
 from app.domain.flex_layout import FlexContainer, FlexLeaf, FlexNode
 from app.domain.flex_normalize import normalize
 
@@ -135,9 +136,7 @@ def seed_layout_for_blocks(
     key_points: list[str] | None = None,
 ) -> FlexContainer:
     """从预设池选出一棵树并适配到当前块。"""
-    preset = pick_preset_for_blocks(
-        blocks, page_role=page_role, key_points=key_points
-    )
+    preset = pick_preset_for_blocks(blocks, page_role=page_role, key_points=key_points)
     if preset is None:
         return normalize(
             FlexContainer(
@@ -177,7 +176,6 @@ def alternate_preset_trees(
 
 
 _STEP_KEYWORDS = ("步骤", "流程", "清单", "方法", "怎么做", "如何")
-_TIMELINE_KEYWORDS = ("阶段", "时间", "里程碑", "路线", "演进", "历程", "节奏")
 
 
 def _score_preset(
@@ -200,9 +198,7 @@ def _score_preset(
         or "financial_table" in types
         or "waterfall" in types
         or "combo_chart" in types
-    ) and any(
-        role in ("image", "visual") for role in leaf_roles
-    ):
+    ) and any(role in ("image", "visual") for role in leaf_roles):
         score += 2
     if "kpi" in types and any(role.startswith("kpi") for role in leaf_roles):
         score += 3
@@ -210,9 +206,7 @@ def _score_preset(
         score += 2
     if "cards" in types and any(role == "cards" or "cards" in role for role in leaf_roles):
         score += 4
-    if "callout" in types and any(
-        role in ("callout", "note", "source") for role in leaf_roles
-    ):
+    if "callout" in types and any(role in ("callout", "note", "source") for role in leaf_roles):
         score += 3
     # 叶子数接近加分；多块页面偏好更密预设
     score -= abs(leaf_count - block_count) * 2
@@ -225,7 +219,7 @@ def _score_preset(
     blob = " ".join(key_points or [])
     if any(word in blob for word in _STEP_KEYWORDS) and "numbered_steps" in preset_skins:
         score += 4
-    if any(word in blob for word in _TIMELINE_KEYWORDS) and "timeline" in preset_skins:
+    if has_temporal_sequence(key_points or []) and "timeline" in preset_skins:
         score += 4
     if page_role == "summary" and "callout" in types:
         score += 1

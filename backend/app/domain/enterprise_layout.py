@@ -24,6 +24,7 @@ from app.domain.content import (
     WaterfallBlock,
     WaterfallItem,
 )
+from app.domain.content_format import has_temporal_sequence, unnumber_heading
 from app.domain.evidence import (
     comparable_categories,
     comparable_metric_series,
@@ -417,6 +418,7 @@ def compose_report_slide(
         title = confirmed_title
     footers = [b for b in blocks if b.type == "callout" and b.variant == "source"]
     body = [b for b in blocks if b != title and b not in footers]
+    original_body = list(body)
     visuals = [
         b
         for b in body
@@ -425,11 +427,11 @@ def compose_report_slide(
     family = layout_family(page)
     composition = report_layouts().get(family, report_layouts()["supporting"])["composition"]
 
-    if curate:
+    if page.page_role == "toc":
+        body, hidden_notes = _agenda_body(body, page)
+    elif curate:
         if any(is_numbered_steps(block) for block in body) and not visuals:
             hidden_notes = []
-        elif page.page_role == "toc":
-            body, hidden_notes = _agenda_body(body, page)
         elif (
             page.page_role not in {"cover", "section"}
             and page.visual_type == "auto"
@@ -488,6 +490,13 @@ def compose_report_slide(
     kept_blocks = [curated_by_id[block.id] for block in blocks if block.id in curated_by_id]
     kept_ids = {block.id for block in kept_blocks}
     kept_blocks.extend(block for block in curated_by_id.values() if block.id not in kept_ids)
+    # Keep complete explanations whenever curation condensed or moved a block.
+    # Capacity repair must never silently discard source wording.
+    for original in original_body:
+        current = curated_by_id.get(original.id)
+        note = _note_for_hidden_block(original)
+        if note and current != original and note not in hidden_notes:
+            hidden_notes.append(note)
     speaker_notes = _append_hidden_notes(slide.speaker_notes, hidden_notes)
     return slide.model_copy(
         update={"blocks": kept_blocks, "layout_tree": tree, "speaker_notes": speaker_notes}
@@ -511,7 +520,7 @@ def _compose_report_tree(
     layout_template: str | None,
     curate: bool,
 ) -> FlexContainer:
-    if curate and page.page_role == "toc":
+    if page.page_role == "toc":
         return _agenda_tree(title=title, body=body, page=page)
     if (
         curate
@@ -1035,13 +1044,21 @@ def _text_report_tree(
 
 def _agenda_body(body: list[Block], page: OutlinePageDraft) -> tuple[list[Block], list[str]]:
     cards = next((block for block in body if isinstance(block, CardsBlock)), None)
+    headings = [
+        block for block in body if block.type == "text" and block.slot_id == "agenda_heading"
+    ]
+    details = [block for block in body if block.type == "text" and block.slot_id == "agenda_detail"]
     if cards is not None:
-        entries = [(item.title, item.desc) for item in cards.items[:8]]
+        entries = [(item.title, item.desc) for item in cards.items]
+    elif headings and len(headings) == len(details):
+        entries = [
+            (heading.text, detail.text) for heading, detail in zip(headings, details, strict=True)
+        ]
     else:
         bullets = next((block for block in body if isinstance(block, BulletsBlock)), None)
         points = bullets.items if bullets is not None else page.key_points
         entries = []
-        for point in points[:8]:
+        for point in points:
             heading, separator, detail = _split_heading(point)
             entries.append((heading, detail if separator else ""))
     result: list[Block] = []
@@ -1051,12 +1068,12 @@ def _agenda_body(body: list[Block], page: OutlinePageDraft) -> tuple[list[Block]
                 TextBlock(
                     id=_unique_id(f"agenda-heading-{index}", [*body, *result]),
                     slot_id="agenda_heading",
-                    text=f"{index:02d}  {_compact_text(heading, 24)}",
+                    text=f"{index:02d}  {unnumber_heading(heading)}",
                 ),
                 TextBlock(
                     id=_unique_id(f"agenda-detail-{index}", [*body, *result]),
                     slot_id="agenda_detail",
-                    text=_compact_text(detail, 42),
+                    text=detail.strip(),
                 ),
             ]
         )
@@ -1582,7 +1599,10 @@ def _note_for_hidden_block(block: Block) -> str | None:
         ]
         return "；".join(item for item in items if item) or None
     if block.type == "table":
-        rows = [" / ".join(cell.strip() for cell in row if cell.strip()) for row in block.rows[:6]]
+        rows = [
+            " / ".join(cell.strip() for cell in row if cell.strip())
+            for row in [block.header, *block.rows]
+        ]
         return "；".join(row for row in rows if row) or None
     return None
 
@@ -1690,14 +1710,13 @@ def _semantic_diagram_kind(page: OutlinePageDraft) -> str | None:
         return None
     if page.visual_type == "timeline":
         return "timeline"
-    blob = " ".join([page.title, page.objective, page.key_message, *page.key_points])
     if should_keep_flow_diagram(
         _diagram_nodes(page),
         _sequential_edges(_diagram_nodes(page)),
         context=_page_flow_context(page),
     ):
         return "flow"
-    if any(word in blob for word in _TIMELINE_KEYWORDS):
+    if has_temporal_sequence(page.key_points):
         return "timeline"
     return None
 

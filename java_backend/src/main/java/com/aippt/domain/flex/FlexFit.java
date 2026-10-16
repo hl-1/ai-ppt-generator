@@ -42,6 +42,7 @@ public final class FlexFit {
             Theme theme,
             String pageRole
     ) {
+        tree = withoutFitSpacers(tree);
         Map<String, Map<String, Object>> blockMap = new HashMap<>();
         for (Map<String, Object> block : blocks) {
             blockMap.put(Blocks.id(block), block);
@@ -50,7 +51,8 @@ public final class FlexFit {
         for (FlexSolve.PlacedBlock placed : FlexSolve.solve(tree)) {
             widthsPt.put(placed.blockId(), placed.rect().w() * Geometry.CANVAS_WIDTH_PT);
         }
-        FitContext ctx = new FitContext(blockMap, widthsPt, theme, CENTERED_ROLES.contains(pageRole));
+        FitContext ctx = new FitContext(blockMap, widthsPt, theme,
+                pageRole != null && CENTERED_ROLES.contains(pageRole));
         FlexContainer fitted = fitContainer(tree, Geometry.SAFE_AREA_HEIGHT_PT, ctx, true);
         return FlexNormalize.normalize(fitted, false);
     }
@@ -92,8 +94,11 @@ public final class FlexFit {
         }
         List<Double> grows = targetsToGrows(targets);
         List<FlexNode> fitted = new ArrayList<>();
+        double innerHeight = Math.max(0, availHPt - Math.max(0, children.size() - 1) * node.gapPt());
+        double totalGrow = grows.stream().mapToDouble(Double::doubleValue).sum();
         for (int i = 0; i < children.size(); i++) {
-            fitted.add(fitChild(children.get(i), targets.get(i), ctx).withGrow(grows.get(i)));
+            fitted.add(fitChild(children.get(i), innerHeight * grows.get(i) / Math.max(1e-9, totalGrow), ctx)
+                    .withGrow(grows.get(i)));
         }
         return node.withChildren(fitted);
     }
@@ -103,6 +108,17 @@ public final class FlexFit {
             return fitContainer(container, availHPt, ctx, false);
         }
         return child;
+    }
+
+    private static FlexContainer withoutFitSpacers(FlexContainer node) {
+        List<FlexNode> children = new ArrayList<>();
+        for (FlexNode child : node.children()) {
+            if (child instanceof FlexContainer group) {
+                if (group.children().isEmpty() && group.id().startsWith("spacer-fit")) continue;
+                children.add(withoutFitSpacers(group));
+            } else children.add(child);
+        }
+        return node.withChildren(children);
     }
 
     private record Pair(List<FlexNode> children, List<Double> targets) {
@@ -332,22 +348,8 @@ public final class FlexFit {
                 yield Math.max(MIN_LEAF_HEIGHT_PT, (1 + n) * TABLE_ROW_HEIGHT_PT);
             }
             case "cards" -> {
-                Object items = block.get("items");
-                double tallest = MIN_LEAF_HEIGHT_PT;
-                if (items instanceof List<?> list) {
-                    for (Object item : list) {
-                        if (item instanceof Map<?, ?> map) {
-                            String title = String.valueOf(map.get("title") == null ? "" : map.get("title"));
-                            String desc = String.valueOf(map.get("desc") == null ? "" : map.get("desc"));
-                            tallest = Math.max(
-                                    tallest,
-                                    CARD_BASE_HEIGHT_PT
-                                            + Math.max(0, (title.length() + desc.length()) / 28) * CARD_LINE_HEIGHT_PT
-                            );
-                        }
-                    }
-                }
-                yield tallest;
+                yield Math.max(MIN_LEAF_HEIGHT_PT, com.aippt.domain.CardLayout.naturalHeight(
+                        block, ctx.theme(), ctx.widthsPt().getOrDefault(leaf.blockId(), Geometry.SAFE_AREA_WIDTH_PT)));
             }
             case "callout" -> PREFERRED_HEIGHT_PT.get("callout");
             default -> PREFERRED_HEIGHT_PT.getOrDefault(Blocks.type(block), MIN_LEAF_HEIGHT_PT);

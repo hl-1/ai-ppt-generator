@@ -1,4 +1,4 @@
-"""Persist table continuation pages and their outlines in one transaction."""
+"""Persist generated continuation pages and their outlines in one transaction."""
 
 from __future__ import annotations
 
@@ -6,8 +6,9 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.content_pagination import split_generated_slide
+from app.domain.generated_layout import fit_generated_slide, title_block
 from app.domain.slide_pages import clone_slide_content
-from app.domain.table_pagination import split_table_slide
 from app.domain.theme import resolve_project_theme
 from app.domain.validation import validate_slide
 from app.domain.visual_layout import prepare_visual_layout
@@ -17,7 +18,7 @@ from app.schemas.project import MAX_DECK_PAGE_COUNT
 from app.services.deck import outline_pages, to_content_slide
 
 
-async def paginate_tables(
+async def paginate_generated_slides(
     session: AsyncSession,
     project: Project,
     slides: list[Slide],
@@ -51,9 +52,7 @@ async def paginate_tables(
             ordered.append(row)
             new_pages.append(page.model_dump(mode="json"))
             continue
-        if row.status != "ready" or not any(
-            b.get("type") in {"table", "financial_table"} for b in row.blocks
-        ):
+        if row.status != "ready" or (generated_ids and row.id not in generated_ids):
             ordered.append(row)
             new_pages.append(page.model_dump(mode="json"))
             continue
@@ -73,9 +72,11 @@ async def paginate_tables(
             continue
         content = prepare_visual_layout(to_content_slide(row), theme)
         try:
-            chunks = split_table_slide(content)
-            if projected_count - len(children) + len(chunks) - 1 > MAX_DECK_PAGE_COUNT:
-                raise ValueError("Table pagination exceeds the project page limit")
+            chunks = split_generated_slide(
+                content,
+                theme,
+                max_parts=MAX_DECK_PAGE_COUNT - projected_count + len(children) + 1,
+            )
         except ValueError as error:
             row.issues = [
                 *row.issues,
@@ -83,7 +84,7 @@ async def paginate_tables(
                     "severity": "error",
                     "slide_id": str(row.id),
                     "slot_id": None,
-                    "code": "table_pagination",
+                    "code": "content_pagination",
                     "message": str(error),
                 },
             ]
@@ -97,11 +98,27 @@ async def paginate_tables(
             await session.flush()
         changed = changed or len(chunks) > 1 or bool(children)
         projected_count += len(chunks) - len(children) - 1
+        retained_issues = [
+            issue
+            for issue in row.issues
+            if issue.get("code")
+            not in {
+                "overflow",
+                "capacity",
+                "content_pagination",
+                "layout_bounds",
+                "text_overlap",
+                "duplicate_numbering",
+            }
+        ]
         for part, chunk in enumerate(chunks):
             if part == 0:
                 target = row
                 target.blocks = [b.model_dump(mode="json") for b in chunk.blocks]
-                target.issues = [
+                target.layout_tree = (
+                    chunk.layout_tree.model_dump(mode="json") if chunk.layout_tree else None
+                )
+                target.issues = retained_issues + [
                     i.model_dump(mode="json") for i in validate_slide(chunk, theme=theme)
                 ]
                 outline = page
@@ -113,6 +130,19 @@ async def paginate_tables(
                         "continuation_of": page.id,
                     }
                 )
+                heading = title_block(chunk)
+                if heading:
+                    chunk = chunk.model_copy(
+                        update={
+                            "blocks": [
+                                block.model_copy(update={"text": outline.title})
+                                if block.id == heading.id
+                                else block
+                                for block in chunk.blocks
+                            ]
+                        }
+                    )
+                    chunk = fit_generated_slide(chunk, theme, page_role=page.page_role)
                 blocks, tree = clone_slide_content(
                     [b.model_dump(mode="json") for b in chunk.blocks],
                     chunk.layout_tree.model_dump(mode="json") if chunk.layout_tree else None,
@@ -128,12 +158,12 @@ async def paginate_tables(
                     title=outline.title,
                     status="ready",
                     blocks=blocks,
-                    issues=[],
+                    issues=[{**issue, "slide_id": str(chunk.id)} for issue in retained_issues],
                     revision=1,
                     speaker_notes=row.speaker_notes,
                 )
                 session.add(target)
-                target.issues = [
+                target.issues += [
                     i.model_dump(mode="json")
                     for i in validate_slide(to_content_slide(target), theme=theme)
                 ]
@@ -147,3 +177,7 @@ async def paginate_tables(
         project.page_count = len(ordered)
         await session.flush()
     return ordered
+
+
+# Compatibility for callers that previously only paginated tables.
+paginate_tables = paginate_generated_slides

@@ -1,0 +1,8 @@
+{
+  "gap_pt": 16,
+  "padding_pt": 12,
+  "min_width_pt": 176,
+  "max_columns": 3,
+  "text_gap_pt": 6,
+  "breathing": 1.12
+}

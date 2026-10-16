@@ -11,6 +11,7 @@ solver 只按 ratios 瓜分宽度、不认识文字，所以「左边一大段�
 from __future__ import annotations
 
 from app.domain.block_style import merge_text_style, resolve_box
+from app.domain.card_layout import card_style
 from app.domain.content import Block
 from app.domain.flex_layout import PRESET_INSET_PT, FlexContainer, FlexLeaf, FlexNode, is_spacer
 from app.domain.flex_normalize import normalize
@@ -323,13 +324,18 @@ def _leaf_min_width_pt(leaf: FlexLeaf, ctx: _WidthContext) -> float:
             size_pt = size_of("caption" if block.variant == "source" else "body")
             return _text_width_pt(block.text, size_pt) + 2 * _CARD_PAD_PT
         case "cards":
+            if not block.items:
+                return _MIN_LEAF_WIDTH_PT
+            spec = card_style(theme.visual_style)
             size_pt = size_of("body")
             card = max(
                 max(_text_width_pt(item.title, size_pt), _text_width_pt(item.desc, size_pt))
                 for item in block.items
             )
-            n = len(block.items)
-            return n * (card + 2 * _CARD_PAD_PT) + (n - 1) * _CARD_GAP_PT
+            # A grid can wrap internally; do not reserve a horizontal column for every item.
+            n = min(len(block.items), 2)
+            single = max(spec["min_width_pt"], card + 2 * spec["padding_pt"])
+            return n * single + (n - 1) * spec["gap_pt"] + padding
         case "kpi":
             widest = max(
                 _text_width_pt(text, size_of(name))

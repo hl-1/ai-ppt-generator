@@ -99,11 +99,8 @@ public class SlideWorkflow {
         }
         Layout layout = catalog.layouts().get(slide.layoutId());
         Theme theme = catalog.resolve(state.themeId(), state.themeOverrides());
-        if ("flex".equals(slide.layoutMode()) && slide.layoutTree() != null) {
-            var widened = FlexWidth.fitRowWidths(slide.layoutTree(), slide.blocks(), theme);
-            slide = slide.withLayoutTree(FlexFit.fitTreeToContent(
-                    widened, slide.blocks(), theme, payload.pageRole()));
-        }
+        slide = com.aippt.domain.GeneratedFormat.normalize(slide, payload.pageRole());
+        slide = com.aippt.domain.GeneratedFormat.fit(slide, theme, layout, payload.pageRole());
         List<StructureIssue> issues = new ArrayList<>(SlideValidation.validate(slide, layout, theme));
         issues.addAll(SlideValidation.checkRichness(slide, payload.contentDensity(), payload.pageRole()));
         return Map.of("slide", slide, "issues", issues);
@@ -121,6 +118,16 @@ public class SlideWorkflow {
     }
 
     private String route(SlideState state) {
+        if (state.issues().stream().anyMatch(i -> "overflow".equals(i.code()))
+                && state.issues().stream().noneMatch(i -> SlideValidation.isRepairWorthy(i)
+                    && !"overflow".equals(i.code()) && !"capacity".equals(i.code()))) {
+            try {
+                var pages = com.aippt.domain.GeneratedFormat.split(state.slide(),
+                        catalog.resolve(state.themeId(), state.themeOverrides()),
+                        catalog.layouts().get(state.slide().layoutId()), 40);
+                if (pages.size() > 1) return END;
+            } catch (IllegalArgumentException ignored) { }
+        }
         if (state.repairs() >= MAX_REPAIR_ROUNDS) {
             return END;
         }

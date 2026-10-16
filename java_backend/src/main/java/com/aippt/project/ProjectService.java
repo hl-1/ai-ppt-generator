@@ -127,6 +127,7 @@ public class ProjectService extends ServiceImpl<ProjectMapper, Project> {
             throw ApiException.unprocessable("请提供 theme_id 或 overrides");
         }
         Project project = loadOwned(projectId);
+        Theme previousTheme = catalog.resolve(project.getThemeId(), project.getThemeOverrides());
         if (body.isThemeIdPresent() && body.getThemeId() != null) {
             validateTheme(body.getThemeId());
             if (!body.getThemeId().equals(project.getThemeId())) {
@@ -148,11 +149,18 @@ public class ProjectService extends ServiceImpl<ProjectMapper, Project> {
         touch(project);
         this.updateById(project);
         Theme theme = catalog.resolve(project.getThemeId(), project.getThemeOverrides());
+        boolean reflow = com.aippt.domain.ThemeLayout.requiresReflow(previousTheme, theme);
+        Map<String, String> pageRoles = new HashMap<>();
+        if (project.getOutline() != null && project.getOutline().getPages() != null) {
+            for (var page : project.getOutline().getPages()) {
+                pageRoles.put(String.valueOf(page.get("id")), String.valueOf(page.getOrDefault("page_role", "content")));
+            }
+        }
         for (Slide slide : slides.listByProject(projectId)) {
             if (!"ready".equals(slide.getStatus()) || slide.getBlocks() == null || slide.getBlocks().isEmpty()) {
                 continue;
             }
-            SlideIssues.refresh(slide, catalog, theme);
+            SlideIssues.refresh(slide, catalog, theme, reflow, pageRoles.get(String.valueOf(slide.getOutlinePageId())));
             slides.updateById(slide);
         }
         return loadOwned(projectId);

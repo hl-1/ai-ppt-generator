@@ -90,14 +90,26 @@ def refresh_slide_issues(
     *,
     theme_id: str | None = None,
     theme: Theme | None = None,
+    reflow: bool = False,
+    page_role: str | None = None,
 ) -> None:
     """按当前 blocks/layout/主题重算结构与溢出告警并写回 JSONB。"""
     from app.domain.theme import get_theme
+    from app.domain.theme_layout import reflow_slide_to_theme
 
-    content = prepare_visual_layout(
-        to_content_slide(slide), theme or get_theme(theme_id or "ivory")
+    resolved = theme or get_theme(theme_id or "ivory")
+    content = to_content_slide(slide)
+    content = (
+        reflow_slide_to_theme(content, resolved, page_role=page_role)
+        if reflow
+        else prepare_visual_layout(content, resolved)
     )
-    slide.blocks = [block.model_dump(mode="json") for block in content.blocks]
+    blocks = [block.model_dump(mode="json") for block in content.blocks]
+    tree = content.layout_tree.model_dump(mode="json") if content.layout_tree else None
+    if reflow and (slide.blocks != blocks or slide.layout_tree != tree):
+        slide.layout_tree = tree
+        slide.revision += 1
+    slide.blocks = blocks
     slide.issues = [
         issue.model_dump() for issue in validate_slide(content, theme_id=theme_id, theme=theme)
     ]
@@ -222,9 +234,11 @@ def to_deck_public(project: Project, slides: list[Slide]) -> DeckPublic:
 def deck_image_coverage(project: Project, slides: list[Slide]) -> ImageCoverage:
     pages = outline_pages(project)
     planned = {page.id for page in pages if page.image_plan}
-    filled = {slide.outline_page_id for slide in slides if any(
-        block.get("type") == "image" for block in slide.blocks
-    )}
+    filled = {
+        slide.outline_page_id
+        for slide in slides
+        if any(block.get("type") == "image" for block in slide.blocks)
+    }
     return summarize_images(
         [block for slide in slides if slide.status == "ready" for block in slide.blocks],
         minimum=min(2, len(pages) or len(slides)),

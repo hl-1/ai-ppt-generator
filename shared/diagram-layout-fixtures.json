@@ -1,0 +1,738 @@
+[
+  {
+    "block": {
+      "id": "flow-0",
+      "slot_id": "visual",
+      "locked": false,
+      "style": null,
+      "type": "diagram",
+      "diagram_type": "flow",
+      "mermaid": null,
+      "direction": "LR",
+      "nodes": [
+        {
+          "id": "A",
+          "title": "接收请求",
+          "desc": "",
+          "status": "default",
+          "kind": "process"
+        },
+        {
+          "id": "B",
+          "title": "处理任务",
+          "desc": "",
+          "status": "default",
+          "kind": "process"
+        },
+        {
+          "id": "C",
+          "title": "完成交付",
+          "desc": "",
+          "status": "default",
+          "kind": "process"
+        }
+      ],
+      "edges": [
+        {
+          "source": "A",
+          "target": "B",
+          "label": null
+        },
+        {
+          "source": "B",
+          "target": "C",
+          "label": null
+        }
+      ],
+      "geometry": null
+    },
+    "width": 856,
+    "height": 320,
+    "expected": {
+      "version": 3,
+      "width": 856.0,
+      "height": 320.0,
+      "font_size": 14.0,
+      "nodes": [
+        {
+          "id": "A",
+          "x": 217.5,
+          "y": 109.0,
+          "width": 190.0,
+          "height": 40.0,
+          "title_lines": [
+            "接收请求"
+          ],
+          "desc_lines": []
+        },
+        {
+          "id": "B",
+          "x": 217.5,
+          "y": 171.0,
+          "width": 190.0,
+          "height": 40.0,
+          "title_lines": [
+            "处理任务"
+          ],
+          "desc_lines": []
+        },
+        {
+          "id": "C",
+          "x": 448.5,
+          "y": 109.0,
+          "width": 190.0,
+          "height": 40.0,
+          "title_lines": [
+            "完成交付"
+          ],
+          "desc_lines": []
+        }
+      ],
+      "edges": [
+        {
+          "points": [
+            [
+              312.5,
+              149.0
+            ],
+            [
+              312.5,
+              171.0
+            ]
+          ],
+          "label": null,
+          "label_x": 205.5,
+          "label_y": 65.0,
+          "label_width": 0.0,
+          "label_height": 0.0
+        },
+        {
+          "points": [
+            [
+              312.5,
+              211.0
+            ],
+            [
+              312.5,
+              243.0
+            ],
+            [
+              427.5,
+              243.0
+            ],
+            [
+              427.5,
+              77.0
+            ],
+            [
+              543.5,
+              77.0
+            ],
+            [
+              543.5,
+              109.0
+            ]
+          ],
+          "label": null,
+          "label_x": 205.5,
+          "label_y": 65.0,
+          "label_width": 0.0,
+          "label_height": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "block": {
+      "id": "flow-1",
+      "slot_id": "visual",
+      "locked": false,
+      "style": null,
+      "type": "diagram",
+      "diagram_type": "flow",
+      "mermaid": null,
+      "direction": "TB",
+      "nodes": [
+        {
+          "id": "A",
+          "title": "条件是否满足",
+          "desc": "",
+          "status": "default",
+          "kind": "decision"
+        },
+        {
+          "id": "B",
+          "title": "继续处理",
+          "desc": "",
+          "status": "default",
+          "kind": "process"
+        },
+        {
+          "id": "C",
+          "title": "退回修改",
+          "desc": "",
+          "status": "default",
+          "kind": "process"
+        }
+      ],
+      "edges": [
+        {
+          "source": "A",
+          "target": "B",
+          "label": "通过"
+        },
+        {
+          "source": "A",
+          "target": "C",
+          "label": "未通过"
+        }
+      ],
+      "geometry": null
+    },
+    "width": 856,
+    "height": 320,
+    "expected": {
+      "version": 3,
+      "width": 856.0,
+      "height": 320.0,
+      "font_size": 14.0,
+      "nodes": [
+        {
+          "id": "A",
+          "x": 197.0,
+          "y": 118.5,
+          "width": 132.0,
+          "height": 40.0,
+          "title_lines": [
+            "条件是否满足"
+          ],
+          "desc_lines": []
+        },
+        {
+          "id": "B",
+          "x": 379.0,
+          "y": 118.5,
+          "width": 132.0,
+          "height": 40.0,
+          "title_lines": [
+            "继续处理"
+          ],
+          "desc_lines": []
+        },
+        {
+          "id": "C",
+          "x": 527.0,
+          "y": 118.5,
+          "width": 132.0,
+          "height": 40.0,
+          "title_lines": [
+            "退回修改"
+          ],
+          "desc_lines": []
+        }
+      ],
+      "edges": [
+        {
+          "points": [
+            [
+              241.0,
+              158.5
+            ],
+            [
+              241.0,
+              243.5
+            ],
+            [
+              358.0,
+              243.5
+            ],
+            [
+              358.0,
+              86.5
+            ],
+            [
+              445.0,
+              86.5
+            ],
+            [
+              445.0,
+              118.5
+            ]
+          ],
+          "label": "通过",
+          "label_x": 222.0,
+          "label_y": 180.5,
+          "label_width": 38.0,
+          "label_height": 21.0
+        },
+        {
+          "points": [
+            [
+              285.0,
+              158.5
+            ],
+            [
+              285.0,
+              168.5
+            ],
+            [
+              293.0,
+              168.5
+            ],
+            [
+              293.0,
+              233.5
+            ],
+            [
+              349.0,
+              233.5
+            ],
+            [
+              349.0,
+              76.5
+            ],
+            [
+              593.0,
+              76.5
+            ],
+            [
+              593.0,
+              118.5
+            ]
+          ],
+          "label": "未通过",
+          "label_x": 268.0,
+          "label_y": 180.5,
+          "label_width": 50.0,
+          "label_height": 21.0
+        }
+      ]
+    }
+  },
+  {
+    "block": {
+      "id": "flow-2",
+      "slot_id": "visual",
+      "locked": false,
+      "style": null,
+      "type": "diagram",
+      "diagram_type": "flow",
+      "mermaid": null,
+      "direction": "TB",
+      "nodes": [
+        {
+          "id": "A",
+          "title": "接收任务",
+          "desc": "",
+          "status": "default",
+          "kind": "process"
+        },
+        {
+          "id": "B",
+          "title": "校验资料",
+          "desc": "",
+          "status": "default",
+          "kind": "process"
+        },
+        {
+          "id": "C",
+          "title": "查询结果",
+          "desc": "",
+          "status": "default",
+          "kind": "process"
+        },
+        {
+          "id": "D",
+          "title": "汇总结果",
+          "desc": "",
+          "status": "default",
+          "kind": "process"
+        }
+      ],
+      "edges": [
+        {
+          "source": "A",
+          "target": "B",
+          "label": null
+        },
+        {
+          "source": "A",
+          "target": "C",
+          "label": null
+        },
+        {
+          "source": "B",
+          "target": "D",
+          "label": null
+        },
+        {
+          "source": "C",
+          "target": "D",
+          "label": null
+        }
+      ],
+      "geometry": null
+    },
+    "width": 856,
+    "height": 320,
+    "expected": {
+      "version": 3,
+      "width": 856.0,
+      "height": 320.0,
+      "font_size": 14.0,
+      "nodes": [
+        {
+          "id": "A",
+          "x": 227.0,
+          "y": 74.0,
+          "width": 190.0,
+          "height": 40.0,
+          "title_lines": [
+            "接收任务"
+          ],
+          "desc_lines": []
+        },
+        {
+          "id": "B",
+          "x": 439.0,
+          "y": 123.0,
+          "width": 190.0,
+          "height": 40.0,
+          "title_lines": [
+            "校验资料"
+          ],
+          "desc_lines": []
+        },
+        {
+          "id": "C",
+          "x": 439.0,
+          "y": 67.0,
+          "width": 190.0,
+          "height": 40.0,
+          "title_lines": [
+            "查询结果"
+          ],
+          "desc_lines": []
+        },
+        {
+          "id": "D",
+          "x": 227.0,
+          "y": 213.0,
+          "width": 190.0,
+          "height": 40.0,
+          "title_lines": [
+            "汇总结果"
+          ],
+          "desc_lines": []
+        }
+      ],
+      "edges": [
+        {
+          "points": [
+            [
+              417.0,
+              101.0
+            ],
+            [
+              427.0,
+              101.0
+            ],
+            [
+              427.0,
+              143.0
+            ],
+            [
+              439.0,
+              143.0
+            ]
+          ],
+          "label": null,
+          "label_x": 173.0,
+          "label_y": 55.0,
+          "label_width": 0.0,
+          "label_height": 0.0
+        },
+        {
+          "points": [
+            [
+              417.0,
+              87.0
+            ],
+            [
+              439.0,
+              87.0
+            ]
+          ],
+          "label": null,
+          "label_x": 173.0,
+          "label_y": 55.0,
+          "label_width": 0.0,
+          "label_height": 0.0
+        },
+        {
+          "points": [
+            [
+              629.0,
+              143.0
+            ],
+            [
+              661.0,
+              143.0
+            ],
+            [
+              661.0,
+              183.0
+            ],
+            [
+              185.0,
+              183.0
+            ],
+            [
+              185.0,
+              240.0
+            ],
+            [
+              227.0,
+              240.0
+            ]
+          ],
+          "label": null,
+          "label_x": 173.0,
+          "label_y": 55.0,
+          "label_width": 0.0,
+          "label_height": 0.0
+        },
+        {
+          "points": [
+            [
+              629.0,
+              87.0
+            ],
+            [
+              671.0,
+              87.0
+            ],
+            [
+              671.0,
+              192.0
+            ],
+            [
+              195.0,
+              192.0
+            ],
+            [
+              195.0,
+              226.0
+            ],
+            [
+              227.0,
+              226.0
+            ]
+          ],
+          "label": null,
+          "label_x": 173.0,
+          "label_y": 55.0,
+          "label_width": 0.0,
+          "label_height": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "block": {
+      "id": "flow-3",
+      "slot_id": "visual",
+      "locked": false,
+      "style": null,
+      "type": "diagram",
+      "diagram_type": "flow",
+      "mermaid": null,
+      "direction": "LR",
+      "nodes": [
+        {
+          "id": "A",
+          "title": "执行任务",
+          "desc": "",
+          "status": "default",
+          "kind": "process"
+        },
+        {
+          "id": "B",
+          "title": "结果是否通过",
+          "desc": "",
+          "status": "default",
+          "kind": "decision"
+        },
+        {
+          "id": "C",
+          "title": "完成",
+          "desc": "",
+          "status": "default",
+          "kind": "process"
+        }
+      ],
+      "edges": [
+        {
+          "source": "A",
+          "target": "B",
+          "label": null
+        },
+        {
+          "source": "B",
+          "target": "A",
+          "label": "重试"
+        },
+        {
+          "source": "B",
+          "target": "C",
+          "label": "通过"
+        }
+      ],
+      "geometry": null
+    },
+    "width": 856,
+    "height": 320,
+    "expected": {
+      "version": 3,
+      "width": 856.0,
+      "height": 320.0,
+      "font_size": 14.0,
+      "nodes": [
+        {
+          "id": "A",
+          "x": 383.5,
+          "y": 118.5,
+          "width": 132.0,
+          "height": 40.0,
+          "title_lines": [
+            "执行任务"
+          ],
+          "desc_lines": []
+        },
+        {
+          "id": "B",
+          "x": 192.5,
+          "y": 118.5,
+          "width": 132.0,
+          "height": 40.0,
+          "title_lines": [
+            "结果是否通过"
+          ],
+          "desc_lines": []
+        },
+        {
+          "id": "C",
+          "x": 531.5,
+          "y": 118.5,
+          "width": 132.0,
+          "height": 40.0,
+          "title_lines": [
+            "完成"
+          ],
+          "desc_lines": []
+        }
+      ],
+      "edges": [
+        {
+          "points": [
+            [
+              471.5,
+              118.5
+            ],
+            [
+              471.5,
+              76.5
+            ],
+            [
+              353.5,
+              76.5
+            ],
+            [
+              353.5,
+              243.5
+            ],
+            [
+              258.5,
+              243.5
+            ],
+            [
+              258.5,
+              158.5
+            ]
+          ],
+          "label": null,
+          "label_x": 180.5,
+          "label_y": 54.5,
+          "label_width": 0.0,
+          "label_height": 0.0
+        },
+        {
+          "points": [
+            [
+              225.5,
+              158.5
+            ],
+            [
+              225.5,
+              253.5
+            ],
+            [
+              362.5,
+              253.5
+            ],
+            [
+              362.5,
+              86.5
+            ],
+            [
+              427.5,
+              86.5
+            ],
+            [
+              427.5,
+              118.5
+            ]
+          ],
+          "label": "重试",
+          "label_x": 206.5,
+          "label_y": 180.5,
+          "label_width": 38.0,
+          "label_height": 21.0
+        },
+        {
+          "points": [
+            [
+              291.5,
+              158.5
+            ],
+            [
+              291.5,
+              233.5
+            ],
+            [
+              344.5,
+              233.5
+            ],
+            [
+              344.5,
+              66.5
+            ],
+            [
+              597.5,
+              66.5
+            ],
+            [
+              597.5,
+              118.5
+            ]
+          ],
+          "label": "通过",
+          "label_x": 272.5,
+          "label_y": 180.5,
+          "label_width": 38.0,
+          "label_height": 21.0
+        }
+      ]
+    }
+  }
+]

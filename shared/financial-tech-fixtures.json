@@ -6,43 +6,50 @@
           "id": "hub",
           "title": "综合服务平台",
           "desc": "统一客户与服务入口",
-          "status": "active"
+          "status": "active",
+          "kind": "process"
         },
         {
           "id": "wealth",
           "title": "财富管理",
           "desc": "资产配置与专属服务",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "family",
           "title": "家族传承",
           "desc": "家族治理与财富传承",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "finance",
           "title": "企业金融",
           "desc": "融资与结算服务",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "employee",
           "title": "员工关怀",
           "desc": "薪酬与福利服务",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "ecosystem",
           "title": "生态合作",
           "desc": "跨机构资源协同",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "risk",
           "title": "风险管理",
           "desc": "安全与合规保障",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         }
       ],
       "edges": [
@@ -131,43 +138,50 @@
           "id": "hub",
           "title": "综合服务平台",
           "desc": "统一客户与服务入口",
-          "status": "active"
+          "status": "active",
+          "kind": "process"
         },
         {
           "id": "wealth",
           "title": "财富管理",
           "desc": "资产配置与专属服务",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "family",
           "title": "家族传承",
           "desc": "家族治理与财富传承",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "finance",
           "title": "企业金融",
           "desc": "融资与结算服务",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "employee",
           "title": "员工关怀",
           "desc": "薪酬与福利服务",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "ecosystem",
           "title": "生态合作",
           "desc": "跨机构资源协同",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "risk",
           "title": "风险管理",
           "desc": "安全与合规保障",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         }
       ],
       "edges": [
@@ -256,43 +270,50 @@
           "id": "hub",
           "title": "综合服务平台",
           "desc": "统一客户与服务入口",
-          "status": "active"
+          "status": "active",
+          "kind": "process"
         },
         {
           "id": "wealth",
           "title": "财富管理",
           "desc": "资产配置与专属服务",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "family",
           "title": "家族传承",
           "desc": "家族治理与财富传承",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "finance",
           "title": "企业金融",
           "desc": "融资与结算服务",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "employee",
           "title": "员工关怀",
           "desc": "薪酬与福利服务",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "ecosystem",
           "title": "生态合作",
           "desc": "跨机构资源协同",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "risk",
           "title": "风险管理",
           "desc": "安全与合规保障",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         }
       ],
       "edges": [
@@ -381,31 +402,36 @@
           "id": "entry",
           "title": "统一服务入口",
           "desc": "企业端 · 员工端 · 客户端",
-          "status": "active"
+          "status": "active",
+          "kind": "process"
         },
         {
           "id": "crm",
           "title": "客户运营",
           "desc": "客户画像与服务触达",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "products",
           "title": "产品服务",
           "desc": "产品组合与方案匹配",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "partners",
           "title": "生态协同",
           "desc": "资源连接与协同交付",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "data",
           "title": "数据与风控底座",
           "desc": "数据治理 · 统一身份 · 合规审计",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         }
       ],
       "edges": [
@@ -482,31 +508,36 @@
           "id": "entry",
           "title": "统一服务入口",
           "desc": "企业端 · 员工端 · 客户端",
-          "status": "active"
+          "status": "active",
+          "kind": "process"
         },
         {
           "id": "crm",
           "title": "客户运营",
           "desc": "客户画像与服务触达",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "products",
           "title": "产品服务",
           "desc": "产品组合与方案匹配",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "partners",
           "title": "生态协同",
           "desc": "资源连接与协同交付",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "data",
           "title": "数据与风控底座",
           "desc": "数据治理 · 统一身份 · 合规审计",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         }
       ],
       "edges": [
@@ -583,31 +614,36 @@
           "id": "entry",
           "title": "统一服务入口",
           "desc": "企业端 · 员工端 · 客户端",
-          "status": "active"
+          "status": "active",
+          "kind": "process"
         },
         {
           "id": "crm",
           "title": "客户运营",
           "desc": "客户画像与服务触达",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "products",
           "title": "产品服务",
           "desc": "产品组合与方案匹配",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "partners",
           "title": "生态协同",
           "desc": "资源连接与协同交付",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "data",
           "title": "数据与风控底座",
           "desc": "数据治理 · 统一身份 · 合规审计",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         }
       ],
       "edges": [
@@ -684,19 +720,22 @@
           "id": "0",
           "title": "0",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "1",
           "title": "1",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "2",
           "title": "2",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         }
       ],
       "edges": [
@@ -751,19 +790,22 @@
           "id": "0",
           "title": "0",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "1",
           "title": "1",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "2",
           "title": "2",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         }
       ],
       "edges": [
@@ -818,19 +860,22 @@
           "id": "0",
           "title": "0",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "1",
           "title": "1",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "2",
           "title": "2",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         }
       ],
       "edges": [
@@ -885,109 +930,127 @@
           "id": "0",
           "title": "0",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "1",
           "title": "1",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "2",
           "title": "2",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "3",
           "title": "3",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "4",
           "title": "4",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "5",
           "title": "5",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "6",
           "title": "6",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "7",
           "title": "7",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "8",
           "title": "8",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "9",
           "title": "9",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "10",
           "title": "10",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "11",
           "title": "11",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "12",
           "title": "12",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "13",
           "title": "13",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "14",
           "title": "14",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "15",
           "title": "15",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "16",
           "title": "16",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "17",
           "title": "17",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         }
       ],
       "edges": [
@@ -1197,109 +1260,127 @@
           "id": "0",
           "title": "0",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "1",
           "title": "1",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "2",
           "title": "2",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "3",
           "title": "3",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "4",
           "title": "4",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "5",
           "title": "5",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "6",
           "title": "6",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "7",
           "title": "7",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "8",
           "title": "8",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "9",
           "title": "9",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "10",
           "title": "10",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "11",
           "title": "11",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "12",
           "title": "12",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "13",
           "title": "13",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "14",
           "title": "14",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "15",
           "title": "15",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "16",
           "title": "16",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "17",
           "title": "17",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         }
       ],
       "edges": [
@@ -1509,109 +1590,127 @@
           "id": "0",
           "title": "0",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "1",
           "title": "1",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "2",
           "title": "2",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "3",
           "title": "3",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "4",
           "title": "4",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "5",
           "title": "5",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "6",
           "title": "6",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "7",
           "title": "7",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "8",
           "title": "8",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "9",
           "title": "9",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "10",
           "title": "10",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "11",
           "title": "11",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "12",
           "title": "12",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "13",
           "title": "13",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "14",
           "title": "14",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "15",
           "title": "15",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "16",
           "title": "16",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         },
         {
           "id": "17",
           "title": "17",
           "desc": "",
-          "status": "default"
+          "status": "default",
+          "kind": "process"
         }
       ],
       "edges": [

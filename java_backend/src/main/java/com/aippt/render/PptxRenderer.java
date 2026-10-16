@@ -218,9 +218,7 @@ public class PptxRenderer {
             case "image" -> renderImage(ppt, page, theme, block, rect);
             case "chart" -> PptxChart.render(ppt, page, rect, block, theme);
             case "cards" -> renderCards(page, theme, block, rect);
-            case "diagram" -> {
-                if ("financial-tech".equals(theme.visualStyle())) renderFinancialDiagram(page, theme, block, rect);
-            }
+            case "diagram" -> renderDiagram(page, theme, block, rect);
             case "callout" -> renderCallout(page, theme, block, rect);
             default -> {
             }
@@ -285,6 +283,9 @@ public class PptxRenderer {
 
     @SuppressWarnings("unchecked")
     private void renderCards(XSLFSlide page, Theme theme, Map<String, Object> block, Rect rect) {
+        var outerBox = BlockStyle.resolveBox(theme, Blocks.styleOf(block));
+        addBoxChrome(page, theme, rect, outerBox);
+        rect = padded(rect, outerBox.paddingPt() + outerBox.borderWidthPt());
         if ("financial-tech".equals(theme.visualStyle())) {
             renderFinancialCards(page, theme, block, rect);
             return;
@@ -294,10 +295,15 @@ public class PptxRenderer {
             return;
         }
         int n = list.size();
-        double gap = CARD_GAP_PT / Geometry.CANVAS_WIDTH_PT;
-        double cardW = Math.max((rect.w() - gap * Math.max(n - 1, 0)) / n, 1e-6);
-        double padX = CARD_PAD_PT / Geometry.CANVAS_WIDTH_PT;
-        double padY = CARD_PAD_PT / Geometry.CANVAS_HEIGHT_PT;
+        var grid = com.aippt.domain.CardLayout.grid(n, rect.w() * Geometry.CANVAS_WIDTH_PT,
+                rect.h() * Geometry.CANVAS_HEIGHT_PT, theme);
+        double gapPt = com.aippt.domain.CardLayout.spec(theme, "gap_pt");
+        double gap = gapPt / Geometry.CANVAS_WIDTH_PT;
+        double gapY = gapPt / Geometry.CANVAS_HEIGHT_PT;
+        double cardW = grid.width() / Geometry.CANVAS_WIDTH_PT;
+        double cardH = grid.height() / Geometry.CANVAS_HEIGHT_PT;
+        double padX = com.aippt.domain.CardLayout.spec(theme, "padding_pt") / Geometry.CANVAS_WIDTH_PT;
+        double padY = com.aippt.domain.CardLayout.spec(theme, "padding_pt") / Geometry.CANVAS_HEIGHT_PT;
         BlockStyle style = Blocks.styleOf(block);
         Theme.TextStyle titleStyle = BlockStyle.mergeTextStyle(theme, "subtitle", style);
         Theme.TextStyle bodyStyle = BlockStyle.mergeTextStyle(theme, "body", style);
@@ -306,8 +312,9 @@ public class PptxRenderer {
             if (!(list.get(index) instanceof Map<?, ?> map)) {
                 continue;
             }
-            Rect card = new Rect(rect.x() + index * (cardW + gap), rect.y(), cardW, rect.h());
-            addFilled(page, card, theme.palette().surface(), ShapeType.ROUND_RECT, FlexSkin.BOX_RADIUS_PT, 0, null);
+            Rect card = new Rect(rect.x() + (index % grid.columns()) * (cardW + gap),
+                    rect.y() + (index / grid.columns()) * (cardH + gapY), cardW, cardH);
+            addFilled(page, card, theme.palette().surface(), ShapeType.ROUND_RECT, theme.shape().radiusPt(), 0, null);
             Rect content = new Rect(
                     card.x() + padX, card.y() + padY,
                     Math.max(card.w() - 2 * padX, 1e-6),
@@ -550,10 +557,12 @@ public class PptxRenderer {
         BlockStyle style = Blocks.styleOf(block);
         Theme.TextStyle title = BlockStyle.mergeTextStyle(theme, "subtitle", style);
         Theme.TextStyle body = BlockStyle.mergeTextStyle(theme, "body", style);
-        double headerH = FinancialTech.headerHeight(grid.height(), title), pad = FinancialTech.spec("card_padding_pt");
+        double pad = FinancialTech.spec("card_padding_pt");
         String cyan = theme.palette().chartSeries().get(1);
         for (int index = 0; index < items.size(); index++) {
             JsonNode item = items.get(index);
+            double headerH = Math.max(FinancialTech.headerHeight(grid.height(), title),
+                    TextMetrics.measureText(item.path("title").asText(), title, com.aippt.domain.CardLayout.titleWidth(grid.width(), theme), 540).heightPt() + 12);
             Rect card = new Rect(rect.x() + (index % grid.columns()) * (grid.width() + 16) / 960,
                     rect.y() + (index / grid.columns()) * (grid.height() + 16) / 540, grid.width() / 960, grid.height() / 540);
             addFilled(page, card, theme.palette().surface(), ShapeType.ROUND_RECT, theme.shape().radiusPt(), 0.75, theme.palette().line());
@@ -583,11 +592,20 @@ public class PptxRenderer {
             linear.setAng(90 * 60000);
             linear.setScaled(false);
             chevron.setLineColor(null);
-            Rect header = new Rect(card.x() + 12 / 960.0, card.y() + 6 / 540.0, Math.max(1, width - 24) / 960, Math.max(1, headerH - 12) / 540);
+            double headerInset = com.aippt.domain.CardLayout.headerInset(width);
+            double iconWidth = FinancialTech.spec("header_icon_width_pt");
+            Rect iconRect = new Rect(card.x() + headerInset / 960, card.y() + 6 / 540.0, iconWidth / 960, Math.max(1, headerH - 12) / 540);
+            var iconBox = addTextbox(page, iconRect, null);
+            iconBox.setVerticalAlignment(VerticalAlignment.MIDDLE);
+            String icon = item.path("icon").asText("");
+            var iconStyle = new Theme.TextStyle(title.font(), 12, title.lineHeight(), title.weight(), title.letterSpacingPt(), title.color(), title.italic());
+            PptxText.writeParagraph(iconBox.getTextParagraphs().get(0), icon.isBlank() ? String.format("%02d", index + 1) : icon, theme, iconStyle);
+            iconBox.getTextParagraphs().get(0).setTextAlign(TextAlign.CENTER);
+            double titleOffset = headerInset + iconWidth + FinancialTech.spec("header_icon_gap_pt");
+            Rect header = new Rect(card.x() + titleOffset / 960, card.y() + 6 / 540.0, Math.max(1, width - titleOffset - headerInset) / 960, Math.max(1, headerH - 12) / 540);
             TextTarget heading = new TextTarget(addTextbox(page, header, null), style != null && style.align() != null ? style.align() : "center", header);
             heading.box.setVerticalAlignment(VerticalAlignment.MIDDLE);
-            String icon = item.path("icon").asText("");
-            String text = (icon.isBlank() ? String.format("%02d", index + 1) : icon) + "  " + item.path("title").asText();
+            String text = item.path("title").asText();
             writeLines(heading, theme, List.of(new Line(title, text)), 0); fitStack(heading, theme, List.of(new Line(title, text)), 0);
             addFilled(page, new Rect(card.x() + pad / 960, card.y() + (headerH + pad) / 540, 26 / 960.0, 2 / 540.0), cyan, ShapeType.RECT, 0, 0, null);
             Rect desc = new Rect(card.x() + pad / 960, card.y() + (headerH + pad + 14) / 540,
@@ -599,52 +617,115 @@ public class PptxRenderer {
         }
     }
 
-    private void renderFinancialDiagram(XSLFSlide page, Theme theme, Map<String, Object> block, Rect rect) {
-        JsonNode nodes = JsonMapperHolder.MAPPER.valueToTree(block.get("nodes"));
-        JsonNode edges = JsonMapperHolder.MAPPER.valueToTree(block.getOrDefault("edges", List.of()));
-        if (nodes.isEmpty()) return;
-        var platform = FinancialTech.platform(nodes, edges, rect);
-        String cyan = theme.palette().chartSeries().get(1);
-        if (platform.hub() != null) {
-            var ring = addFilled(page, new Rect(rect.x() + rect.w() * 0.3, rect.y() + rect.h() * 0.16, rect.w() * 0.4, rect.h() * 0.68), theme.palette().background(), ShapeType.ELLIPSE, 0, 1, theme.palette().line());
-            ring.setFillColor(null);
+    private void renderDiagram(XSLFSlide page, Theme theme, Map<String, Object> block, Rect rect) {
+        JsonNode raw = JsonMapperHolder.MAPPER.valueToTree(block);
+        if ("timeline".equals(block.get("diagram_type"))) {
+            renderTimeline(page, theme, block, rect, raw.path("nodes"));
+            return;
         }
-        for (JsonNode edge : edges) {
-            Rect a = platform.rects().get(edge.path("source").asText()), b = platform.rects().get(edge.path("target").asText());
-            if (a == null || b == null) continue;
-            double dx = (b.x() + b.w() / 2 - a.x() - a.w() / 2) * 960;
-            double dy = (b.y() + b.h() / 2 - a.y() - a.h() / 2) * 540;
-            double scaleA = 0.5 / Math.max(Math.max(Math.abs(dx) / (a.w() * 960), Math.abs(dy) / (a.h() * 540)), 0.001);
-            double scaleB = 0.5 / Math.max(Math.max(Math.abs(dx) / (b.w() * 960), Math.abs(dy) / (b.h() * 540)), 0.001);
-            double x1 = (a.x() + a.w() / 2) * 960 + dx * scaleA, y1 = (a.y() + a.h() / 2) * 540 + dy * scaleA;
-            double x2 = (b.x() + b.w() / 2) * 960 - dx * scaleB, y2 = (b.y() + b.h() / 2) * 540 - dy * scaleB;
-            var connector = page.createConnector();
-            connector.setAnchor(new Rectangle2D.Double(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1)));
-            connector.setFlipHorizontal(x1 > x2); connector.setFlipVertical(y1 > y2);
-            connector.setLineColor(PptxColor.rgb(cyan)); connector.setLineWidth(1.5);
-            connector.setLineTailDecoration(org.apache.poi.sl.usermodel.LineDecoration.DecorationShape.TRIANGLE);
-            if (!edge.path("label").asText("").isBlank()) {
-                Rect label = new Rect(Math.max(rect.x(), ((x1 + x2) / 2 - 40) / 960), Math.max(rect.y(), ((y1 + y2) / 2 - 16) / 540), Math.min(rect.w(), 80 / 960.0), 16 / 540.0);
-                TextTarget text = new TextTarget(addTextbox(page, label, null), "center", label);
-                var lines = List.of(new Line(theme.textStyle("caption"), edge.path("label").asText()));
-                writeLines(text, theme, lines, 0); fitStack(text, theme, lines, 0);
+        var g = com.aippt.domain.DiagramLayout.resolve(block, rect.w() * 960, rect.h() * 540);
+        double font = g.path("font_size").asDouble();
+        if (font < 10) throw new IllegalArgumentException("Diagram text would be below 10 pt; give the diagram more space");
+        double baseFont = Math.max(10, raw.path("style").path("size_pt").asDouble(com.aippt.domain.DiagramLayout.spec("font_size")));
+        double scale = font / baseFont;
+        String background = theme.palette().background(), connectorColor = theme.palette().inkMuted();
+        Color bg = PptxColor.rgb(background);
+        boolean dark = bg.getRed() * 0.2126 + bg.getGreen() * 0.7152 + bg.getBlue() * 0.0722 < 128;
+        String textColor = dark ? theme.palette().ink() : theme.palette().accent();
+        double stroke = com.aippt.domain.DiagramLayout.spec("stroke_width");
+        addFilled(page, rect, background, ShapeType.RECT, 0, 0, null);
+        int index = 0;
+        for (JsonNode edge : g.path("edges")) {
+            var points = edge.path("points");
+            Path2D route = new Path2D.Double();
+            route.moveTo(rect.x() * 960 + points.get(0).get(0).asDouble(), rect.y() * 540 + points.get(0).get(1).asDouble());
+            for (int i = 1; i < points.size() - 1; i++) {
+                double px = points.get(i - 1).get(0).asDouble(), py = points.get(i - 1).get(1).asDouble();
+                double x = points.get(i).get(0).asDouble(), y = points.get(i).get(1).asDouble();
+                double tx = points.get(i + 1).get(0).asDouble(), ty = points.get(i + 1).get(1).asDouble();
+                double dx = x - px, dy = y - py, nx = tx - x, ny = ty - y;
+                double before = Math.abs(dx) + Math.abs(dy), after = Math.abs(nx) + Math.abs(ny);
+                double ox = rect.x() * 960, oy = rect.y() * 540;
+                if (before == 0 || after == 0 || Math.abs(dx * ny - dy * nx) < 0.001) route.lineTo(ox + x, oy + y);
+                else {
+                    double r = Math.min(com.aippt.domain.DiagramLayout.spec("connector_radius"), Math.min(before / 2, after / 2));
+                    route.lineTo(ox + x - dx * r / before, oy + y - dy * r / before);
+                    // POI's compact schema supports cubic routes. This is the exact quadratic curve.
+                    route.curveTo(ox + x - dx * r / before / 3, oy + y - dy * r / before / 3,
+                            ox + x + nx * r / after / 3, oy + y + ny * r / after / 3,
+                            ox + x + nx * r / after, oy + y + ny * r / after);
+                }
+            }
+            var last = points.get(points.size() - 1);
+            route.lineTo(rect.x() * 960 + last.get(0).asDouble(), rect.y() * 540 + last.get(1).asDouble());
+            var shape = page.createFreeform();
+            shape.setPath(route); shape.setFillColor(null); shape.setLineColor(PptxColor.rgb(connectorColor)); shape.setLineWidth(stroke);
+            shape.setLineTailDecoration(org.apache.poi.sl.usermodel.LineDecoration.DecorationShape.ARROW);
+            setShapeName(shape, "diagram-edge-" + index++);
+            if (edge.hasNonNull("label") && !edge.path("label").asText().isEmpty()) {
+                Rect label = diagramRect(rect, edge.path("label_x").asDouble(), edge.path("label_y").asDouble(),
+                        edge.path("label_width").asDouble(), edge.path("label_height").asDouble());
+                addFilled(page, label, background, ShapeType.ROUND_RECT, label.h() * 270, stroke, theme.palette().accent());
+                Rect text = new Rect(label.x(), label.y() + com.aippt.domain.DiagramLayout.spec("label_padding_y") * scale / 540,
+                        label.w(), label.h());
+                diagramText(page, theme, text, List.of(edge.path("label").asText().split("\\n", -1)),
+                        font * com.aippt.domain.DiagramLayout.spec("label_font_ratio"), true, textColor);
             }
         }
-        BlockStyle style = Blocks.styleOf(block);
-        for (JsonNode node : nodes) {
-            Rect box = platform.rects().get(node.path("id").asText());
-            boolean central = node.path("id").asText().equals(platform.hub());
-            String border = "risk".equals(node.path("status").asText()) ? theme.palette().chartSeries().get(2) : cyan;
-            addFilled(page, box, central || "active".equals(node.path("status").asText()) ? theme.palette().accentSoft() : theme.palette().surface(), ShapeType.ROUND_RECT, theme.shape().radiusPt(), central ? 1.5 : 0.75, border);
-            addFilled(page, new Rect(box.x() + 12 / 960.0, box.y(), Math.min(24 / 960.0, box.w() * 0.3), 2 / 540.0), border, ShapeType.RECT, 0, 0, null);
-            Rect content = padded(box, 12);
-            TextTarget target = new TextTarget(addTextbox(page, content, null), "center", content);
+        Map<String, JsonNode> byId = new java.util.LinkedHashMap<>();
+        for (JsonNode node : raw.path("nodes")) byId.put(node.path("id").asText(), node);
+        for (JsonNode node : g.path("nodes")) {
+            JsonNode original = byId.get(node.path("id").asText());
+            boolean decision = "decision".equals(original.path("kind").asText());
+            double x = node.path("x").asDouble(), y = node.path("y").asDouble(), w = node.path("width").asDouble(), h = node.path("height").asDouble();
+            var shape = addFilled(page, diagramRect(rect, x, y, w, h), decision ? background : theme.palette().accentSoft(),
+                    ShapeType.ROUND_RECT, com.aippt.domain.DiagramLayout.spec("radius") * scale, stroke,
+                    decision ? theme.palette().accent() : theme.palette().line());
+            if (decision) shape.setLineDash(StrokeStyle.LineDash.DASH);
+            setShapeName(shape, "diagram-node-" + node.path("id").asText());
+            double top = y + (h - (node.path("title_lines").size() + node.path("desc_lines").size()) * font * 1.25) / 2;
+            for (String key : List.of("title_lines", "desc_lines")) {
+                List<String> lines = new ArrayList<>(); node.path(key).forEach(line -> lines.add(line.asText()));
+                if (!lines.isEmpty()) {
+                    double lineHeight = lines.size() * font * com.aippt.domain.DiagramLayout.spec("line_height");
+                    diagramText(page, theme, diagramRect(rect, x + 4, top, w - 8, lineHeight + 2), lines, font, "title_lines".equals(key), textColor);
+                    top += lineHeight;
+                }
+            }
+        }
+    }
+
+    private static Rect diagramRect(Rect outer, double x, double y, double w, double h) {
+        return new Rect(outer.x() + x / 960, outer.y() + y / 540, w / 960, h / 540);
+    }
+
+    private void diagramText(XSLFSlide page, Theme theme, Rect rect, List<String> lines, double font, boolean bold, String color) {
+        var box = addTextbox(page, rect, null); box.setWordWrap(false);
+        var style = new Theme.TextStyle("body", font, 1.25, bold ? 600 : 400, 0, color, false);
+        for (int i = 0; i < lines.size(); i++) {
+            var paragraph = i == 0 ? box.getTextParagraphs().get(0) : box.addNewTextParagraph();
+            PptxText.writeParagraph(paragraph, lines.get(i), theme, style);
+            paragraph.setTextAlign(TextAlign.CENTER); paragraph.setSpaceBefore(0.0); paragraph.setSpaceAfter(0.0);
+        }
+    }
+
+    private void renderTimeline(XSLFSlide page, Theme theme, Map<String, Object> block, Rect rect, JsonNode nodes) {
+        int count = nodes.size();
+        if (count == 0) return;
+        int columns = count <= 3 ? count : count <= 4 ? 2 : 3, rows = (count + columns - 1) / columns;
+        double w = (rect.w() * 960 - 8 * (columns - 1)) / columns, h = (rect.h() * 540 - 16 * (rows - 1)) / rows;
+        for (int i = 0; i < count; i++) {
+            JsonNode node = nodes.get(i);
+            int inRow = Math.min(columns, count - i / columns * columns);
+            double offset = (columns - inRow) * (w + 8) / 2;
+            Rect box = diagramRect(rect, offset + i % columns * (w + 8), i / columns * (h + 16), w, h);
+            addFilled(page, box, "active".equals(node.path("status").asText()) ? theme.palette().accentSoft() : theme.palette().surface(),
+                    ShapeType.ROUND_RECT, Math.min(theme.shape().radiusPt(), 8), 1, theme.palette().line());
+            var target = new TextTarget(addTextbox(page, padded(box, 12), null), null, padded(box, 12));
             target.box.setVerticalAlignment(VerticalAlignment.MIDDLE);
-            Theme.TextStyle title = BlockStyle.mergeTextStyle(theme, "subtitle", style);
-            if (central && (style == null || style.color() == null)) title = new Theme.TextStyle(title.font(), title.sizePt(), title.lineHeight(), title.weight(), title.letterSpacingPt(), theme.textStyle("title").color(), title.italic());
             List<Line> lines = new ArrayList<>();
-            lines.add(new Line(title, node.path("title").asText()));
-            if (!node.path("desc").asText("").isBlank()) lines.add(new Line(BlockStyle.mergeTextStyle(theme, "body", style), node.path("desc").asText()));
+            lines.add(new Line(BlockStyle.mergeTextStyle(theme, "subtitle", Blocks.styleOf(block)), node.path("title").asText()));
+            if (!node.path("desc").asText().isEmpty()) lines.add(new Line(BlockStyle.mergeTextStyle(theme, "body", Blocks.styleOf(block)), node.path("desc").asText()));
             writeLines(target, theme, lines, 6); fitStack(target, theme, lines, 6);
         }
     }

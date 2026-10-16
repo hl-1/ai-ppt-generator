@@ -245,7 +245,7 @@ def test_generated_linear_flex_flow_becomes_steps_and_keeps_tree_reference():
     assert not any(block.type == "diagram" for block in result.blocks)
 
 
-def test_fixed_and_flex_cards_are_compacted():
+def test_fixed_and_flex_cards_preserve_complete_content():
     long_title = "经营改善路径与协同机制" * 3
     long_desc = "持续跟踪关键指标并推动跨团队行动落地。" * 5
     card_data = [{"title": long_title, "desc": long_desc, "icon": "✓"}]
@@ -268,8 +268,8 @@ def test_fixed_and_flex_cards_are_compacted():
 
     for result in (fixed, flex):
         cards = next(block for block in result.blocks if block.type == "cards")
-        assert len(cards.items[0].title) <= 18
-        assert len(cards.items[0].desc) <= 56
+        assert cards.items[0].title == long_title
+        assert cards.items[0].desc == long_desc
         assert cards.items[0].icon == "✓"
 
 
@@ -904,3 +904,40 @@ def test_preview_timeout_is_retryable(monkeypatch):
     assert load_preview_status(key)["status"] == "queued"
     monkeypatch.setattr("app.services.preview.time.time", lambda: 10**12)
     assert load_preview_status(key)["status"] == "failed"
+
+
+def test_curated_table_keeps_every_original_row_in_notes():
+    table = TableBlock(
+        id="details",
+        slot_id="body",
+        header=["项目", "说明"],
+        rows=[[f"项目{index}", f"完整记录{index}"] for index in range(20)],
+    )
+    source = slide().model_copy(
+        update={
+            "blocks": [
+                TextBlock(id="title", slot_id="title", text="项目汇总"),
+                CardsBlock(
+                    id="summary",
+                    slot_id="summary",
+                    items=[
+                        {"title": "项目进展", "desc": "按明细持续跟进"},
+                        {"title": "后续安排", "desc": "根据反馈调整计划"},
+                    ],
+                ),
+                table,
+            ]
+        }
+    )
+    result = compose_report_slide(
+        source,
+        plan(
+            page_role="summary",
+            narrative_role="summary",
+            evidence=[],
+            evidence_kind="table",
+        ),
+        curate=True,
+    )
+    for row in table.rows:
+        assert " / ".join(row) in result.speaker_notes

@@ -119,6 +119,7 @@ export function SlideView({
 
   return (
     <div
+      data-slide-canvas
       style={{
         containerType: 'size',
         position: 'relative',

@@ -138,6 +138,17 @@ def build_quality_report(project: Project, slides: list[Slide]) -> ExportCheckRe
         media_key_from_url=media_key_from_url,
         minimum_images=min(2, len(deck.slides)),
     )
+    report.issues.extend(
+        StructureIssue(
+            severity="error",
+            slide_id=str(slide.id),
+            slot_id=None,
+            code="page_not_ready",
+            message="本页尚未通过生成验收，请完成修复或移除后再导出",
+        )
+        for slide in slides
+        if slide.status != "ready"
+    )
     topic_mode = any(source.kind == "topic" for source in project.sources)
     if topic_mode:
         report.issues = [
@@ -154,25 +165,29 @@ def build_quality_report(project: Project, slides: list[Slide]) -> ExportCheckRe
         for first_slide_id, duplicate_slide_id in find_duplicate_topic_layouts(deck.slides):
             report.issues.append(
                 StructureIssue(
-                    severity="error",
+                    severity="warning",
                     slide_id=duplicate_slide_id,
                     slot_id=None,
-                    message=(
-                        f"主题生成的版式与页面 {first_slide_id} 重复，已阻止导出；"
-                        "请重新生成或更换其中一页的内容结构。"
-                    ),
+                    message=(f"主题生成的版式与页面 {first_slide_id} 相近，可按需要调整页面节奏。"),
                 )
             )
     pages = _page_by_outline_id(project)
     for slide in slides:
         page = pages.get(slide.outline_page_id)
-        if slide.status == "ready" and page and page.image_plan and not any(
-            block.get("type") == "image" for block in slide.blocks
+        if (
+            slide.status == "ready"
+            and page
+            and page.image_plan
+            and not any(block.get("type") == "image" for block in slide.blocks)
         ):
-            report.issues.append(StructureIssue(
-                severity="warning", slide_id=str(slide.id), slot_id=None,
-                message="本页计划的配图缺失，请添加图片或重新生成该页",
-            ))
+            report.issues.append(
+                StructureIssue(
+                    severity="warning",
+                    slide_id=str(slide.id),
+                    slot_id=None,
+                    message="本页计划的配图缺失，请添加图片或重新生成该页",
+                )
+            )
     plans = {str(s.id): pages[s.outline_page_id] for s in slides if s.outline_page_id in pages}
     extra = check_report_quality(
         deck,

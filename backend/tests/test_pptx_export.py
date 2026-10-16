@@ -133,18 +133,17 @@ def test_bullets_use_native_markers(presentation: Presentation) -> None:
 
 def test_table_is_a_native_table(presentation: Presentation) -> None:
     tables = [shape.table for shape in _all_shapes(presentation) if shape.has_table]
-    assert len(tables) == 1
-
-    table = tables[0]
-    source = next(
+    sources = [
         block
         for slide in load_sample_deck().slides
         for block in slide.blocks
         if block.type == "table"
-    )
-    assert len(table.columns) == len(source.header)
-    assert len(table.rows) == len(source.rows) + 1
-    assert table.cell(0, 0).text == source.header[0]
+    ]
+    assert len(tables) == len(sources)
+    for table, source in zip(tables, sources, strict=True):
+        assert len(table.columns) == len(source.header)
+        assert len(table.rows) == len(source.rows) + 1
+        assert table.cell(0, 0).text == source.header[0]
 
 
 def test_table_uses_our_borders_not_powerpoint_defaults(presentation: Presentation) -> None:

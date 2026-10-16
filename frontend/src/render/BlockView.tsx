@@ -11,7 +11,9 @@ import { DiagramView } from '@/render/DiagramView'
 import { EditableText } from '@/render/EditableText'
 import { FinancialCardsView } from '@/render/FinancialTechViews'
 import { isFinancialTech } from '@/render/financialTech'
+import { cardGrid, cardOuterInset, cardStyle, themeCardStyle } from './cardLayout'
 import { pt, resolveColor } from '@/render/style'
+import { CANVAS_WIDTH_PT, CANVAS_HEIGHT_PT } from '@/render/types'
 import type {
   Block,
   BulletsBlock,
@@ -490,10 +492,6 @@ function KpiView({ block, theme, editable, onCommit, onSelect }: BlockProps<KpiB
   )
 }
 
-const CARD_GAP_PT = 16
-const CARD_PAD_PT = 12
-const CARD_MIN_WIDTH_PT = 96
-
 function CardsView({ block, slot, theme, editable, onCommit, onSelect }: BlockProps<CardsBlock>) {
   if (isFinancialTech(theme)) return <FinancialCardsView block={block} slot={slot} theme={theme}
     editable={editable} onCommit={onCommit} onSelect={onSelect} />
@@ -502,14 +500,20 @@ function CardsView({ block, slot, theme, editable, onCommit, onSelect }: BlockPr
   const chrome = boxCss(theme, block.style)
   const surface = resolveColor(theme, 'surface')
   const radius = theme.shape.radius_pt
+  const spec = themeCardStyle(theme)
+  const inset = cardOuterInset(block.style)
+  const grid = cardGrid(block.items.length, slot.rect.w * CANVAS_WIDTH_PT - 2 * inset,
+    slot.rect.h * CANVAS_HEIGHT_PT - 2 * inset, theme.visual_style)
 
   return (
     <div
+      data-card-grid
       style={{
         ...chrome,
         display: 'grid',
-        gridTemplateColumns: `repeat(auto-fit, minmax(${pt(CARD_MIN_WIDTH_PT)}, 1fr))`,
-        gap: pt(CARD_GAP_PT),
+        gridTemplateColumns: `repeat(${grid.columns}, minmax(0, 1fr))`,
+        gridTemplateRows: `repeat(${grid.rows}, minmax(0, 1fr))`,
+        gap: pt(spec.gap_pt),
         width: '100%',
         height: '100%',
         boxSizing: 'border-box',
@@ -526,8 +530,8 @@ function CardsView({ block, slot, theme, editable, onCommit, onSelect }: BlockPr
             minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
-            gap: pt(6),
-            padding: pt(CARD_PAD_PT),
+            gap: pt(spec.text_gap_pt),
+            padding: pt(spec.padding_pt),
             background: surface,
             borderRadius: pt(radius),
             boxSizing: 'border-box',
@@ -538,6 +542,7 @@ function CardsView({ block, slot, theme, editable, onCommit, onSelect }: BlockPr
             style={{
               display: 'flex',
               alignItems: 'flex-start',
+              flexShrink: 0,
               gap: pt(6),
               minWidth: 0,
               overflow: 'hidden',
@@ -552,11 +557,13 @@ function CardsView({ block, slot, theme, editable, onCommit, onSelect }: BlockPr
               <EditableText
                 value={item.title}
                 ariaLabel={`编辑卡片标题 ${index + 1}`}
+                multiline
                 style={{
                   ...titleStyle,
                   flex: 1,
                   minWidth: 0,
                   overflowWrap: 'break-word',
+                  whiteSpace: 'pre-wrap',
                   overflow: 'hidden',
                 }}
                 onFocus={() => onSelect?.(block.id)}
@@ -571,6 +578,7 @@ function CardsView({ block, slot, theme, editable, onCommit, onSelect }: BlockPr
                   minWidth: 0,
                   overflow: 'hidden',
                   overflowWrap: 'break-word',
+                  whiteSpace: 'pre-wrap',
                 }}
               >
                 {item.title}
@@ -588,6 +596,7 @@ function CardsView({ block, slot, theme, editable, onCommit, onSelect }: BlockPr
                 minHeight: 0,
                 overflow: 'hidden',
                 overflowWrap: 'break-word',
+                whiteSpace: 'pre-wrap',
               }}
               onFocus={() => onSelect?.(block.id)}
               onCommit={(text) =>
@@ -620,6 +629,7 @@ function CalloutView({
   onCommit,
   onSelect,
 }: BlockProps<CalloutBlock>) {
+  const CARD_PAD_PT = cardStyle().padding_pt
   const isSource = block.variant === 'source'
   const textStyle = mergeTextCss(theme, isSource ? 'caption' : 'body', block.style)
   const chrome = boxCss(theme, block.style)

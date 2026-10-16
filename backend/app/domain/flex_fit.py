@@ -11,6 +11,7 @@ solver 只按权重瓜分画布、不读字体度量，所以预设里写死的 
 from __future__ import annotations
 
 from app.domain.block_style import content_rect_pt, merge_text_style, resolve_box
+from app.domain.card_layout import cards_natural_height
 from app.domain.content import Block
 from app.domain.flex_layout import FlexContainer, FlexLeaf, FlexNode, is_spacer
 from app.domain.flex_normalize import GROW_MAX, GROW_MIN, TITLE_STYLES, normalize
@@ -39,8 +40,6 @@ _PREFERRED_HEIGHT_PT: dict[str, float] = {
     "callout": 48.0,
 }
 _TABLE_ROW_HEIGHT_PT = 26.0
-_CARD_BASE_HEIGHT_PT = 88.0
-_CARD_LINE_HEIGHT_PT = 22.0
 _MIN_LEAF_HEIGHT_PT = 36.0
 
 # 这些块可以无限吃掉富余高度：拉大反而更好看
@@ -75,6 +74,8 @@ def fit_tree_to_content(
 
     只在生成期调用：用户手动调过版面的页面不应被重新压扁。
     """
+    # Repeated fitting must not measure or reinsert last pass's generated spacers.
+    tree = _without_fit_spacers(tree)
     block_map = {block.id: block for block in blocks}
     # 叶子宽度只由 row ratios 决定，与 grow 无关，因此求解一次即可定
     widths_pt = {placed.block_id: placed.rect.w * CANVAS_WIDTH_PT for placed in solve(tree)}
@@ -147,11 +148,31 @@ def _fit_container(
         )
 
     grows = _targets_to_grows(targets)
+    # Children receive the height the solver actually allocates, including grow
+    # clamps and any shortage. Passing natural targets here overfills nested cards.
+    inner_height = max(0.0, avail_h_pt - max(0, len(children) - 1) * node.gap_pt)
+    total_grow = sum(grows) or 1.0
     fitted = [
-        _fit_child(child, target, ctx).model_copy(update={"grow": grow})
-        for child, target, grow in zip(children, targets, grows, strict=True)
+        _fit_child(child, inner_height * grow / total_grow, ctx).model_copy(update={"grow": grow})
+        for child, grow in zip(children, grows, strict=True)
     ]
     return node.model_copy(update={"children": fitted})
+
+
+def _without_fit_spacers(node: FlexContainer) -> FlexContainer:
+    return node.model_copy(
+        update={
+            "children": [
+                _without_fit_spacers(child) if isinstance(child, FlexContainer) else child
+                for child in node.children
+                if not (
+                    isinstance(child, FlexContainer)
+                    and not child.children
+                    and child.id.startswith("spacer-fit")
+                )
+            ]
+        }
+    )
 
 
 def _fit_child(child: FlexNode, avail_h_pt: float, ctx: _FitContext) -> FlexNode:
@@ -336,45 +357,10 @@ def _leaf_height_pt(leaf: FlexLeaf, ctx: _FitContext) -> float:
         series_count = 1 + len(block.lines)
         return max(_PREFERRED_HEIGHT_PT["combo_chart"], 220.0 + series_count * 18.0)
     if block.type == "cards":
-        if ctx.theme.visual_style == "financial-tech":
-            from app.domain.financial_tech import (
-                financial_tech_style,
-                panel_grid,
-                panel_header_height,
-            )
-
-            spec = financial_tech_style()
-            columns, card_width, _ = panel_grid(
-                len(block.items), ctx.widths_pt.get(block.id, SAFE_AREA_WIDTH_PT), CANVAS_HEIGHT_PT
-            )
-            title_style = merge_text_style(ctx.theme, "subtitle", block.style)
-            body_style = merge_text_style(ctx.theme, "body", block.style)
-            header = panel_header_height(
-                CANVAS_HEIGHT_PT, title_style.size_pt, title_style.line_height
-            )
-            body_height = max(
-                measure_text(
-                    item.desc,
-                    style=body_style,
-                    width_pt=max(1, card_width - 2 * spec["card_padding_pt"]),
-                    height_pt=CANVAS_HEIGHT_PT,
-                ).height_pt
-                for item in block.items
-            )
-            rows = (len(block.items) + columns - 1) // columns
-            return (
-                rows * (header + body_height * _BREATHING + 2 * spec["card_padding_pt"] + 18)
-                + (rows - 1) * spec["card_gap_pt"]
-            )
-        # 横排卡片高度取最高一张的标题+描述估算
-        tallest = max(
-            (
-                _CARD_BASE_HEIGHT_PT
-                + max(0, (len(item.title) + len(item.desc)) // 28) * _CARD_LINE_HEIGHT_PT
-            )
-            for item in block.items
+        return max(
+            _MIN_LEAF_HEIGHT_PT,
+            cards_natural_height(block, ctx.theme, ctx.widths_pt.get(block.id, SAFE_AREA_WIDTH_PT)),
         )
-        return max(_MIN_LEAF_HEIGHT_PT, tallest)
     if block.type == "diagram":
         # 结构图是页面主视觉，需要先拿到可读高度，再由渲染器做
         # 文本收缩；否则时间线节点会被正文块的自然高度挤成薄片。

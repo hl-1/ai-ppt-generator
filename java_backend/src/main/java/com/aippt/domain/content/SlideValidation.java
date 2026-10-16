@@ -29,10 +29,13 @@ public final class SlideValidation {
                 return List.of(StructureIssue.error(slide.id(), null, ex.getMessage()));
             }
         }
-        if ("flex".equals(slide.layoutMode())) {
-            return validateFlex(slide, resolved);
+        var issues = new ArrayList<>("flex".equals(slide.layoutMode())
+                ? validateFlex(slide, resolved) : validateFixed(slide, layout, resolved));
+        for (var block : slide.blocks()) {
+            if ("text".equals(Blocks.type(block)) && Blocks.text(block).matches("(?s)^\\s*(\\d{1,3})[\\s.、．)）:-]+\\1[\\s.、．)）:-].*"))
+                issues.add(StructureIssue.error(slide.id(), Blocks.id(block), "标题包含重复编号", "duplicate_numbering"));
         }
-        return validateFixed(slide, layout, resolved);
+        return issues;
     }
 
     public static List<StructureIssue> validateDeck(List<SlideContent> slides, Map<String, Layout> layouts, Theme theme) {
@@ -249,10 +252,34 @@ public final class SlideValidation {
             String refId
     ) {
         String type = Blocks.type(block);
-        if (!"text".equals(type) && !"bullets".equals(type)) {
-            return List.of();
+        if ("diagram".equals(type) && !"timeline".equals(block.get("diagram_type"))) {
+            double[] pts = placement.rect().toPoints();
+            try {
+                var geometry = com.aippt.domain.DiagramLayout.resolve(block, pts[2], pts[3]);
+                if (geometry.path("font_size").asDouble() < 10) return List.of(new StructureIssue(
+                        "error", slideId, refId, "流程图文字小于 10 pt，请扩大图区域或拆分流程图", "diagram_readability"));
+                return List.of();
+            } catch (RuntimeException ex) {
+                return List.of(new StructureIssue("error", slideId, refId, "流程图布局失败：" + ex.getMessage(), "diagram_layout"));
+            }
         }
-        if (placement.textStyle() == null) {
+        if ("cards".equals(type)) {
+            double[] pts = placement.rect().toPoints();
+            double inset = com.aippt.domain.CardLayout.inset(block, theme);
+            var heights = com.aippt.domain.CardLayout.requiredHeights(block, theme, pts[2]);
+            var grid = com.aippt.domain.CardLayout.grid(heights.size(), pts[2] - 2 * inset,
+                    pts[3] - 2 * inset, theme);
+            List<StructureIssue> issues = new ArrayList<>();
+            for (int index = 0; index < heights.size(); index++) {
+                if (heights.get(index) > grid.height() + 0.5) {
+                    issues.add(StructureIssue.error(slideId, refId, String.format(
+                            "第 %d 张卡片可能溢出槽位（占用 %.0f pt / 槽位 %.0f pt）",
+                            index + 1, heights.get(index), grid.height()), "overflow"));
+                }
+            }
+            return issues;
+        }
+        if (!"text".equals(type) && !"bullets".equals(type)) {
             return List.of();
         }
         double[] pts = placement.rect().toPoints();
@@ -262,11 +289,13 @@ public final class SlideValidation {
         com.aippt.domain.TextMetrics.Result result;
         String label;
         if ("text".equals(type)) {
-            Theme.TextStyle style = BlockStyle.mergeTextStyle(theme, placement.textStyle(), boxStyle);
+            Theme.TextStyle style = BlockStyle.mergeTextStyle(theme,
+                    placement.textStyle() == null ? "body" : placement.textStyle(), boxStyle);
             result = com.aippt.domain.TextMetrics.measureText(Blocks.text(block), style, avail[0], avail[1]);
             label = "文字";
         } else {
-            Theme.TextStyle style = BlockStyle.mergeTextStyle(theme, placement.textStyle(), boxStyle);
+            Theme.TextStyle style = BlockStyle.mergeTextStyle(theme,
+                    placement.textStyle() == null ? "bullet" : placement.textStyle(), boxStyle);
             result = com.aippt.domain.TextMetrics.measureBullets(Blocks.items(block), style, avail[0], avail[1]);
             label = "要点";
         }
@@ -274,7 +303,7 @@ public final class SlideValidation {
             return List.of();
         }
         String estimateNote = result.usedEstimate() ? "（估算值）" : "";
-        return List.of(StructureIssue.warning(
+        return List.of(StructureIssue.error(
                 slideId,
                 refId,
                 String.format(

@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { MenuItem, MenuPopover } from '@/components/ui/MenuPopover'
 import { useRetrySlide } from '@/features/deck/api'
-import { type DeckSlide, slideDisplayTitle, toRenderSlide } from '@/features/deck/types'
+import { canPreviewSlide, type DeckSlide, slideDisplayTitle, toRenderSlide } from '@/features/deck/types'
 import { useDragSort } from '@/hooks/useDragSort'
 import { cn } from '@/lib/utils'
 import { SlideView } from '@/render/SlideView'
@@ -145,7 +145,7 @@ function FilmstripItem({
         )}
       >
         <div style={{ aspectRatio: `${CANVAS_WIDTH_PT} / ${CANVAS_HEIGHT_PT}` }}>
-          {slide.status === 'ready' ? (
+          {canPreviewSlide(slide) ? (
             <SlideView slide={toRenderSlide(slide)} theme={theme} slideIndex={index} />
           ) : (
             <Placeholder status={slide.status} />

@@ -7,6 +7,7 @@ import math
 from functools import lru_cache
 
 from app.core.paths import SHARED_DIR
+from app.domain.card_layout import card_grid, card_header_height
 from app.domain.content import DiagramEdge, DiagramNode
 from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, Rect
 
@@ -17,24 +18,11 @@ def financial_tech_style() -> dict:
 
 
 def panel_grid(count: int, width_pt: float, height_pt: float) -> tuple[int, float, float]:
-    spec = financial_tech_style()
-    gap = spec["card_gap_pt"]
-    columns = min(
-        count,
-        spec["card_max_columns"],
-        max(1, int((width_pt + gap) // (spec["card_min_width_pt"] + gap))),
-    )
-    rows = math.ceil(count / columns)
-    return (
-        columns,
-        max(1.0, (width_pt - gap * (columns - 1)) / columns),
-        max(1.0, (height_pt - gap * (rows - 1)) / rows),
-    )
+    return card_grid(count, width_pt, height_pt, visual_style="financial-tech")
 
 
 def panel_header_height(height_pt: float, size_pt: float, line_height: float) -> float:
-    spec = financial_tech_style()
-    return min(height_pt * 0.45, max(spec["header_min_height_pt"], size_pt * line_height * 2 + 12))
+    return card_header_height(height_pt, size_pt, line_height)
 
 
 def platform_node_rects(

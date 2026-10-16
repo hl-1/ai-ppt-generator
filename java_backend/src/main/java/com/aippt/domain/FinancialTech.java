@@ -37,6 +37,7 @@ public final class FinancialTech {
         int columns = Math.min(Math.min(count, (int) spec("card_max_columns")),
                 Math.max(1, (int) Math.floor((width + gap) / (spec("card_min_width_pt") + gap))));
         int rows = (count + columns - 1) / columns;
+        columns = Math.max(1, (count + rows - 1) / rows);
         return new Grid(columns, Math.max(1, (width - gap * (columns - 1)) / columns),
                 Math.max(1, (height - gap * (rows - 1)) / rows));
     }

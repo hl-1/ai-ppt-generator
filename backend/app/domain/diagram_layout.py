@@ -187,3 +187,15 @@ def layout_diagram(block: DiagramBlock, width: float, height: float) -> DiagramG
         nodes=nodes,
         edges=edges,
     )
+
+
+def resolve_diagram_geometry(block: DiagramBlock, width: float, height: float) -> DiagramGeometry:
+    geometry = block.geometry
+    if (
+        geometry is None
+        or geometry.version != FLOWCHART_STYLE["version"]
+        or abs(geometry.width - width) > 0.5
+        or abs(geometry.height - height) > 0.5
+    ):
+        return layout_diagram(block, width, height)
+    return geometry
