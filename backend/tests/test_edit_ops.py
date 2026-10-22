@@ -1,14 +1,19 @@
 import pytest
 
-from app.domain.content import TextBlock
-from app.domain.edit_ops import (
+from app.engine.content.content import TextBlock
+from app.engine.content.edit_ops import (
     EditStructureError,
     add_block,
     change_block_type,
     delete_block,
     previous_block_id,
 )
-from app.domain.flex_layout import FlexContainer, FlexLeaf, find_leaf_parent, iter_leaf_block_ids
+from app.engine.layout.flex_layout import (
+    FlexContainer,
+    FlexLeaf,
+    find_leaf_parent,
+    iter_leaf_block_ids,
+)
 
 
 def _tree() -> FlexContainer:

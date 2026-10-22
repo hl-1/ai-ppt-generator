@@ -4,7 +4,8 @@ import pytest
 from pptx import Presentation
 from pptx.util import Pt
 
-from app.domain.ambient import (
+from app.engine.content.sample import load_sample_deck
+from app.engine.layout.ambient import (
     AMBIENT_SHAPE_PREFIX,
     CornerBracket,
     EdgeBand,
@@ -14,13 +15,12 @@ from app.domain.ambient import (
     iter_ambient_shapes,
     scope_of,
 )
-from app.domain.color import mix_hex
-from app.domain.geometry import CANVAS_WIDTH_PT, Rect
-from app.domain.sample import load_sample_deck
-from app.domain.slide_geometry import placed_by_block_id
-from app.domain.theme import Theme, get_theme, load_themes
-from app.render.pptx import PptxRenderer
-from app.render.verify import verify_pptx
+from app.engine.layout.color import mix_hex
+from app.engine.layout.geometry import CANVAS_WIDTH_PT, Rect
+from app.engine.layout.slide_geometry import placed_by_block_id
+from app.engine.layout.theme import Theme, get_theme, load_themes
+from app.engine.pptx.pptx import PptxRenderer
+from app.engine.pptx.verify import verify_pptx
 
 
 def _theme_with(*motifs) -> Theme:

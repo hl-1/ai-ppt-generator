@@ -1,0 +1,538 @@
+import asyncio
+import logging
+import uuid
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
+from app.core.config import get_settings
+from app.engine.content.content import Slide as SlideContent
+from app.engine.content.outline import DeckBlueprint, OutlinePage
+from app.engine.layout.page_rhythm import (
+    LayoutTemplate,
+    allows_callout,
+    assign_fixed_layouts,
+    assign_layout_templates,
+)
+from app.engine.quality.validation import StructureIssue
+from app.infrastructure.database.session import async_session_factory
+from app.infrastructure.llm.base import OutlineSourceSection, SlideGenerationInput, SlideGenerator
+from app.infrastructure.llm.errors import (
+    InvalidModelOutputError,
+    LLMNotConfiguredError,
+    LLMTimeoutError,
+    LLMUnavailableError,
+    safe_error_details,
+)
+from app.infrastructure.llm.factory import create_slide_generator
+from app.modules.decks.models import Slide
+from app.modules.decks.schemas import DeckEvent
+from app.modules.decks.service import (
+    clear_cancel,
+    deck_events,
+    deck_image_coverage,
+    deck_status,
+    is_cancelled,
+    load_slides,
+    outline_pages,
+)
+from app.modules.decks.workflow import build_slide_workflow, run_slide_workflow
+from app.modules.media.jobs import lock_slide, queue_image_job
+from app.modules.outlines.topic_material import topic_request_from_sections
+from app.modules.projects.models import Project
+
+logger = logging.getLogger(__name__)
+
+
+async def generate_deck(ctx: dict[str, Any], project_id: str, slide_ids: list[str]) -> None:
+    """并发生成指定页面。
+
+    编排任务只做三件事：限流、逐页派发、汇报进度。真正的生成逻辑在
+    单页工作流里，因此「整份生成」和「单页重试」走的是同一条代码路径。
+    """
+    project_uuid = uuid.UUID(project_id)
+    targets = [uuid.UUID(value) for value in slide_ids]
+    context = await _load_context(project_uuid)
+    if context is None:
+        return
+
+    generator: SlideGenerator = ctx.get("slide_generator") or create_slide_generator()
+    workflow = build_slide_workflow(generator)
+    semaphore = asyncio.Semaphore(get_settings().slide_concurrency)
+    cancelled = False
+
+    async def run_one(slide_id: uuid.UUID) -> None:
+        nonlocal cancelled
+        async with semaphore:
+            # 取消只在每页开始前生效：正在跑的那一页让它跑完，
+            # 中途丢弃既浪费了已花的费用，也会留下半截状态。
+            if cancelled or await is_cancelled(project_uuid):
+                cancelled = True
+                return
+            await _generate_one(project_uuid, slide_id, context, workflow, queue=ctx.get("redis"))
+
+    await asyncio.gather(*(run_one(slide_id) for slide_id in targets))
+    await _finish(project_uuid, cancelled=cancelled, generated_ids=set(targets))
+
+
+async def _generate_one(
+    project_id: uuid.UUID,
+    slide_id: uuid.UUID,
+    context: "DeckContext",
+    workflow,
+    *,
+    queue=None,
+) -> None:
+    page = context.pages.get(slide_id)
+    if page is None:
+        return
+
+    if not await _mark_generating(slide_id):
+        return
+    await _publish(project_id, "slide_started", f"正在生成第 {page.position} 页", slide_id, page)
+
+    from app.engine.content.content_density import normalize_page_role
+
+    # The confirmed outline is the generation contract; planning already ran before confirmation.
+    plan = page.page
+    assigned_layout_id = context.layout_id(page.position, plan.layout_id)
+    if assigned_layout_id != plan.layout_id:
+        plan = plan.model_copy(update={"layout_id": assigned_layout_id})
+    page = SlideTarget(page.position, plan)
+    page_role = normalize_page_role(getattr(page.page, "page_role", None))
+    visual_hint = getattr(page.page, "visual", None)
+    assigned_template = context.layout_template(page.position)
+    payload = SlideGenerationInput(
+        deck_title=context.title,
+        audience=context.audience,
+        tone=context.tone,
+        position=page.position,
+        total_pages=context.total,
+        page_title=page.page.title,
+        objective=page.page.objective,
+        key_points=page.page.key_points,
+        layout_id=assigned_layout_id,
+        layout_mode=context.layout_mode,
+        content_density=context.content_density,
+        page_role=page_role,
+        narrative_role=getattr(page.page, "narrative_role", None) or "supporting",
+        evidence_kind=getattr(page.page, "evidence_kind", None) or "narrative",
+        visual_type=getattr(page.page, "visual_type", None) or "auto",
+        topic_mode=context.topic_mode,
+        topic_request=context.topic_request,
+        travel_context=context.travel_context,
+        travel_page=plan.travel_page,
+        key_message=page.page.key_message,
+        evidence=page.page.evidence,
+        blueprint=context.blueprint,
+        sections=[
+            context.sections[ref] for ref in page.page.source_refs if ref in context.sections
+        ],
+        neighbor_titles=context.neighbor_titles(page.position),
+        other_page_briefs=context.other_page_briefs(page.position),
+        visual_hint=visual_hint,
+        image_plan=plan.image_plan,
+        # 跨页多样性必须提前分配：各页并发生成，看不到彼此的版式
+        layout_template=assigned_template.id if assigned_template else None,
+        skeleton_hint=assigned_template.hint if assigned_template else None,
+        allow_callout=allows_callout(page.position),
+    )
+
+    try:
+        slide, issues = await run_slide_workflow(
+            workflow,
+            payload,
+            slide_id,
+            theme_id=context.theme_id,
+            theme_overrides=context.theme_overrides,
+        )
+    except Exception as error:
+        logger.error(
+            "slide generation failed project_id=%s slide_id=%s position=%s details=%s",
+            project_id,
+            slide_id,
+            page.position,
+            safe_error_details(error),
+        )
+        await _save_failed(slide_id, _public_error(error))
+        await _publish(project_id, "slide_failed", f"第 {page.position} 页生成失败", slide_id, page)
+        return
+
+    ready = await _save_ready(slide_id, slide, issues, intended_mode=context.layout_mode)
+    await _publish(
+        project_id,
+        "slide_completed" if ready else "slide_failed",
+        f"第 {page.position} 页已完成" if ready else f"第 {page.position} 页需要修复，草稿已保留",
+        slide_id,
+        page,
+    )
+    if queue is None or not ready:
+        return
+    image_ids = [
+        b.id
+        for b in slide.blocks
+        if b.type == "image"
+        and not b.url
+        and not b.locked
+        and not (context.travel_context and plan.travel_page)
+    ]
+    if image_ids:
+        try:
+            async with async_session_factory() as session:
+                current = await lock_slide(session, project_id, slide_id)
+                if current and current.status == "ready":
+                    await queue_image_job(session, queue, current, image_ids)
+        except Exception as error:
+            logger.warning("automatic image enqueue failed type=%s", type(error).__name__)
+
+
+class DeckContext:
+    """一次编排里所有页共享的只读上下文，避免每页重新查库。"""
+
+    def __init__(
+        self,
+        *,
+        user_id: uuid.UUID,
+        title: str,
+        audience: str | None,
+        tone: str,
+        theme_id: str,
+        theme_overrides: dict,
+        layout_mode: str,
+        content_density: str,
+        sections: dict[str, OutlineSourceSection],
+        pages: dict[uuid.UUID, "SlideTarget"],
+        ordered_titles: list[str],
+        blueprint: DeckBlueprint | None = None,
+        topic_mode: bool = False,
+        topic_request: str | None = None,
+        travel_context: dict | None = None,
+    ) -> None:
+        from app.engine.content.content_density import normalize_density
+
+        self.user_id = user_id
+        self.title = title
+        self.audience = audience
+        self.tone = tone
+        self.theme_id = theme_id
+        self.theme_overrides = theme_overrides
+        self.layout_mode = layout_mode if layout_mode in ("fixed", "flex") else "flex"
+        self.content_density = normalize_density(content_density)
+        self.sections = sections
+        self.pages = pages
+        self.total = len(ordered_titles)
+        self._ordered_titles = ordered_titles
+        self.blueprint = blueprint or DeckBlueprint()
+        self.topic_mode = topic_mode
+        self.topic_request = topic_request
+        self.travel_context = travel_context
+        ordered_pages = sorted(pages.values(), key=lambda target: target.position)
+        self._layout_templates = (
+            assign_layout_templates(
+                [target.page for target in ordered_pages],
+                seed=":".join(str(target.page.id) for target in ordered_pages),
+                topic_mode=topic_mode,
+            )
+            if self.layout_mode == "flex"
+            else {}
+        )
+        self._fixed_layout_ids = (
+            assign_fixed_layouts(
+                [target.page for target in ordered_pages],
+                seed=":".join(str(target.page.id) for target in ordered_pages),
+            )
+            if self.topic_mode and self.layout_mode == "fixed"
+            else {}
+        )
+
+    def neighbor_titles(self, position: int) -> list[str]:
+        start = max(0, position - 2)
+        return self._ordered_titles[start : position + 1]
+
+    def layout_template(self, position: int) -> LayoutTemplate | None:
+        return self._layout_templates.get(position)
+
+    def layout_id(self, position: int, fallback: str) -> str:
+        return self._fixed_layout_ids.get(position, fallback)
+
+    def other_page_briefs(self, position: int) -> list[dict[str, Any]]:
+        if not self.topic_mode:
+            return []
+        return [
+            {
+                "position": target.position,
+                "title": target.page.title,
+                "objective": target.page.objective,
+                "key_message": target.page.key_message,
+                "key_points": target.page.key_points,
+                "narrative_role": target.page.narrative_role,
+                "evidence_kind": target.page.evidence_kind,
+                "visual_type": target.page.visual_type,
+            }
+            for target in sorted(self.pages.values(), key=lambda item: item.position)
+            if target.position != position
+        ]
+
+
+class SlideTarget:
+    def __init__(self, position: int, page: OutlinePage) -> None:
+        self.position = position
+        self.page = page
+
+
+async def _load_context(project_id: uuid.UUID) -> DeckContext | None:
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(Project)
+            .options(selectinload(Project.sources), selectinload(Project.outline))
+            .where(Project.id == project_id)
+        )
+        project = result.scalar_one_or_none()
+        if project is None or project.outline is None or project.outline.status != "confirmed":
+            return None
+
+        pages = outline_pages(project)
+        by_page_id = {page.id: (index, page) for index, page in enumerate(pages, start=1)}
+
+        slides = await load_slides(session, project_id)
+        targets = {
+            slide.id: SlideTarget(*by_page_id[slide.outline_page_id])
+            for slide in slides
+            if slide.outline_page_id in by_page_id
+        }
+
+        sections = {
+            f"S{source_index}:{section_index}": OutlineSourceSection(
+                ref=f"S{source_index}:{section_index}",
+                heading=section.get("heading"),
+                level=section.get("level", 0),
+                text=section.get("text", ""),
+                locator=section.get("locator", ""),
+                diagrams=section.get("diagrams", []),
+                tables=section.get("tables", []),
+            )
+            for source_index, source in enumerate(project.sources, start=1)
+            for section_index, section in enumerate(source.sections, start=1)
+        }
+        from app.modules.travel.planning import travel_context, travel_sections
+        from app.modules.travel.research import current_research, is_travel
+
+        research = await current_research(session, project) if is_travel(project) else None
+        travel = travel_context(research, project.travel_booking_states)
+        if is_travel(project) and (
+            travel is None or research.id != project.outline.travel_research_id
+        ):
+            raise ValueError("旅行资料版本与已确认大纲不一致")
+        sections.update({section.ref: section for section in travel_sections(research)})
+
+        return DeckContext(
+            travel_context=travel,
+            user_id=project.user_id,
+            title=project.title,
+            audience=project.audience,
+            tone=project.tone,
+            theme_id=project.theme_id,
+            theme_overrides=dict(project.theme_overrides or {}),
+            layout_mode=getattr(project, "layout_mode", None) or "flex",
+            content_density=getattr(project, "content_density", None) or "medium",
+            sections=sections,
+            pages=targets,
+            ordered_titles=[page.title for page in pages],
+            blueprint=DeckBlueprint.model_validate(project.outline.blueprint or {}),
+            topic_mode=any(source.kind == "topic" for source in project.sources),
+            topic_request="\n\n".join(
+                topic_request_from_sections(source.sections, fallback=project.title)
+                for source in project.sources
+                if source.kind == "topic"
+            )
+            or None,
+        )
+
+
+async def _mark_generating(slide_id: uuid.UUID) -> bool:
+    async with async_session_factory() as session:
+        slide = await session.get(Slide, slide_id, with_for_update=True)
+        if slide is None or slide.status == "ready":
+            return False
+        slide.status = "generating"
+        slide.error = None
+        await session.commit()
+        return True
+
+
+async def _save_ready(
+    slide_id: uuid.UUID,
+    content: SlideContent,
+    issues: list[StructureIssue],
+    *,
+    intended_mode: str,
+) -> bool:
+    async with async_session_factory() as session:
+        slide = await session.get(Slide, slide_id)
+        if slide is None:
+            return False
+        # Serialize continuation insertion and the deck's page budget, then lock
+        # the target row. Concurrent page workers must use the same lock order.
+        project = (
+            await session.execute(
+                select(Project)
+                .options(selectinload(Project.outline))
+                .where(Project.id == slide.project_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        await session.refresh(slide, with_for_update=True)
+        slide.layout_id = content.layout_id
+        slide.blocks = [block.model_dump(mode="json") for block in content.blocks]
+        slide.speaker_notes = content.speaker_notes
+        # 以项目编排意图为准，避免内容默认值把 flex 页落成 fixed
+        mode = intended_mode if intended_mode in ("fixed", "flex") else content.layout_mode
+        if mode == "flex":
+            slide.layout_mode = "flex"
+            slide.layout_tree = (
+                content.layout_tree.model_dump(mode="json")
+                if content.layout_tree is not None
+                else None
+            )
+        else:
+            slide.layout_mode = "fixed"
+            slide.layout_tree = None
+        slide.issues = [issue.model_dump(mode="json") for issue in issues]
+        slide.status = "ready"
+        slide.error = None
+        slide.revision += 1
+        if project is not None:
+            from app.modules.decks.table_pagination import paginate_generated_slides
+
+            slides = await load_slides(session, project.id)
+            slides = await paginate_generated_slides(
+                session, project, slides, generated_ids={slide.id}
+            )
+            page = next(
+                (page for page in outline_pages(project) if page.id == slide.outline_page_id), None
+            )
+            page_ids = {slide.outline_page_id}
+            if page:
+                page_ids.update(
+                    p.id for p in outline_pages(project) if p.continuation_of == page.id
+                )
+            for generated in slides:
+                if generated.outline_page_id in page_ids:
+                    failed = [
+                        issue for issue in generated.issues if issue.get("severity") == "error"
+                    ]
+                    generated.status = "failed" if failed else "ready"
+                    generated.error = (
+                        ("页面尚未通过格式验收，草稿已保留：" + failed[0]["message"])
+                        if failed
+                        else None
+                    )
+        await session.commit()
+        return slide.status == "ready"
+
+
+async def _save_failed(slide_id: uuid.UUID, message: str) -> None:
+    async with async_session_factory() as session:
+        slide = await session.get(Slide, slide_id, with_for_update=True)
+        if slide is None:
+            return
+        slide.status = "failed"
+        slide.error = message
+        await session.commit()
+
+
+async def _publish(
+    project_id: uuid.UUID,
+    event_type: str,
+    message: str,
+    slide_id: uuid.UUID | None,
+    page: SlideTarget | None,
+) -> None:
+    async with async_session_factory() as session:
+        project = await session.get(Project, project_id)
+        slides = await load_slides(session, project_id)
+        status = deck_status(
+            slides,
+            project_status=project.status if project is not None else None,
+        )
+
+    total = len(slides)
+    ready = sum(1 for slide in slides if slide.status == "ready")
+    failed = sum(1 for slide in slides if slide.status == "failed")
+    await deck_events.publish(
+        project_id,
+        DeckEvent(
+            type=event_type,  # type: ignore[arg-type]
+            status=status,
+            progress=int((ready + failed) * 100 / total) if total else 0,
+            message=message,
+            slide_id=slide_id,
+            position=page.position if page else None,
+            ready=ready,
+            failed=failed,
+            total=total,
+        ),
+    )
+
+
+async def _finish(
+    project_id: uuid.UUID, *, cancelled: bool, generated_ids: set[uuid.UUID] | None = None
+) -> None:
+    async with async_session_factory() as session:
+        project = await session.get(Project, project_id)
+        slides = await load_slides(session, project_id)
+        # 收尾时不再把 project.generating 算进去：任务已结束，剩余 pending 应落为 partial
+        status = deck_status(slides)
+        if project is not None:
+            project.status = "ready" if status == "ready" else "outline_ready"
+            await session.commit()
+        images = deck_image_coverage(project, slides) if project is not None else None
+
+    if cancelled:
+        await clear_cancel(project_id)
+
+    failed = sum(1 for slide in slides if slide.status == "failed")
+    ready = sum(1 for slide in slides if slide.status == "ready")
+    total = len(slides)
+    if cancelled:
+        message = "生成已取消，已完成的页面保留"
+        event_type = "cancelled"
+    elif failed:
+        message = f"生成结束，{failed} 页失败，可单独重试"
+        event_type = "completed"
+    else:
+        message = "全部页面正文已生成"
+        if images is not None:
+            message += f"，已配图 {images.ready} 张"
+            if images.pending:
+                message += f"，{images.pending} 张图片处理中"
+            elif images.failed or images.missing or images.ready < images.minimum:
+                message += "，配图尚未完成，请查看图片状态"
+        event_type = "completed"
+
+    await deck_events.publish(
+        project_id,
+        DeckEvent(
+            type=event_type,  # type: ignore[arg-type]
+            status=status,
+            progress=100,
+            message=message,
+            ready=ready,
+            failed=failed,
+            total=total,
+        ),
+    )
+
+
+def _public_error(error: Exception) -> str:
+    if isinstance(error, LLMNotConfiguredError):
+        return str(error)
+    if isinstance(error, LLMTimeoutError):
+        return "模型请求超时，自动重试后仍未成功，请稍后重试"
+    if isinstance(error, LLMUnavailableError):
+        return "模型服务暂不可用，自动重试后仍未成功，请稍后重试"
+    if isinstance(error, InvalidModelOutputError):
+        return "模型返回内容格式不正确，自动重试后仍未成功，请重试这一页"
+    # 不把供应商响应或输入材料落库，避免错误信息成为敏感数据旁路
+    return "页面生成失败，请重试"

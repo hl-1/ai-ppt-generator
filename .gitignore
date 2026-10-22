@@ -1,5 +1,9 @@
-# 项目文档
-docs/
+# 本机运行产物
+.local/
+
+# 本地代理规则
+AGENTS.md
+AGENTS.override.md
 
 # 操作系统
 .DS_Store
@@ -21,7 +25,7 @@ Desktop.ini
 .classpath
 .settings/
 
-# AI 编码工具（本地目录 / 缓存；项目级说明文件如 AGENTS.md、CLAUDE.md 可按需提交）
+# AI 编码工具（本地目录 / 缓存）
 .cursor/
 .claude/
 .codex/
@@ -44,13 +48,14 @@ Desktop.ini
 .env
 .env.*
 !.env.example
+!deploy/.env.production.example
 *.pem
 *.key
 credentials.json
 secrets.json
 
 # 部署证书（私钥等敏感文件，走 scp 上传，不进 Git）
-deploy/
+deploy/certs/
 
 # 依赖
 node_modules/

@@ -6,11 +6,12 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.core.db import async_session_factory
-from app.domain.layout import load_layouts
+from app.engine.layout.layout import load_layouts
+from app.infrastructure.database.session import async_session_factory
 from app.main import app
-from app.models.project import Project, ProjectOutline
-from app.models.slide import Slide as SlideRow
+from app.modules.decks.models import Slide as SlideRow
+from app.modules.outlines.models import ProjectOutline
+from app.modules.projects.models import Project
 
 
 @pytest.fixture

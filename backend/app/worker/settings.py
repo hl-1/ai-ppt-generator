@@ -1,13 +1,14 @@
 from arq.connections import RedisSettings
 
 from app.core.config import get_settings
-from app.services.travel_research import generate_travel_research
+from app.infrastructure.database import models  # noqa: F401  # Worker 独立启动时注册全部模型
+from app.modules.decks.preview_tasks import generate_preview
+from app.modules.decks.tasks import generate_deck
+from app.modules.media.tasks import generate_slide_images
+from app.modules.outlines.tasks import generate_outline
+from app.modules.travel.research import generate_travel_research
 from app.worker.context import shutdown, startup
-from app.worker.deck_tasks import generate_deck
-from app.worker.image_tasks import generate_slide_images
-from app.worker.preview_tasks import generate_preview
 from app.worker.retry import MAX_TRIES
-from app.worker.tasks import generate_outline
 
 
 class WorkerSettings:

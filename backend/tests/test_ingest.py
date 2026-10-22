@@ -5,13 +5,13 @@ from docx import Document
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
-from app.ingest.base import UnsupportedDocument
-from app.ingest.docx import DocxParser
-from app.ingest.markdown import MarkdownParser
-from app.ingest.models import SourceSection
-from app.ingest.pdf import PdfParser
-from app.ingest.plain import PlainTextParser
-from app.ingest.registry import SUPPORTED_EXTENSIONS, parser_for
+from app.engine.content.source import SourceSection
+from app.modules.projects.ingest.base import UnsupportedDocument
+from app.modules.projects.ingest.docx import DocxParser
+from app.modules.projects.ingest.markdown import MarkdownParser
+from app.modules.projects.ingest.pdf import PdfParser
+from app.modules.projects.ingest.plain import PlainTextParser
+from app.modules.projects.ingest.registry import SUPPORTED_EXTENSIONS, parser_for
 
 
 def test_plain_text_splits_blank_line_paragraphs() -> None:

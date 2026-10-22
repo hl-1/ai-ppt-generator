@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.domain.outline import OutlinePage
-from app.services.deck import invalidate_outline_slides
-from app.worker import deck_tasks
+from app.engine.content.outline import OutlinePage
+from app.modules.decks import tasks as deck_tasks
+from app.modules.decks.service import invalidate_outline_slides
 
 
 def page(**changes):
@@ -39,7 +39,7 @@ async def test_outline_edits_invalidate_only_changed_slide(monkeypatch, changes)
             pages=[item.model_dump(mode="json") for item in [original, unchanged]], blueprint={}
         ),
     )
-    monkeypatch.setattr("app.services.deck.load_slides", AsyncMock(return_value=slides))
+    monkeypatch.setattr("app.modules.decks.service.load_slides", AsyncMock(return_value=slides))
 
     await invalidate_outline_slides(
         AsyncMock(), project, [original.model_copy(update=changes), unchanged]
@@ -55,7 +55,7 @@ async def test_unchanged_outline_keeps_ready_slides(monkeypatch):
         outline=SimpleNamespace(pages=[original.model_dump(mode="json")], blueprint={}),
     )
     load = AsyncMock()
-    monkeypatch.setattr("app.services.deck.load_slides", load)
+    monkeypatch.setattr("app.modules.decks.service.load_slides", load)
 
     await invalidate_outline_slides(AsyncMock(), project, [original])
 

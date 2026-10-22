@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 
 from app.core.paths import REPO_ROOT
-from app.domain.flex_layout import FlexContainer, FlexLeaf, FlexNode
-from app.domain.flex_normalize import normalize
-from app.domain.flex_solve import solve
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf, FlexNode
+from app.engine.layout.flex_normalize import normalize
+from app.engine.layout.flex_solve import solve
 
 
 def _leaf(node_id: str, *, grow: float = 1.0, text_style: str | None = None) -> FlexLeaf:
@@ -60,9 +60,7 @@ def test_title_grow_kept_when_clamp_disabled() -> None:
     assert kept.children[0].grow == pytest.approx(1.4)
     assert kept.children[1].grow == pytest.approx(0.6)
     # 幂等
-    assert (
-        normalize(kept, clamp_title_grow=False).model_dump() == kept.model_dump()
-    )
+    assert normalize(kept, clamp_title_grow=False).model_dump() == kept.model_dump()
 
 
 def test_max_nesting_depth_flattens() -> None:
@@ -83,9 +81,7 @@ def test_max_nesting_depth_flattens() -> None:
         node = node.children[0]
     assert isinstance(node, FlexContainer)
     assert all(isinstance(child, FlexLeaf) for child in node.children)
-    assert any(
-        isinstance(child, FlexLeaf) and child.block_id == "deep" for child in node.children
-    )
+    assert any(isinstance(child, FlexLeaf) and child.block_id == "deep" for child in node.children)
 
 
 def test_flatten_keeps_empty_spacer() -> None:

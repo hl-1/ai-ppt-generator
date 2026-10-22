@@ -9,19 +9,20 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_queue
 from app.api.sse import _encode
-from app.core.db import async_session_factory
-from app.domain.outline import EvidenceItem, OutlineDraft, OutlinePageDraft
-from app.llm.base import OutlineGenerationInput
-from app.llm.errors import InvalidOutlineOutputError, LLMNotConfiguredError
+from app.engine.content.outline import EvidenceItem, OutlineDraft, OutlinePageDraft
+from app.infrastructure.database.session import async_session_factory
+from app.infrastructure.llm.base import OutlineGenerationInput
+from app.infrastructure.llm.errors import InvalidOutlineOutputError, LLMNotConfiguredError
 from app.main import app
-from app.models.project import Project, ProjectOutline
-from app.schemas.outline import OutlineEvent
-from app.services.outline_inputs import (
+from app.modules.outlines.inputs import (
     _legacy_signature_with_page_count,
     project_input_signature,
 )
+from app.modules.outlines.models import ProjectOutline
+from app.modules.outlines.schemas import OutlineEvent
+from app.modules.outlines.tasks import generate_outline
+from app.modules.projects.models import Project
 from app.worker.retry import MAX_TRIES
-from app.worker.tasks import generate_outline
 
 
 class FakeQueue:
@@ -40,7 +41,7 @@ async def queue(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[FakeQueue, No
     async def ignore_progress(*_args, **_kwargs) -> None:
         pass
 
-    monkeypatch.setattr("app.services.outline_progress.outline_events.publish", ignore_progress)
+    monkeypatch.setattr("app.modules.outlines.progress.outline_events.publish", ignore_progress)
     app.dependency_overrides[get_queue] = lambda: fake
     yield fake
     app.dependency_overrides.pop(get_queue, None)
@@ -176,8 +177,8 @@ async def _complete_outline(project_id: str) -> ProjectOutline:
 
 
 async def test_editing_outline_marks_existing_content_for_regeneration(client, queue):
-    from app.models.slide import Slide
-    from app.services.deck import sync_slides
+    from app.modules.decks.models import Slide
+    from app.modules.decks.service import sync_slides
 
     headers = await _sign_up(client)
     project = await _project(client, headers)
@@ -298,7 +299,7 @@ async def test_worker_publishes_stage_progress(
     async def capture(_project_id, event: OutlineEvent) -> None:
         events.append(event)
 
-    monkeypatch.setattr("app.worker.tasks.publish_outline_event", capture)
+    monkeypatch.setattr("app.modules.outlines.tasks.publish_outline_event", capture)
     await generate_outline(
         {"outline_generator": FakeGenerator(), "job_try": 1},
         project["id"],
@@ -397,7 +398,7 @@ async def test_fit_outline_page_rebuilds_chart_content_from_sources(
     await client.post(f"/api/v1/projects/{project['id']}/outline/generate", headers=headers)
     outline = await _complete_outline(project["id"])
     monkeypatch.setattr(
-        "app.api.v1.outlines.create_outline_generator",
+        "app.modules.outlines.router.create_outline_generator",
         lambda: FakeRefitGenerator(),
     )
 

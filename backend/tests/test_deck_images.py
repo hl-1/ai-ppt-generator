@@ -6,39 +6,50 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.domain.content import BulletsBlock, Deck, ImageBlock, Slide, TextBlock
-from app.domain.deck_images import image_budget, plan_deck_images
-from app.domain.enterprise_layout import compose_report_slide
-from app.domain.export_check import check_images
-from app.domain.image_coverage import summarize_images
-from app.domain.outline import EvidenceItem, ImagePlan, OutlinePageDraft
-from app.domain.page_rhythm import assign_layout_templates
-from app.domain.slide_geometry import placed_by_block_id
-from app.domain.theme import get_theme
-from app.domain.topic_uniqueness import find_duplicate_topic_layouts
-from app.images.base import ImageAsset
-from app.images.errors import ImageFetchError
-from app.images.pipeline import ImagePipeline
-from app.services.deck import deck_image_coverage
-from app.services.slide_images import resolve_slide_images
-from app.workflows.outline import build_outline_workflow, run_outline_workflow
+from app.engine.content.content import BulletsBlock, Deck, ImageBlock, Slide, TextBlock
+from app.engine.content.outline import EvidenceItem, ImagePlan, OutlinePageDraft
+from app.engine.layout.deck_images import image_budget, plan_deck_images
+from app.engine.layout.enterprise_layout import compose_report_slide
+from app.engine.layout.page_rhythm import assign_layout_templates
+from app.engine.layout.slide_geometry import placed_by_block_id
+from app.engine.layout.theme import get_theme
+from app.engine.quality.export_check import check_images
+from app.engine.quality.image_coverage import summarize_images
+from app.engine.quality.topic_uniqueness import find_duplicate_topic_layouts
+from app.infrastructure.providers.images.base import ImageAsset
+from app.infrastructure.providers.images.errors import ImageFetchError
+from app.infrastructure.providers.images.pipeline import ImagePipeline
+from app.modules.decks.service import deck_image_coverage
+from app.modules.media.slide_images import resolve_slide_images
+from app.modules.outlines.workflow import build_outline_workflow, run_outline_workflow
 from tests.test_images import MINIMAL_PNG, minimal_png
 from tests.test_outline_workflow import FakeOutlineGenerator, _input
 
 
 def page(index=0, **changes):
     values = dict(
-        title=f"应用场景 {index}", objective=f"说明场景 {index} 的业务价值",
+        title=f"应用场景 {index}",
+        objective=f"说明场景 {index} 的业务价值",
         key_points=[f"场景 {index} 的关键问题", f"场景 {index} 的应用价值"],
-        layout_id="bullets", page_role="cover" if index == 0 else "content",
+        layout_id="bullets",
+        page_role="cover" if index == 0 else "content",
     )
     return OutlinePageDraft(**(values | changes))
 
 
-@pytest.mark.parametrize(("count", "expected"), [
-    (0, (0, 0)), (1, (1, 1)), (5, (2, 2)), (8, (2, 3)),
-    (10, (2, 3)), (15, (2, 5)), (16, (2, 5)), (25, (2, 8)),
-])
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [
+        (0, (0, 0)),
+        (1, (1, 1)),
+        (5, (2, 2)),
+        (8, (2, 3)),
+        (10, (2, 3)),
+        (15, (2, 5)),
+        (16, (2, 5)),
+        (25, (2, 8)),
+    ],
+)
 def test_image_budgets(count, expected):
     assert image_budget(count) == expected
 
@@ -97,18 +108,31 @@ def test_image_layouts_rotate_and_keep_image_and_text_apart():
     slides = []
     for index, item in enumerate(pages, start=1):
         slide = compose_report_slide(
-            Slide(id=str(index), layout_id="image-right", layout_mode="flex", blocks=[
-                TextBlock(id="title", slot_id="title", text=item.title),
-                ImageBlock(id="image", slot_id="image", alt=item.image_plan.subject,
-                           source="placeholder"),
-                BulletsBlock(id="insight", slot_id="body", items=item.key_points),
-            ]), item, layout_template=templates[index].id,
+            Slide(
+                id=str(index),
+                layout_id="image-right",
+                layout_mode="flex",
+                blocks=[
+                    TextBlock(id="title", slot_id="title", text=item.title),
+                    ImageBlock(
+                        id="image",
+                        slot_id="image",
+                        alt=item.image_plan.subject,
+                        source="placeholder",
+                    ),
+                    BulletsBlock(id="insight", slot_id="body", items=item.key_points),
+                ],
+            ),
+            item,
+            layout_template=templates[index].id,
         )
         positions = placed_by_block_id(slide)
         assert "image" in positions and "insight" in positions
         a, b = positions["image"].rect, positions["insight"].rect
-        assert a.x + a.w <= b.x + 0.001 or b.x + b.w <= a.x + 0.001 or (
-            a.y + a.h <= b.y + 0.001 or b.y + b.h <= a.y + 0.001
+        assert (
+            a.x + a.w <= b.x + 0.001
+            or b.x + b.w <= a.x + 0.001
+            or (a.y + a.h <= b.y + 0.001 or b.y + b.h <= a.y + 0.001)
         )
         assert a.w * a.h > 0.15
         slides.append(slide)
@@ -139,12 +163,25 @@ def asset(data=MINIMAL_PNG):
 
 async def resolve(provider, **options):
     return await resolve_slide_images(
-        ImagePipeline([provider]), user_id=uuid.uuid4(), project_id=uuid.uuid4(),
-        deck_title="智能制造", page_title="工厂巡检",
-        slide=Slide(id="slide", layout_id="image-right", blocks=[
-            ImageBlock(id="image", slot_id="image", alt="工厂巡检机器人", source="placeholder",
-                       image_plan=ImagePlan(subject="工厂巡检机器人", source="generated")),
-        ]), **options,
+        ImagePipeline([provider]),
+        user_id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        deck_title="智能制造",
+        page_title="工厂巡检",
+        slide=Slide(
+            id="slide",
+            layout_id="image-right",
+            blocks=[
+                ImageBlock(
+                    id="image",
+                    slot_id="image",
+                    alt="工厂巡检机器人",
+                    source="placeholder",
+                    image_plan=ImagePlan(subject="工厂巡检机器人", source="generated"),
+                ),
+            ],
+        ),
+        **options,
     )
 
 
@@ -171,8 +208,9 @@ async def test_exhausted_retry_leaves_visible_failure():
 
 async def test_duplicate_generated_bytes_retry_with_another_image():
     provider = SequenceProvider([asset(), asset(minimal_png(width=3))])
-    slide = await resolve(provider, attempts=2,
-                          excluded_ids={f"sha256:{sha256(MINIMAL_PNG).hexdigest()}"})
+    slide = await resolve(
+        provider, attempts=2, excluded_ids={f"sha256:{sha256(MINIMAL_PNG).hexdigest()}"}
+    )
     assert len(provider.requests) == 2
     assert slide.blocks[0].image_status == "ready"
 
@@ -189,26 +227,44 @@ async def test_concurrent_duplicate_reservation_does_not_count_as_success():
 def test_coverage_counts_unique_resources_and_expires_stale_jobs():
     def block(**values):
         return {"type": "image", "source": "generated", **values}
-    result = summarize_images([
-        block(url="/a", image_asset_id="first"),
-        block(url="/b", image_asset_id="first"),
-        block(url="/b", image_asset_id="second"),
-        block(image_status="queued", image_job_started_at=time.time()),
-        block(image_status="queued", image_job_started_at=time.time() - 1000),
-        block(image_status="failed"), block(source="placeholder", url="/fake"),
-    ], minimum=2, unfilled_plans=1)
+
+    result = summarize_images(
+        [
+            block(url="/a", image_asset_id="first"),
+            block(url="/b", image_asset_id="first"),
+            block(url="/b", image_asset_id="second"),
+            block(image_status="queued", image_job_started_at=time.time()),
+            block(image_status="queued", image_job_started_at=time.time() - 1000),
+            block(image_status="failed"),
+            block(source="placeholder", url="/fake"),
+        ],
+        minimum=2,
+        unfilled_plans=1,
+    )
     assert result.model_dump() == {
-        "minimum": 2, "planned": 8, "ready": 1, "pending": 1,
-        "failed": 2, "missing": 2, "duplicates": 2,
+        "minimum": 2,
+        "planned": 8,
+        "ready": 1,
+        "pending": 1,
+        "failed": 2,
+        "missing": 2,
+        "duplicates": 2,
     }
 
 
 def test_missing_planned_image_is_reported_even_without_a_block():
     outline_id = uuid.uuid4()
-    project = SimpleNamespace(outline=SimpleNamespace(pages=[{
-        **page().model_dump(), "id": str(outline_id),
-        "image_plan": {"subject": "工业机器人"},
-    }]))
+    project = SimpleNamespace(
+        outline=SimpleNamespace(
+            pages=[
+                {
+                    **page().model_dump(),
+                    "id": str(outline_id),
+                    "image_plan": {"subject": "工业机器人"},
+                }
+            ]
+        )
+    )
     slide = SimpleNamespace(outline_page_id=outline_id, status="ready", blocks=[])
     coverage = deck_image_coverage(project, [slide])
     assert coverage.planned == coverage.missing == 1
@@ -216,17 +272,31 @@ def test_missing_planned_image_is_reported_even_without_a_block():
 
 
 def test_export_checks_loaded_bytes_for_duplicates_placeholders_and_minimum():
-    deck = Deck(id="deck", title="测试", theme_id="ivory", slides=[
-        Slide(id="first", layout_id="image-right", blocks=[
-            ImageBlock(id="a", slot_id="image", alt="机器人", source="generated", url="/a"),
-        ]),
-        Slide(id="second", layout_id="image-right", blocks=[
-            ImageBlock(id="b", slot_id="image", alt="工厂", source="generated", url="/b"),
-            ImageBlock(id="c", slot_id="body", alt="设备", source="placeholder"),
-        ]),
-    ])
-    issues = check_images(deck, load_image=lambda _: MINIMAL_PNG,
-                          media_key_from_url=lambda url: url, minimum_images=2)
+    deck = Deck(
+        id="deck",
+        title="测试",
+        theme_id="ivory",
+        slides=[
+            Slide(
+                id="first",
+                layout_id="image-right",
+                blocks=[
+                    ImageBlock(id="a", slot_id="image", alt="机器人", source="generated", url="/a"),
+                ],
+            ),
+            Slide(
+                id="second",
+                layout_id="image-right",
+                blocks=[
+                    ImageBlock(id="b", slot_id="image", alt="工厂", source="generated", url="/b"),
+                    ImageBlock(id="c", slot_id="body", alt="设备", source="placeholder"),
+                ],
+            ),
+        ],
+    )
+    issues = check_images(
+        deck, load_image=lambda _: MINIMAL_PNG, media_key_from_url=lambda url: url, minimum_images=2
+    )
     messages = [issue.message for issue in issues]
     assert any("重复" in message for message in messages)
     assert any("仍是占位" in message for message in messages)

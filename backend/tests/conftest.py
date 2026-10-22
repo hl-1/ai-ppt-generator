@@ -3,14 +3,15 @@ import tempfile
 
 # 必须在导入任何读取配置的模块之前改环境变量：Settings 与 Storage 都是
 # lru_cache 单例，一旦构造好就不会再看环境。否则测试会往真实的
-# backend/var/storage 落文件。
+# .local/runtime/storage 落文件。
 _STORAGE_DIR = tempfile.mkdtemp(prefix="aippt-test-storage-")
 os.environ["STORAGE_LOCAL_DIR"] = _STORAGE_DIR
 os.environ["STORAGE_DRIVER"] = "local"
 
 import pytest  # noqa: E402
 
-from app.core.db import engine  # noqa: E402
+from app.infrastructure.database import models  # noqa: E402, F401
+from app.infrastructure.database.session import engine  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

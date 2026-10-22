@@ -81,10 +81,10 @@ export interface paths {
         };
         /**
          * List Layouts
-         * @description �·����ֶ��塣
+         * @description 下发布局定义。
          *
-         *     ǰ�˱���ֱ�Ӷ� shared/ �µ�ͬһ���ļ�������ӿڵ�������������
-         *     ������ʱУ���������ͬһ�����ݣ�Ҳ�� OpenAPI ����ϲ��ֵ����Ͷ��塣
+         *     前端本可直接读 shared/ 下的同一批文件，这个接口的作用是让两端
+         *     在运行时校验读到的是同一份数据，也让 OpenAPI 里带上布局的类型定义。
          */
         get: operations["list_layouts_api_v1_design_layouts_get"];
         put?: never;
@@ -233,7 +233,7 @@ export interface paths {
         head?: never;
         /**
          * Update Project Theme
-         * @description ��������Ԥ���ϸ���ȸ��ǣ����ȷ�Ϻ��Կ��á�
+         * @description 更新主题预设或细粒度覆盖；大纲确认后仍可用。
          */
         patch: operations["update_project_theme_api_v1_projects__project_id__theme_patch"];
         trace?: never;
@@ -352,7 +352,7 @@ export interface paths {
         put?: never;
         /**
          * Fit Outline Page Evidence
-         * @description ���û�ѡ���ͼ�����ͣ�����Դ�����ع�һҳ��١�
+         * @description 按用户选择的图表类型，用来源材料重构一页大纲。
          */
         post: operations["fit_outline_page_evidence_api_v1_projects__project_id__outline_pages__page_id__fit_evidence_post"];
         delete?: never;
@@ -438,7 +438,7 @@ export interface paths {
         };
         /**
          * Get Deck Quality
-         * @description ����ǰ�������棺�ּ� issues ���Ƿ���������������߼��� build_quality_report��
+         * @description 导出前质量报告：分级 issues 与是否允许导出。检查逻辑见 build_quality_report。
          */
         get: operations["get_deck_quality_api_v1_projects__project_id__deck_quality_get"];
         put?: never;
@@ -458,7 +458,7 @@ export interface paths {
         };
         /**
          * Export Deck
-         * @description ͬ��������Ŀ PPTX����� �� ��Ⱦ �� �ض���֤ �� �����ļ�����
+         * @description 同步导出项目 PPTX：检查 → 渲染 → 回读验证 → 返回文件流。
          */
         get: operations["export_deck_api_v1_projects__project_id__deck_export_get"];
         put?: never;
@@ -605,7 +605,7 @@ export interface paths {
         head?: never;
         /**
          * Update Slide Block Style
-         * @description ����Ԫ�ؼ���ʽ���ǡ����� locked������ɫ���õ�ס AI ��д���֡�
+         * @description 更新元素级样式覆盖。不置 locked：改颜色不该挡住 AI 改写文字。
          */
         patch: operations["update_slide_block_style_api_v1_projects__project_id__deck_slides__slide_id__blocks__block_id__style_patch"];
         trace?: never;
@@ -739,7 +739,7 @@ export interface paths {
         get?: never;
         /**
          * Update Flex State
-         * @description ԭ��д�� blocks + layout_tree��������/�����ָ���ҳ�ṹ��
+         * @description 原子写回 blocks + layout_tree，供撤销/重做恢复整页结构。
          */
         put: operations["update_flex_state_api_v1_projects__project_id__deck_slides__slide_id__flex_state_put"];
         post?: never;
@@ -828,7 +828,7 @@ export interface paths {
         put?: never;
         /**
          * Insert Slide
-         * @description ����һ�ſհ�ҳ�������ڱ������ɣ���������һ�� AI��
+         * @description 插入一张空白页，内容在本地生成，无需再跑一遍 AI。
          */
         post: operations["insert_slide_api_v1_projects__project_id__deck_slides_post"];
         delete?: never;
@@ -1189,7 +1189,7 @@ export interface components {
             valid_until?: string | null;
             /**
              * Note
-             * @default ��δ������δȡ�ö�Ӧ���ڿ�������Ԥ��
+             * @default 暂未发布或未取得对应日期空气质量预报
              */
             note: string;
         };
@@ -1217,7 +1217,7 @@ export interface components {
         };
         /**
          * BlockStyle
-         * @description ����Ԫ������������ʽ���ǡ�
+         * @description 单个元素相对主题的样式覆盖。
          */
         BlockStyle: {
             /** Size Pt */
@@ -1243,7 +1243,7 @@ export interface components {
         };
         /**
          * BlockStyleUpdate
-         * @description Ԫ�ؼ���ʽ���ǣ�style Ϊ null ��ʾ�����Ԫ�ص�ȫ��΢����
+         * @description 元素级样式覆盖；style 为 null 表示清除该元素的全部微调。
          */
         BlockStyleUpdate: {
             /** Revision */
@@ -1276,7 +1276,7 @@ export interface components {
             rule_status: "verified" | "pending";
             /**
              * Rule
-             * @default ԤԼ�������ʵ
+             * @default 预约规则待核实
              */
             rule: string;
             /** Fact Refs */
@@ -1582,7 +1582,7 @@ export interface components {
         };
         /**
          * CornerBracket
-         * @description �ǲ� L �μ��Σ�������ϸ����ƴ�ɡ�
+         * @description 角部 L 形几何，由两条细矩形拼成。
          */
         CornerBracket: {
             /** Scope */
@@ -1677,16 +1677,16 @@ export interface components {
             currency: string;
             /**
              * Unit
-             * @default �˴�
+             * @default 人次
              */
             unit: string;
         };
         /**
          * Deck
-         * @description PPT ��ͳһ����ģ�͡�
+         * @description PPT 的统一内容模型。
          *
-         *     ���ݡ����֡��������߷��룺��������ҳ������ݣ�
-         *     fixed ҳ�������Բ��ֲ�λ��flex ҳ�������� layout_tree���Ӿ������������⡣
+         *     内容、布局、主题三者分离：这里描述页面块内容；
+         *     fixed 页几何来自布局槽位，flex 页几何来自 layout_tree，视觉表现来自主题。
          */
         "Deck-Input": {
             /** Id */
@@ -1700,10 +1700,10 @@ export interface components {
         };
         /**
          * Deck
-         * @description PPT ��ͳһ����ģ�͡�
+         * @description PPT 的统一内容模型。
          *
-         *     ���ݡ����֡��������߷��룺��������ҳ������ݣ�
-         *     fixed ҳ�������Բ��ֲ�λ��flex ҳ�������� layout_tree���Ӿ������������⡣
+         *     内容、布局、主题三者分离：这里描述页面块内容；
+         *     fixed 页几何来自布局槽位，flex 页几何来自 layout_tree，视觉表现来自主题。
          */
         "Deck-Output": {
             /** Id */
@@ -1755,10 +1755,10 @@ export interface components {
         };
         /**
          * DeckPageResult
-         * @description ��ҳ��ɾ���ƵĽ����
+         * @description 整页增删复制的结果。
          *
-         *     ��ɾ����Ķ���ҳ position���������� deck ��ǰ��һ�λ������棻slide_id ��
-         *     ������Ӧ��ѡ�е�ҳ����ҳ����ɾ�������ҳ����
+         *     增删都会改动多页 position，返回整份 deck 让前端一次换掉缓存；slide_id 是
+         *     操作后应当选中的页（新页，或删除后的邻页）。
          */
         DeckPageResult: {
             deck: components["schemas"]["DeckPublic"];
@@ -1793,7 +1793,7 @@ export interface components {
         };
         /**
          * Decoration
-         * @description ��װ��ͼ�Σ����������ݣ�������Ⱦ����ͬһ����������
+         * @description 纯装饰图形，不承载内容，两端渲染器按同一份声明绘制
          */
         Decoration: {
             /**
@@ -2002,7 +2002,7 @@ export interface components {
         };
         /**
          * EdgeBand
-         * @description ���Ż���ĳ���ߵ�ϸɫ����
+         * @description 贴着画布某条边的细色带。
          */
         EdgeBand: {
             /** Scope */
@@ -2051,7 +2051,7 @@ export interface components {
         };
         /**
          * EvidenceItem
-         * @description ��Դԭ�������ݿھ�������ʾ��׷���ԣ���������Դ�ѻ������ʵ��
+         * @description 来源原句与数据口径；仅表示可追溯性，不代表来源已获独立核实。
          */
         EvidenceItem: {
             /** Source Ref */
@@ -2091,7 +2091,7 @@ export interface components {
         };
         /**
          * ExportCheckReport
-         * @description ����ǰ�ּ����档
+         * @description 导出前分级报告。
          */
         ExportCheckReport: {
             /** Issues */
@@ -2242,7 +2242,7 @@ export interface components {
         };
         /**
          * FlexStateUpdateRequest
-         * @description ��ҳ�ָ�����״̬������/������ɾ���뻻�Ų��ã���
+         * @description 整页恢复灵活布局状态（撤销/重做增删块与换排布用）。
          */
         FlexStateUpdateRequest: {
             /** Revision */
@@ -2253,10 +2253,10 @@ export interface components {
         };
         /**
          * FontFamily
-         * @description Web �� PPTX �ֱ�������������
+         * @description Web 与 PPTX 分别声明字体名。
          *
-         *     ��������� webfont���� PPTX ֻ�����ù��ڻ������Ѱ�װ�����壬
-         *     �����޷�ͳһ�������ʽ�ֿ���������������ĳһ�˽�����һ�ˡ�
+         *     浏览器可用 webfont，而 PPTX 只能引用观众机器上已安装的字体，
+         *     两者无法统一，因此显式分开声明，而不是让某一端将就另一端。
          */
         FontFamily: {
             /** Web */
@@ -2281,7 +2281,7 @@ export interface components {
         };
         /**
          * Glow
-         * @description ���Σ�ͬ����Բ�����Խ������ԽŨ����ʵɫ̨�ױƽ����򽥱䡣
+         * @description 光晕：同心椭圆逐层加深，越靠中心越浓，用实色台阶逼近径向渐变。
          */
         Glow: {
             /** Scope */
@@ -2334,7 +2334,7 @@ export interface components {
         };
         /**
          * HairlineGrid
-         * @description ϸ���������ڵȷֵ���������ߣ�ֻ���ڲ��ָ��ߡ�
+         * @description 细网格：区域内等分的竖线与横线，只画内部分隔线。
          */
         HairlineGrid: {
             /** Scope */
@@ -2378,8 +2378,8 @@ export interface components {
         };
         /**
          * HealthResponse
-         * @description ��ʽ������Ӧģ�ͣ��� OpenAPI �������ֶε� schema��
-         *     ǰ�������� OpenAPI ���ɣ��ӿ���ֻ������ dict�����ɽ�����˻�Ϊ object��
+         * @description 显式声明响应模型，让 OpenAPI 产出带字段的 schema。
+         *     前端类型由 OpenAPI 生成，接口若只返回裸 dict，生成结果会退化为 object。
          */
         HealthResponse: {
             /**
@@ -2404,7 +2404,7 @@ export interface components {
             revision: number;
             /**
              * Subject
-             * @default ��ͼ
+             * @default 配图
              */
             subject: string;
         };
@@ -2499,7 +2499,7 @@ export interface components {
             download_location?: string | null;
             /**
              * Match Reason
-             * @default ���˹�ȷ������
+             * @default 待人工确认主体
              */
             match_reason: string;
             /**
@@ -2962,7 +2962,7 @@ export interface components {
             status: "pending" | "started" | "succeeded" | "partial" | "retrying" | "failed" | "cancelled";
             /**
              * Message
-             * @default �ȴ�ִ��
+             * @default 等待执行
              */
             message: string;
             /** Started At */
@@ -3179,7 +3179,7 @@ export interface components {
         };
         /**
          * ProjectThemeUpdate
-         * @description ��ʽר�ø��£����ܴ�� confirmed ������
+         * @description 样式专用更新：不受大纲 confirmed 锁定。
          */
         ProjectThemeUpdate: {
             /** Theme Id */
@@ -3207,10 +3207,10 @@ export interface components {
         };
         /**
          * Rect
-         * @description ��һ�����Σ�ȡֵ 0�C1����Ի�׼������
+         * @description 归一化矩形，取值 0–1，相对基准画布。
          *
-         *     �ù�һ�����Ǿ������꣬��Ϊ��������ͼ��ȫ��Ԥ���͵�������
-         *     ����ͬһ�ݼ��ζ��壬����ֻ�����ڸ��Ե���Ⱦ�߽��ϡ�
+         *     用归一化而非绝对坐标，是为了让缩略图、全屏预览和导出三者
+         *     共用同一份几何定义，换算只发生在各自的渲染边界上。
          */
         Rect: {
             /** X */
@@ -3411,7 +3411,7 @@ export interface components {
         };
         /**
          * SlideInsertRequest
-         * @description ��ָ��ҳ֮�����հ�ҳ��null ��ʾ׷�ӵ�ĩβ��
+         * @description 在指定页之后插入空白页；null 表示追加到末尾。
          */
         SlideInsertRequest: {
             /** After Slide Id */
@@ -3487,11 +3487,11 @@ export interface components {
         };
         /**
          * SlotCapacity
-         * @description ���ֶ����ݳ��ȵ�����ʽԼ����
+         * @description 布局对内容长度的声明式约束。
          *
-         *     ����������;����Ϊ��ʾ�����Ӳָ��Լ��ģ�����ɳ��ȣ�
-         *     �Լ����������֮ǰ��һ�����۵Ŀ���ɸ�顣
-         *     �����Ƿ����������ʵ�������Ϊ׼��
+         *     它有两个用途：作为提示词里的硬指标约束模型生成长度，
+         *     以及在字体度量之前做一次廉价的快速筛查。
+         *     最终是否溢出仍以真实字体度量为准。
          */
         SlotCapacity: {
             /** Max Lines */
@@ -3552,10 +3552,10 @@ export interface components {
         };
         /**
          * SourceSection
-         * @description ������ϵ�һ���½ڡ�
+         * @description 输入材料的一个章节。
          *
-         *     ��������㼶������ƽ�ɴ��ı�������Ϊ��ٹ滮�������ǽṹ������
-         *     ԭ�ĵ����еĽṹ��Ϣ���������������ģ���ٲ�һ�顣
+         *     保留标题层级而非拍平成纯文本，是因为大纲规划本质上是结构提炼：
+         *     原文档已有的结构信息如果丢掉，等于让模型再猜一遍。
          */
         SourceSection: {
             /** Level */
@@ -3582,11 +3582,11 @@ export interface components {
         };
         /**
          * StructureIssue
-         * @description �ṹ���⡣
+         * @description 结构问题。
          *
-         *     error ��ʾ�����벼�ֵ���Լ���ƻ���������ϵ�����
-         *     warning ��ʾ����ƫ�����ܹ۸в��ѣ�����������
-         *     code �������� repair ������overflow/capacity ������������д��
+         *     error 表示内容与布局的契约被破坏，必须阻断导出；
+         *     warning 表示容量或观感建议，允许继续；已测得的内容溢出属于 error。
+         *     code 用于生成修复与最终交付检查。已测得的溢出必须阻断交付。
          */
         StructureIssue: {
             /**
@@ -3790,7 +3790,7 @@ export interface components {
         };
         /**
          * ThemeOverrides
-         * @description ���Ԥ������İ�ȫ�Ӽ����ǡ�
+         * @description 相对预设主题的安全子集覆盖。
          */
         ThemeOverrides: {
             palette?: components["schemas"]["PaletteOverride"] | null;
@@ -4147,7 +4147,7 @@ export interface components {
             status: "ready" | "partial" | "pending";
             /**
              * Note
-             * @default ·��ͼ����ѯ��ȱ�ٿɿ�����ʱ������λ��
+             * @default 路线图待查询；缺少可靠坐标时不生成位置
              */
             note: string;
         };
@@ -4642,7 +4642,7 @@ export interface components {
         };
         /**
          * Watermark
-         * @description ����ˮӡ��text ����ʱ��ҳ�루01��02��������
+         * @description 巨字水印。text 留空时用页码（01、02……）。
          */
         Watermark: {
             /** Scope */
@@ -4737,7 +4737,7 @@ export interface components {
             source_id?: string | null;
             /**
              * Note
-             * @default ����������
+             * @default 天气待更新
              */
             note: string;
             /** Issued At */
@@ -4796,10 +4796,10 @@ export interface components {
         };
         /**
          * Deck
-         * @description PPT ��ͳһ����ģ�͡�
+         * @description PPT 的统一内容模型。
          *
-         *     ���ݡ����֡��������߷��룺��������ҳ������ݣ�
-         *     fixed ҳ�������Բ��ֲ�λ��flex ҳ�������� layout_tree���Ӿ������������⡣
+         *     内容、布局、主题三者分离：这里描述页面块内容；
+         *     fixed 页几何来自布局槽位，flex 页几何来自 layout_tree，视觉表现来自主题。
          */
         Deck: {
             /** Id */

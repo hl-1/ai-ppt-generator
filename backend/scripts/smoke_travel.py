@@ -3,21 +3,21 @@
 import asyncio
 import json
 import uuid
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import httpx
 
 from app.api.deps import get_queue
-from app.llm.client import create_chat_model
+from app.core.paths import REPORTS_DIR
+from app.infrastructure.llm.client import create_chat_model
+from app.infrastructure.llm.factory import create_outline_generator, create_slide_generator
 from app.main import app
-from app.worker.context import create_outline_generator, create_slide_generator
-from app.worker.deck_tasks import generate_deck
-from app.worker.tasks import generate_outline
+from app.modules.decks.tasks import generate_deck
+from app.modules.outlines.tasks import generate_outline
 
 
 async def main():
-    output = Path("var/travel-smoke")
+    output = REPORTS_DIR / "travel-smoke"
     output.mkdir(parents=True, exist_ok=True)
     queue = AsyncMock()
     app.dependency_overrides[get_queue] = lambda: queue

@@ -14,9 +14,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.paths import SHARED_DIR  # noqa: E402
-from app.domain.ambient import iter_ambient_shapes  # noqa: E402
-from app.domain.geometry import SAFE_AREA, Rect  # noqa: E402
-from app.domain.theme import load_themes  # noqa: E402
+from app.engine.layout.ambient import iter_ambient_shapes  # noqa: E402
+from app.engine.layout.geometry import SAFE_AREA, Rect  # noqa: E402
+from app.engine.layout.theme import load_themes  # noqa: E402
 
 # 覆盖三种作用域：封面、章节页、正文页
 LAYOUT_IDS = ("cover", "section", "bullets")

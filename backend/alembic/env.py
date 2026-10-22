@@ -5,10 +5,10 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-import app.models  # noqa: F401  # 确保模型注册进 metadata，供 autogenerate 发现
+import app.infrastructure.database.models  # noqa: F401  # 确保模型注册进 metadata，供 autogenerate 发现
 from alembic import context
 from app.core.config import get_settings
-from app.core.db import Base
+from app.infrastructure.database.session import Base
 
 config = context.config
 

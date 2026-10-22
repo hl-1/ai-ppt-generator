@@ -1,0 +1,265 @@
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, Field
+
+from app.engine.content.outline import ImagePlan
+from app.engine.layout.block_style import BlockStyle
+from app.engine.layout.flex_layout import FlexContainer
+
+BlockType = Literal[
+    "text",
+    "bullets",
+    "image",
+    "chart",
+    "diagram",
+    "table",
+    "kpi",
+    "cards",
+    "callout",
+    "financial_table",
+    "waterfall",
+    "combo_chart",
+]
+ImageSource = Literal["generated", "stock", "upload", "placeholder"]
+ChartKind = Literal["bar", "column", "line", "pie"]
+DiagramKind = Literal["flow", "timeline", "cycle"]
+CalloutVariant = Literal["note", "source"]
+
+
+class BlockBase(BaseModel):
+    id: str
+    slot_id: str
+    # 人工编辑过的内容默认受保护，AI 局部修改必须绕开它
+    locked: bool = False
+    # 相对主题的元素级样式覆盖；None / 空对象表示纯主题
+    style: BlockStyle | None = None
+
+
+class TextBlock(BlockBase):
+    type: Literal["text"] = "text"
+    text: str
+
+
+class BulletsBlock(BlockBase):
+    type: Literal["bullets"] = "bullets"
+    items: list[str]
+
+
+class ImageBlock(BlockBase):
+    type: Literal["image"] = "image"
+    # source 为 placeholder 时没有真实图源，两端各自按主题色绘制几何占位图。
+    # 这条降级路径保证图片获取失败不会阻断整份文稿。
+    url: str | None = None
+    # 可访问性要求图片必须有替代文本，因此不设默认空值
+    alt: str
+    source: ImageSource
+    # 图库要求标注作者，署名信息必须随内容一起保存，否则界面无从展示
+    credit: str | None = None
+    credit_url: str | None = None
+    image_plan: ImagePlan | None = None
+    image_status: Literal["idle", "queued", "ready", "failed"] = "idle"
+    image_error: str | None = None
+    image_job_id: str | None = None
+    image_job_started_at: float | None = None
+    image_asset_id: str | None = None
+
+
+class ChartSeries(BaseModel):
+    name: str
+    values: list[float]
+
+
+class ChartBlock(BlockBase):
+    type: Literal["chart"] = "chart"
+    chart_type: ChartKind
+    categories: list[str]
+    series: list[ChartSeries]
+    unit: str | None = None
+
+
+class FinancialTableRow(BaseModel):
+    label: str
+    values: list[str]
+    emphasis: bool = False
+    spacer: bool = False
+
+
+class TableGeometry(BaseModel):
+    column_widths: list[float]
+    row_heights: list[float]
+    cells: list[list[str]]
+    font_size: float
+    line_height: float = 1.25
+    padding: float = 7
+    width: float
+    height: float
+
+
+class FinancialTableBlock(BlockBase):
+    type: Literal["financial_table"] = "financial_table"
+    unit: str | None = None
+    columns: list[str]
+    rows: list[FinancialTableRow]
+    highlight_columns: list[int] = Field(default_factory=list)
+    geometry: TableGeometry | None = None
+
+
+class WaterfallItem(BaseModel):
+    label: str
+    value: float
+    kind: Literal["start", "increase", "decrease", "total"] = "increase"
+    note: str | None = None
+
+
+class WaterfallCallout(BaseModel):
+    item_index: int
+    title: str | None = None
+    lines: list[str] = Field(default_factory=list)
+
+
+class WaterfallBlock(BlockBase):
+    type: Literal["waterfall"] = "waterfall"
+    unit: str | None = None
+    items: list[WaterfallItem] = Field(min_length=2)
+    callouts: list[WaterfallCallout] = Field(default_factory=list)
+    end_badge: str | None = None
+
+
+class ComboChartBlock(BlockBase):
+    type: Literal["combo_chart"] = "combo_chart"
+    categories: list[str]
+    bars: list[ChartSeries] = Field(min_length=1)
+    lines: list[ChartSeries] = Field(default_factory=list)
+    unit: str | None = None
+    line_unit: str | None = None
+    annotations: list[str] = Field(default_factory=list)
+
+
+class DiagramNode(BaseModel):
+    id: str
+    title: str
+    desc: str = ""
+    status: Literal["default", "active", "done", "risk"] = "default"
+    kind: Literal["process", "decision"] = "process"
+
+
+class DiagramNodeGeometry(BaseModel):
+    id: str
+    x: float
+    y: float
+    width: float
+    height: float
+    title_lines: list[str]
+    desc_lines: list[str]
+
+
+class DiagramEdgeGeometry(BaseModel):
+    points: list[tuple[float, float]]
+    label: str | None = None
+    label_x: float = 0
+    label_y: float = 0
+    label_width: float = 0
+    label_height: float = 0
+
+
+class DiagramGeometry(BaseModel):
+    version: int = 1
+    width: float
+    height: float
+    font_size: float
+    nodes: list[DiagramNodeGeometry]
+    edges: list[DiagramEdgeGeometry]
+
+
+class DiagramEdge(BaseModel):
+    source: str
+    target: str
+    label: str | None = None
+
+
+class DiagramBlock(BlockBase):
+    type: Literal["diagram"] = "diagram"
+    diagram_type: DiagramKind
+    # Authored Mermaid is parsed into nodes/edges; shared geometry is derived.
+    mermaid: str | None = None
+    direction: Literal["TB", "LR", "BT", "RL"] = "TB"
+    nodes: list[DiagramNode] = Field(min_length=1)
+    edges: list[DiagramEdge] = Field(default_factory=list)
+    geometry: DiagramGeometry | None = None
+
+
+class TableBlock(BlockBase):
+    type: Literal["table"] = "table"
+    header: list[str]
+    rows: list[list[str]]
+    geometry: TableGeometry | None = None
+
+
+class KpiBlock(BlockBase):
+    type: Literal["kpi"] = "kpi"
+    value: str
+    label: str
+    note: str | None = None
+
+
+class CardItem(BaseModel):
+    title: str
+    desc: str
+    icon: str | None = None
+
+
+class CardsBlock(BlockBase):
+    type: Literal["cards"] = "cards"
+    items: list[CardItem] = Field(min_length=1)
+
+
+class CalloutBlock(BlockBase):
+    type: Literal["callout"] = "callout"
+    text: str
+    icon: str | None = None
+    variant: CalloutVariant = "note"
+
+
+Block = Annotated[
+    TextBlock
+    | BulletsBlock
+    | ImageBlock
+    | ChartBlock
+    | FinancialTableBlock
+    | WaterfallBlock
+    | ComboChartBlock
+    | DiagramBlock
+    | TableBlock
+    | KpiBlock
+    | CardsBlock
+    | CalloutBlock,
+    Field(discriminator="type"),
+]
+
+
+class Slide(BaseModel):
+    id: str
+    layout_id: str
+    blocks: list[Block]
+    speaker_notes: str | None = None
+    # 乐观锁版本号：AI 修改提交时带上它，不一致即判定冲突而非后写覆盖
+    revision: int = 1
+    # 缺省 fixed，兼容未写该字段的样本；flex 页须显式带 layout_tree
+    layout_mode: Literal["fixed", "flex"] = "fixed"
+    layout_tree: FlexContainer | None = None
+
+
+class Deck(BaseModel):
+    """PPT 的统一内容模型。
+
+    内容、布局、主题三者分离：这里描述页面块内容；
+    fixed 页几何来自布局槽位，flex 页几何来自 layout_tree，视觉表现来自主题。
+    """
+
+    id: str
+    title: str
+    theme_id: str
+    slides: list[Slide]
+
+    def slide_by_id(self, slide_id: str) -> Slide | None:
+        return next((slide for slide in self.slides if slide.id == slide_id), None)

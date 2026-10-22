@@ -1,46 +1,7 @@
 from typing import Any
 
-from langchain_core.language_models.chat_models import BaseChatModel
-
-from app.core.config import get_settings
-from app.llm.base import OutlineGenerator, SlideEditGenerator, SlideGenerator
-from app.llm.client import create_chat_model
-from app.llm.deepseek import DeepSeekOutlineGenerator
-from app.llm.relayout import DeepSeekRelayoutGenerator
-from app.llm.slide import DeepSeekSlideGenerator
-from app.llm.slide_edit import DeepSeekSlideEditGenerator
-
-
-def create_outline_generator(model: BaseChatModel | None = None) -> OutlineGenerator:
-    settings = get_settings()
-    return DeepSeekOutlineGenerator(
-        model=model or create_chat_model(),
-        api_key=settings.llm_api_key,
-    )
-
-
-def create_slide_generator(model: BaseChatModel | None = None) -> SlideGenerator:
-    settings = get_settings()
-    return DeepSeekSlideGenerator(
-        model=model or create_chat_model(),
-        api_key=settings.llm_api_key,
-    )
-
-
-def create_slide_edit_generator(model: BaseChatModel | None = None) -> SlideEditGenerator:
-    settings = get_settings()
-    return DeepSeekSlideEditGenerator(
-        model=model or create_chat_model(),
-        api_key=settings.llm_api_key,
-    )
-
-
-def create_relayout_generator(model: BaseChatModel | None = None) -> DeepSeekRelayoutGenerator:
-    settings = get_settings()
-    return DeepSeekRelayoutGenerator(
-        model=model or create_chat_model(),
-        api_key=settings.llm_api_key,
-    )
+from app.infrastructure.llm.client import create_chat_model
+from app.infrastructure.llm.factory import create_outline_generator, create_slide_generator
 
 
 async def startup(ctx: dict[str, Any]) -> None:

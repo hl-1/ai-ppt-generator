@@ -3,18 +3,18 @@ from copy import deepcopy
 import pytest
 from pptx import Presentation
 
-from app.domain.block_style import BlockStyle
-from app.domain.card_layout import card_grid, cards_natural_height
-from app.domain.content import CardItem, CardsBlock, Deck, Slide, TextBlock
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, SAFE_AREA_WIDTH_PT
-from app.domain.slide_geometry import placed_by_block_id
-from app.domain.theme import get_theme, load_themes, resolve_theme
-from app.domain.theme_layout import reflow_slide_to_theme, theme_requires_reflow
-from app.domain.validation import validate_slide
-from app.models.slide import Slide as SlideRow
-from app.render.pptx import render_deck_to_pptx
-from app.services.deck import refresh_slide_issues
+from app.engine.content.content import CardItem, CardsBlock, Deck, Slide, TextBlock
+from app.engine.layout.block_style import BlockStyle
+from app.engine.layout.card_layout import card_grid, cards_natural_height
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.engine.layout.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, SAFE_AREA_WIDTH_PT
+from app.engine.layout.slide_geometry import placed_by_block_id
+from app.engine.layout.theme import get_theme, load_themes, resolve_theme
+from app.engine.layout.theme_layout import reflow_slide_to_theme, theme_requires_reflow
+from app.engine.pptx.pptx import render_deck_to_pptx
+from app.engine.quality.validation import validate_slide
+from app.modules.decks.models import Slide as SlideRow
+from app.modules.decks.service import refresh_slide_issues
 
 THEMES = list(load_themes())
 

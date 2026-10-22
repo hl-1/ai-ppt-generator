@@ -6,9 +6,9 @@ import pytest
 from pptx import Presentation
 from pptx.util import Emu, Pt
 
-from app.domain.content import BulletsBlock, Deck, Slide, TextBlock
-from app.render.pptx import render_deck_to_pptx
-from app.render.text import MIN_FONT_SCALE, disable_autofit, shrink_text_to_fit
+from app.engine.content.content import BulletsBlock, Deck, Slide, TextBlock
+from app.engine.pptx.pptx import render_deck_to_pptx
+from app.engine.pptx.text import MIN_FONT_SCALE, disable_autofit, shrink_text_to_fit
 
 
 def _frame(width_pt: float = 200.0, height_pt: float = 100.0):

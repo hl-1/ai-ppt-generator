@@ -8,10 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_queue
-from app.core.db import async_session_factory
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.domain.layout import get_layout
-from app.domain.slide_draft import (
+from app.engine.content.slide_draft import (
     BulletsContent,
     FlexBlockContent,
     FlexBulletsContent,
@@ -27,13 +24,16 @@ from app.domain.slide_draft import (
     TableContent,
     TextContent,
 )
-from app.llm.base import SlideGenerationInput
-from app.llm.errors import InvalidSlideOutputError, LLMTimeoutError
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.engine.layout.layout import get_layout
+from app.infrastructure.database.session import async_session_factory
+from app.infrastructure.llm.base import SlideGenerationInput
+from app.infrastructure.llm.errors import InvalidSlideOutputError, LLMTimeoutError
 from app.main import app
-from app.models.project import Project
-from app.models.slide import Slide
-from app.services.deck import clear_cancel, request_cancel
-from app.worker.deck_tasks import generate_deck
+from app.modules.decks.models import Slide
+from app.modules.decks.service import clear_cancel, request_cancel
+from app.modules.decks.tasks import generate_deck
+from app.modules.projects.models import Project
 
 
 class FakeQueue:
@@ -111,9 +111,7 @@ def _fake_flex_draft(layout_id: str) -> FlexSlideDraft:
     tree = FlexContainer(
         type="column",
         id="root",
-        children=[
-            FlexLeaf(id=f"leaf-{block.id}", block_id=block.id, grow=1.0) for block in blocks
-        ],
+        children=[FlexLeaf(id=f"leaf-{block.id}", block_id=block.id, grow=1.0) for block in blocks],
     )
     return FlexSlideDraft(blocks=blocks, layout_tree=tree, speaker_notes="讲稿提示")
 
@@ -125,7 +123,7 @@ async def queue(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[FakeQueue, No
     async def ignore(*_args, **_kwargs) -> None:
         pass
 
-    monkeypatch.setattr("app.api.v1.outlines.publish_outline_event", ignore)
+    monkeypatch.setattr("app.modules.outlines.router.publish_outline_event", ignore)
     app.dependency_overrides[get_queue] = lambda: fake
     yield fake
     app.dependency_overrides.pop(get_queue, None)
@@ -188,7 +186,7 @@ async def _confirmed_project(
             .where(Project.id == uuid.UUID(project["id"]))
         )
         record = result.scalar_one()
-        from app.models.project import ProjectOutline
+        from app.modules.outlines.models import ProjectOutline
 
         outline = ProjectOutline(
             project_id=record.id,
@@ -380,7 +378,7 @@ async def test_flex_project_heals_fixed_slides_on_generate(
     broken_id = deck["slides"][0]["id"]
 
     async with async_session_factory() as session:
-        from app.models.slide import Slide
+        from app.modules.decks.models import Slide
 
         slide = await session.get(Slide, uuid.UUID(broken_id))
         assert slide is not None
@@ -405,7 +403,7 @@ async def test_flex_project_heals_fixed_slides_on_generate(
 async def test_worker_recovers_transient_page_failure(
     client: AsyncClient, queue: FakeQueue, monkeypatch: pytest.MonkeyPatch, caplog
 ) -> None:
-    monkeypatch.setattr("app.workflows.slide.GENERATION_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr("app.modules.decks.workflow.GENERATION_RETRY_DELAY_SECONDS", 0)
 
     class FlakyGenerator(FakeSlideGenerator):
         async def generate(self, payload: SlideGenerationInput) -> SlideDraft | FlexSlideDraft:
@@ -433,7 +431,7 @@ async def test_generate_resumes_and_retries_failed_slide(
     queue: FakeQueue,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("app.workflows.slide.GENERATION_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr("app.modules.decks.workflow.GENERATION_RETRY_DELAY_SECONDS", 0)
     headers = await _sign_up(client)
     project = await _confirmed_project(client, headers)
     await client.post(f"/api/v1/projects/{project['id']}/deck/generate", json={}, headers=headers)

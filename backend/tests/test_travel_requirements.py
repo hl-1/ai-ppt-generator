@@ -9,13 +9,27 @@ import pytest
 from PIL import Image
 
 from app.core.config import Settings
-from app.domain.content import Deck
-from app.domain.export_check import run_export_check
-from app.domain.theme import resolve_theme
-from app.llm.base import OutlineGenerationInput, SlideGenerationInput
-from app.llm.slide import DeepSeekSlideGenerator
-from app.render.pptx import render_deck_to_pptx
-from app.schemas.travel import (
+from app.engine.content.content import Deck
+from app.engine.layout.theme import resolve_theme
+from app.engine.pptx.pptx import render_deck_to_pptx
+from app.engine.quality.export_check import run_export_check
+from app.infrastructure.llm.base import OutlineGenerationInput, SlideGenerationInput
+from app.infrastructure.llm.slide import DeepSeekSlideGenerator
+from app.infrastructure.providers.travel import TravelProviders, normalize_air_quality
+from app.infrastructure.storage.media import load_image, media_key_from_url, media_url, store_image
+from app.modules.decks.workflow import build_slide_workflow, run_slide_workflow
+from app.modules.travel.assets import collect_travel_assets
+from app.modules.travel.details import official_lines
+from app.modules.travel.outline import build_travel_outline, travel_coverage_issues
+from app.modules.travel.planning import (
+    attraction_budget,
+    build_travel_plan,
+    travel_claim_issues,
+    travel_context,
+    validate_facts,
+)
+from app.modules.travel.research import fit_research_to_pages
+from app.modules.travel.schemas import (
     ResearchData,
     TravelConditions,
     TravelFact,
@@ -24,20 +38,6 @@ from app.schemas.travel import (
     TravelPlace,
     TravelSource,
 )
-from app.services.media import load_image, media_key_from_url, media_url, store_image
-from app.services.travel_assets import collect_travel_assets
-from app.services.travel_details import official_lines
-from app.services.travel_outline import build_travel_outline, travel_coverage_issues
-from app.services.travel_planning import (
-    attraction_budget,
-    build_travel_plan,
-    travel_claim_issues,
-    travel_context,
-    validate_facts,
-)
-from app.services.travel_providers import TravelProviders, normalize_air_quality
-from app.services.travel_research import fit_research_to_pages
-from app.workflows.slide import build_slide_workflow, run_slide_workflow
 
 
 def context_for(data, **changes):

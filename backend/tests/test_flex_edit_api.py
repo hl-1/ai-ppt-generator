@@ -6,11 +6,12 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.core.db import async_session_factory
-from app.domain.flex_layout import FlexContainer, FlexLeaf, iter_leaf_block_ids
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf, iter_leaf_block_ids
+from app.infrastructure.database.session import async_session_factory
 from app.main import app
-from app.models.project import Project, ProjectOutline
-from app.models.slide import Slide as SlideRow
+from app.modules.decks.models import Slide as SlideRow
+from app.modules.outlines.models import ProjectOutline
+from app.modules.projects.models import Project
 
 
 @pytest.fixture
@@ -324,9 +325,7 @@ async def test_put_flex_layout_reorders_leaves(client: AsyncClient) -> None:
     new_tree = FlexContainer.model_validate(body["layout_tree"])
     assert isinstance(new_tree.children[0], FlexContainer)
     first_row_leaves = [
-        child.block_id
-        for child in new_tree.children[0].children
-        if isinstance(child, FlexLeaf)
+        child.block_id for child in new_tree.children[0].children if isinstance(child, FlexLeaf)
     ]
     assert first_row_leaves == ["b1"]
 
@@ -486,7 +485,7 @@ async def test_relayout_propose_returns_preset_candidates(
             return []
 
     monkeypatch.setattr(
-        "app.api.v1.deck.layout.create_relayout_generator",
+        "app.modules.decks.router.layout.create_relayout_generator",
         lambda: _FakeRelayout(),
     )
 

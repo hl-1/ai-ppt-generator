@@ -1,11 +1,11 @@
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app.domain.content import TextBlock
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.llm.base import AiEditHistoryTurn, SlideEditBlockInput, SlideEditInput
-from app.llm.edit_tools import EditSession, build_edit_tools
-from app.llm.slide_edit import DeepSeekSlideEditGenerator
+from app.engine.content.content import TextBlock
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.infrastructure.llm.base import AiEditHistoryTurn, SlideEditBlockInput, SlideEditInput
+from app.infrastructure.llm.edit_tools import EditSession, build_edit_tools
+from app.infrastructure.llm.slide_edit import DeepSeekSlideEditGenerator
 
 
 def _text(block_id: str, text: str, *, locked: bool = False) -> TextBlock:
@@ -76,9 +76,7 @@ async def test_tools_reject_locked_and_last_block() -> None:
     assert "人工修改" in locked
     assert locked_session.by_id("a") is not None
 
-    replace_locked = await locked_tools["replace_text"].ainvoke(
-        {"block_id": "a", "text": "覆盖"}
-    )
+    replace_locked = await locked_tools["replace_text"].ainvoke({"block_id": "a", "text": "覆盖"})
     assert "人工修改" in replace_locked
 
     session = EditSession(

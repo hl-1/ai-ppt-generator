@@ -1,0 +1,122 @@
+name: aippt
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aippt
+      # 冒号问号：变量缺失时 Compose 直接报错，避免用默认弱密码上线
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: aippt
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aippt -d aippt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 一次性服务：执行 Alembic 迁移，成功后退出，api/worker 等它成功再起
+  migrate:
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    restart: "no"
+    env_file: .env.production
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://aippt:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/aippt
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ../shared:/app/shared:ro
+    # 直接用镜像里的 venv 可执行文件，避免 uv run 在运行期再做一次环境同步
+    command: ["/app/backend/.venv/bin/alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://aippt:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/aippt
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ../shared:/app/shared:ro
+      - storage_data:/app/.local/runtime/storage
+    command: ["/app/backend/.venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "39800"]
+    healthcheck:
+      test: ["CMD", "/app/backend/.venv/bin/python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:39800/api/v1/health',timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://aippt:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/aippt
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ../shared:/app/shared:ro
+      - storage_data:/app/.local/runtime/storage
+    command: ["/app/backend/.venv/bin/arq", "app.worker.settings.WorkerSettings"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  nginx:
+    build:
+      context: ..                    # 仓库根，前端要读 shared/
+      dockerfile: deploy/frontend.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
+      - /opt/code-generator/certs:/etc/nginx/code-certs:ro
+    networks:
+      default:
+      ingress:
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:
+  storage_data:
+
+networks:
+  ingress:
+    external: true
+    name: huanliyu-ingress

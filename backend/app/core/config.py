@@ -4,13 +4,15 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.core.paths import REPO_ROOT
+from app.core.paths import BACKEND_DIR, REPO_ROOT, RUNTIME_DIR
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=REPO_ROOT / "backend" / (
-            ".env.production" if os.getenv("APP_ENV") == "production" else ".env"
+        env_file=(
+            REPO_ROOT / "deploy" / ".env.production"
+            if os.getenv("APP_ENV") == "production"
+            else BACKEND_DIR / ".env"
         ),
         extra="ignore",
     )
@@ -76,7 +78,7 @@ class Settings(BaseSettings):
     image_timeout_seconds: float = 60
 
     storage_driver: Literal["local", "cos"] = "local"
-    storage_local_dir: str = str(REPO_ROOT / "backend" / "var" / "storage")
+    storage_local_dir: str = str(RUNTIME_DIR / "storage")
     cos_bucket: str = ""
     cos_region: str = ""
     cos_secret_id: str = ""

@@ -4,16 +4,16 @@ import uuid
 
 import pytest
 
-from app.domain.slide_draft import BulletsContent, SlideDraft, TextContent
-from app.llm.base import OutlineSourceSection, SlideGenerationInput
-from app.llm.errors import (
+from app.engine.content.slide_draft import BulletsContent, SlideDraft, TextContent
+from app.infrastructure.llm.base import OutlineSourceSection, SlideGenerationInput
+from app.infrastructure.llm.errors import (
     InvalidSlideOutputError,
     LLMNotConfiguredError,
     LLMTimeoutError,
     LLMUnavailableError,
     safe_error_details,
 )
-from app.workflows.slide import (
+from app.modules.decks.workflow import (
     build_slide_workflow,
     prepare_slide_input,
     run_slide_workflow,
@@ -82,9 +82,9 @@ async def test_document_workflow_prefers_lossless_pagination_to_rewriting() -> N
 
     slide, issues = await run_slide_workflow(workflow, _payload(), uuid.uuid4())
 
-    from app.domain.content_pagination import split_generated_slide
-    from app.domain.theme import get_theme
-    from app.domain.validation import validate_slide
+    from app.engine.content.content_pagination import split_generated_slide
+    from app.engine.layout.theme import get_theme
+    from app.engine.quality.validation import validate_slide
 
     assert len(generator.prompts) == 1
     pages = split_generated_slide(slide, get_theme("ivory"))
@@ -110,7 +110,7 @@ async def test_fixed_workflow_preserves_confirmed_title() -> None:
 
 @pytest.mark.asyncio
 async def test_workflow_rejects_invented_branch_in_linear_source_even_when_flow_requested():
-    from app.domain.slide_draft import DiagramContent
+    from app.engine.content.slide_draft import DiagramContent
 
     draft = SlideDraft(
         blocks=[
@@ -183,8 +183,8 @@ async def test_topic_workflow_prefers_lossless_pagination_to_rewriting() -> None
         uuid.uuid4(),
     )
 
-    from app.domain.content_pagination import split_generated_slide
-    from app.domain.theme import get_theme
+    from app.engine.content.content_pagination import split_generated_slide
+    from app.engine.layout.theme import get_theme
 
     assert len(generator.prompts) == 1
     pages = split_generated_slide(slide, get_theme("ivory"))
@@ -244,7 +244,7 @@ async def test_workflow_gives_up_after_one_thin_repair() -> None:
 
 @pytest.fixture
 def immediate_retry(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.workflows.slide.GENERATION_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr("app.modules.decks.workflow.GENERATION_RETRY_DELAY_SECONDS", 0)
 
 
 @pytest.mark.asyncio
@@ -336,7 +336,7 @@ async def test_workflow_rejects_structural_regression_during_repair(immediate_re
 
 @pytest.mark.asyncio
 async def test_workflow_keeps_content_when_repair_conversion_raises(monkeypatch) -> None:
-    from app.workflows import slide as workflow_module
+    from app.modules.decks import workflow as workflow_module
 
     original = workflow_module.draft_to_slide
     first = _draft(["短", "也短"])

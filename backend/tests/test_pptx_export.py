@@ -6,7 +6,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 from pptx.util import Pt
 
-from app.domain.content import (
+from app.engine.content.content import (
     BulletsBlock,
     CardItem,
     CardsBlock,
@@ -22,15 +22,15 @@ from app.domain.content import (
     WaterfallBlock,
     WaterfallItem,
 )
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT
-from app.domain.sample import load_sample_deck
-from app.domain.theme import get_theme, load_themes
-from app.domain.validation import has_blocking_issue, validate_slide
+from app.engine.content.sample import load_sample_deck
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.engine.layout.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT
+from app.engine.layout.theme import get_theme, load_themes
+from app.engine.pptx.color import to_rgb
+from app.engine.pptx.pptx import render_deck_to_pptx
+from app.engine.pptx.table import NO_STYLE_NO_GRID
+from app.engine.quality.validation import has_blocking_issue, validate_slide
 from app.main import app
-from app.render.color import to_rgb
-from app.render.pptx import render_deck_to_pptx
-from app.render.table import NO_STYLE_NO_GRID
 
 _CHART_TYPE_MAP = {
     "bar": XL_CHART_TYPE.BAR_CLUSTERED,

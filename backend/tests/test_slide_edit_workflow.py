@@ -1,17 +1,17 @@
 import pytest
 
-from app.domain.content import BulletsBlock, TextBlock
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.domain.slide_patch import BulletsPatch, TextPatch
-from app.llm.base import SlideEditInput
-from app.workflows.slide_edit import build_slide_edit_workflow, run_slide_edit_workflow
+from app.engine.content.content import BulletsBlock, TextBlock
+from app.engine.content.slide_patch import BulletsPatch, TextPatch
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.infrastructure.llm.base import SlideEditInput
+from app.modules.decks.edit_workflow import build_slide_edit_workflow, run_slide_edit_workflow
 
 
 @pytest.mark.asyncio
 async def test_ai_edit_cannot_create_linear_flowchart():
-    from app.domain.content import DiagramBlock
-    from app.llm.base import SlideEditResult
-    from app.llm.errors import InvalidSlideEditOutputError
+    from app.engine.content.content import DiagramBlock
+    from app.infrastructure.llm.base import SlideEditResult
+    from app.infrastructure.llm.errors import InvalidSlideEditOutputError
 
     diagram = DiagramBlock(
         id="b1",
@@ -114,7 +114,8 @@ async def test_workflow_repairs_capacity_overflow_once() -> None:
 
 @pytest.mark.asyncio
 async def test_workflow_rejects_unresolved_overflow_after_one_repair() -> None:
-    from app.llm.errors import InvalidSlideEditOutputError
+    from app.infrastructure.llm.errors import InvalidSlideEditOutputError
+
     too_long = ["超出容量的要点" * 12] * 9
     generator = ScriptedEditGenerator([[BulletsPatch(block_id="b1", items=too_long)]])
     workflow = build_slide_edit_workflow(generator)

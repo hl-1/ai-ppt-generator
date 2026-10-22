@@ -1,12 +1,12 @@
 import pytest
 
-from app.domain.content import ChartBlock, Slide, TextBlock
-from app.domain.enterprise_layout import bind_planned_evidence
-from app.domain.evidence import prepare_page_plan
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.domain.outline import OutlinePageDraft
-from app.domain.topic_visuals import normalize_topic_pages
-from app.services.topic_material import build_topic_document
+from app.engine.content.content import ChartBlock, Slide, TextBlock
+from app.engine.content.evidence import prepare_page_plan
+from app.engine.content.outline import OutlinePageDraft
+from app.engine.layout.enterprise_layout import bind_planned_evidence
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.engine.layout.topic_visuals import normalize_topic_pages
+from app.modules.outlines.topic_material import build_topic_document
 
 
 def _topic_sources() -> dict[str, str]:

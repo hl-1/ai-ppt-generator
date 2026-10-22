@@ -7,11 +7,11 @@ import pytest
 from arq import Retry
 from redis.exceptions import RedisError
 
-from app.core.db import async_session_factory
-from app.models.project import Project
-from app.schemas.outline import OutlineEvent
-from app.services.outline_progress import publish_outline_event
-from app.worker.tasks import _error_code, generate_outline
+from app.infrastructure.database.session import async_session_factory
+from app.modules.outlines.progress import publish_outline_event
+from app.modules.outlines.schemas import OutlineEvent
+from app.modules.outlines.tasks import _error_code, generate_outline
+from app.modules.projects.models import Project
 from tests.test_outlines_api import (
     BrokenGenerator,
     FakeGenerator,
@@ -125,7 +125,7 @@ async def test_cancelled_run_cannot_save_a_late_result(client, queue, monkeypatc
     async def abort(*args, **kwargs):
         return True
 
-    monkeypatch.setattr("app.api.v1.outlines.Job.abort", abort)
+    monkeypatch.setattr("app.modules.outlines.router.Job.abort", abort)
     headers = await _sign_up(client)
     project, job_id = await _start_generating(client, headers)
     started, release = asyncio.Event(), asyncio.Event()
@@ -196,7 +196,7 @@ async def test_queue_error_after_cancellation_preserves_cancelled_state(client, 
     async def abort(*args, **kwargs):
         return True
 
-    monkeypatch.setattr("app.api.v1.outlines.Job.abort", abort)
+    monkeypatch.setattr("app.modules.outlines.router.Job.abort", abort)
     headers = await _sign_up(client)
     project = await _project(client, headers)
 
@@ -231,7 +231,7 @@ async def test_travel_timeout_is_attributed_to_research(client, queue, monkeypat
     async def timeout(*args, **kwargs):
         raise TimeoutError("sensitive provider response")
 
-    monkeypatch.setattr("app.services.travel_research.ensure_project_research", timeout)
+    monkeypatch.setattr("app.modules.travel.research.ensure_project_research", timeout)
     response = await client.post(
         f"/api/v1/projects/{project['id']}/outline/generate", headers=headers
     )
@@ -248,7 +248,7 @@ async def test_travel_timeout_is_attributed_to_research(client, queue, monkeypat
 
 
 async def test_partial_research_exposes_service_and_substage(client, queue, monkeypatch):
-    from app.worker.tasks import _research_outcome
+    from app.modules.outlines.tasks import _research_outcome
 
     headers = await _sign_up(client)
     project = await _project(client, headers)
@@ -275,7 +275,7 @@ async def test_partial_research_exposes_service_and_substage(client, queue, monk
             },
         )
 
-    monkeypatch.setattr("app.services.travel_research.current_research", research)
+    monkeypatch.setattr("app.modules.travel.research.current_research", research)
     partial, message, issues = await _research_outcome(uuid.UUID(project["id"]))
     assert partial and "1 条来源" in message
     assert issues[0].service == "firecrawl"
@@ -300,7 +300,7 @@ def test_timeout_codes_match_the_stage(stage, expected):
     [(401, "model_auth_failed"), (429, "model_rate_limited"), (400, "model_request_rejected")],
 )
 def test_model_http_error_classification_uses_safe_status(status, expected):
-    from app.llm.errors import LLMUnavailableError
+    from app.infrastructure.llm.errors import LLMUnavailableError
 
     request = httpx.Request("POST", "https://example.com/v1/chat")
     provider = httpx.HTTPStatusError(

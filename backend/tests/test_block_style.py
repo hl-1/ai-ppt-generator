@@ -10,15 +10,16 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.core.db import async_session_factory
-from app.domain.block_style import BlockStyle, merge_text_style, resolve_box
-from app.domain.content import Deck, Slide, TextBlock
-from app.domain.theme import get_theme
-from app.domain.validation import validate_slide
+from app.engine.content.content import Deck, Slide, TextBlock
+from app.engine.layout.block_style import BlockStyle, merge_text_style, resolve_box
+from app.engine.layout.theme import get_theme
+from app.engine.pptx.pptx import render_deck_to_pptx
+from app.engine.quality.validation import validate_slide
+from app.infrastructure.database.session import async_session_factory
 from app.main import app
-from app.models.project import Project, ProjectOutline
-from app.models.slide import Slide as SlideRow
-from app.render.pptx import render_deck_to_pptx
+from app.modules.decks.models import Slide as SlideRow
+from app.modules.outlines.models import ProjectOutline
+from app.modules.projects.models import Project
 
 
 @pytest.fixture
@@ -172,7 +173,7 @@ def test_resolve_box_fill_and_border() -> None:
 
 
 def test_overflow_uses_merged_size() -> None:
-    from app.domain.content import BulletsBlock
+    from app.engine.content.content import BulletsBlock
 
     theme = get_theme("ivory")
     slide = Slide(
@@ -247,7 +248,7 @@ def test_pptx_applies_block_style() -> None:
     assert run.font.size == Pt(40)
     assert run.font.bold is True
     assert run.font.italic is True
-    from app.render.color import to_rgb
+    from app.engine.pptx.color import to_rgb
 
     assert run.font.color.rgb == to_rgb("#112233")
 

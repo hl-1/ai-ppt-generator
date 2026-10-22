@@ -1,10 +1,10 @@
-from app.domain.flex_layout import FlexContainer, iter_leaf_block_ids
-from app.domain.slide_pages import (
+from app.engine.content.slide_pages import (
     BLANK_LAYOUT_ID,
     blank_outline_page,
     blank_slide_content,
     clone_slide_content,
 )
+from app.engine.layout.flex_layout import FlexContainer, iter_leaf_block_ids
 
 
 def test_blank_page_is_a_valid_outline_page() -> None:

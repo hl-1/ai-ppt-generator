@@ -6,11 +6,11 @@
 
 from __future__ import annotations
 
-from app.domain.layout import load_layouts
-from app.domain.text_metrics import fonts_available
-from app.domain.theme import load_themes
-from app.regression.corpus import DENSITIES, load_corpus_decks
-from app.regression.runner import (
+from app.engine.layout.layout import load_layouts
+from app.engine.layout.text_metrics import fonts_available
+from app.engine.layout.theme import load_themes
+from app.engine.quality.regression.corpus import DENSITIES, load_corpus_decks
+from app.engine.quality.regression.runner import (
     OVERFLOW_RATE_LIMIT,
     content_fingerprint,
     run_regression,

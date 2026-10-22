@@ -15,18 +15,19 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_queue
 from app.core.config import get_settings
-from app.core.db import async_session_factory
-from app.domain.content import BulletsBlock, Deck, Slide, TextBlock
-from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT
-from app.domain.sample import load_sample_deck
+from app.engine.content.content import BulletsBlock, Deck, Slide, TextBlock
+from app.engine.content.sample import load_sample_deck
+from app.engine.layout.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT
+from app.engine.pptx.pptx import render_deck_to_pptx
+from app.engine.pptx.verify import verify_pptx
+from app.infrastructure.database.session import async_session_factory
+from app.infrastructure.storage import get_storage
 from app.main import app
-from app.models.project import Project, ProjectOutline, ProjectSource
-from app.models.slide import Slide as SlideRow
-from app.render.pptx import render_deck_to_pptx
-from app.render.verify import verify_pptx
-from app.services.preview import preview_key
-from app.storage import get_storage
-from app.worker.preview_tasks import generate_preview
+from app.modules.decks.models import Slide as SlideRow
+from app.modules.decks.preview import preview_key
+from app.modules.decks.preview_tasks import generate_preview
+from app.modules.outlines.models import ProjectOutline
+from app.modules.projects.models import Project, ProjectSource
 
 PPTX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
@@ -342,7 +343,7 @@ async def test_export_blocked_on_quality_errors(client: AsyncClient) -> None:
 async def test_export_allows_warnings(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from pathlib import Path
 
-    from app.domain import text_metrics as tm
+    from app.engine.layout import text_metrics as tm
 
     # 字体缺失只产生 warning，不应阻断
     monkeypatch.setattr(tm, "FONTS_DIR", Path("/tmp/aippt-no-fonts-export"))
@@ -361,7 +362,7 @@ async def test_preview_worker_export_and_owner_isolation(client, monkeypatch):
     monkeypatch.setattr(settings, "preview_soffice", "test-soffice")
     monkeypatch.setattr(settings, "export_require_preview", True)
     monkeypatch.setattr(
-        "app.worker.preview_tasks.render_pptx_preview", lambda *a, **k: [b"png-data"]
+        "app.modules.decks.preview_tasks.render_pptx_preview", lambda *a, **k: [b"png-data"]
     )
     url = f"/api/v1/projects/{project_id}/deck"
     before = await client.get(f"{url}/export", headers=headers)
@@ -418,7 +419,7 @@ async def test_preview_render_failure_does_not_claim_ready(client, monkeypatch):
     def fail(*args, **kwargs):
         raise RuntimeError("engine failed")
 
-    monkeypatch.setattr("app.worker.preview_tasks.render_pptx_preview", fail)
+    monkeypatch.setattr("app.modules.decks.preview_tasks.render_pptx_preview", fail)
     url = f"/api/v1/projects/{project_id}/deck/preview"
     fingerprint = (await client.get(url, headers=headers)).json()["fingerprint"]
     await generate_preview({}, project_id, fingerprint)

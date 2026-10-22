@@ -2,9 +2,9 @@ import uuid
 
 import pytest
 
-from app.domain.content import DiagramBlock, DiagramEdge, DiagramNode, Slide
-from app.domain.flow_policy import enforce_text_flow_policy, should_keep_flow_diagram
-from app.domain.slide_draft import DiagramContent, SlideDraft, draft_to_slide
+from app.engine.content.content import DiagramBlock, DiagramEdge, DiagramNode, Slide
+from app.engine.content.slide_draft import DiagramContent, SlideDraft, draft_to_slide
+from app.engine.diagram.flow_policy import enforce_text_flow_policy, should_keep_flow_diagram
 
 
 def graph(pairs, **updates):

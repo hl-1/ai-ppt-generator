@@ -14,15 +14,15 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from app.domain.ambient import iter_ambient_shapes
-from app.domain.block_style import merge_text_style
-from app.domain.content import Block, Deck, Slide
-from app.domain.flex_layout import FlexContainer, FlexLeaf, FlexNode
-from app.domain.geometry import CANVAS_WIDTH_PT
-from app.domain.quality import content_fill_rate
-from app.domain.sample import load_sample_deck
-from app.domain.slide_geometry import placed_by_block_id
-from app.domain.theme import Theme, get_theme
+from app.engine.content.content import Block, Deck, Slide
+from app.engine.content.sample import load_sample_deck
+from app.engine.layout.ambient import iter_ambient_shapes
+from app.engine.layout.block_style import merge_text_style
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf, FlexNode
+from app.engine.layout.geometry import CANVAS_WIDTH_PT
+from app.engine.layout.slide_geometry import placed_by_block_id
+from app.engine.layout.theme import Theme, get_theme
+from app.engine.quality.quality import content_fill_rate
 
 # 会排出文字行的块类型。image/chart/table 的宽度另有约束，不参与「一行几个字」。
 _TEXT_BLOCK_TYPES = frozenset({"text", "bullets", "cards", "callout"})

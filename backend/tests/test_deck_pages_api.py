@@ -6,12 +6,13 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.core.db import async_session_factory
+from app.infrastructure.database.session import async_session_factory
 from app.main import app
-from app.models.project import Project, ProjectOutline
-from app.models.slide import Slide as SlideRow
-from app.schemas.project import MAX_DECK_PAGE_COUNT
-from app.services.deck import load_slides, sync_slides
+from app.modules.decks.models import Slide as SlideRow
+from app.modules.decks.service import load_slides, sync_slides
+from app.modules.outlines.models import ProjectOutline
+from app.modules.projects.models import Project
+from app.modules.projects.schemas import MAX_DECK_PAGE_COUNT
 
 
 @pytest.fixture
@@ -348,9 +349,7 @@ async def test_delete_keeps_at_least_one_page(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_page_operations_reject_while_generating(client: AsyncClient) -> None:
     headers = await _sign_up(client)
-    project, slides = await _project_with_pages(
-        client, headers, ["一", "二"], status="generating"
-    )
+    project, slides = await _project_with_pages(client, headers, ["一", "二"], status="generating")
 
     insert = await client.post(
         f"/api/v1/projects/{project['id']}/deck/slides", headers=headers, json={}

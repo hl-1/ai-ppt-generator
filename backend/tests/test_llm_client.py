@@ -5,12 +5,12 @@ import pytest
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
-from app.domain.slide_draft import FlexSlideDraft, SlideDraft
-from app.llm.base import OutlineGenerationInput
-from app.llm.client import StructuredChatClient
-from app.llm.deepseek import DeepSeekOutlineGenerator
-from app.llm.errors import InvalidModelOutputError, LLMTimeoutError
-from app.llm.relayout import RelayoutTreesDraft
+from app.engine.content.slide_draft import FlexSlideDraft, SlideDraft
+from app.infrastructure.llm.base import OutlineGenerationInput
+from app.infrastructure.llm.client import StructuredChatClient
+from app.infrastructure.llm.deepseek import DeepSeekOutlineGenerator
+from app.infrastructure.llm.errors import InvalidModelOutputError, LLMTimeoutError
+from app.infrastructure.llm.relayout import RelayoutTreesDraft
 
 
 class _Result(BaseModel):

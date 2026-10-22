@@ -1,8 +1,6 @@
 import uuid
 
-from app.domain.flex_layout import FlexContainer, FlexLeaf, iter_leaf_block_ids
-from app.domain.flex_normalize import normalize
-from app.domain.slide_draft import (
+from app.engine.content.slide_draft import (
     FlexBulletsContent,
     FlexSlideDraft,
     FlexTextContent,
@@ -11,6 +9,8 @@ from app.domain.slide_draft import (
     draft_to_slide,
     flex_draft_to_slide,
 )
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf, iter_leaf_block_ids
+from app.engine.layout.flex_normalize import normalize
 
 
 def test_flex_draft_to_slide_rewrites_ids_and_normalizes() -> None:

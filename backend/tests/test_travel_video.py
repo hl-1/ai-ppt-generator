@@ -8,13 +8,13 @@ import httpx
 import pytest
 
 from app.core.config import Settings
-from app.domain.outline import OutlineDraft
-from app.llm.base import OutlineGenerationInput, SlideGenerationInput
-from app.schemas.travel import ResearchData, TravelConditions, TravelVideo, VideoSegment
-from app.services.travel_outline import build_travel_outline
-from app.services.travel_planning import build_travel_plan, travel_context
-from app.services.travel_providers import TravelProviders
-from app.services.travel_video import (
+from app.engine.content.outline import OutlineDraft
+from app.infrastructure.llm.base import OutlineGenerationInput, SlideGenerationInput
+from app.infrastructure.providers.travel import TravelProviders
+from app.modules.travel.outline import build_travel_outline
+from app.modules.travel.planning import build_travel_plan, travel_context
+from app.modules.travel.schemas import ResearchData, TravelConditions, TravelVideo, VideoSegment
+from app.modules.travel.video import (
     AdviceSelections,
     VideoReader,
     apply_metadata,
@@ -30,7 +30,7 @@ from app.services.travel_video import (
     video_locations,
     video_url,
 )
-from app.services.travel_video_extract import download_audio, parse_subtitles
+from app.modules.travel.video_extract import download_audio, parse_subtitles
 
 
 def video(identifier="7692431224540035506", **changes):
@@ -221,7 +221,7 @@ def test_author_total_is_not_video_popularity():
 async def test_fifteen_minute_limit_cannot_be_relaxed_and_blocks_content(
     monkeypatch, duration, accepted
 ):
-    from app.services import travel_video
+    from app.modules.travel import video as travel_video
 
     item = video(duration_seconds=duration)
     settings = Settings(travel_video_max_duration_seconds=3600)
@@ -370,11 +370,11 @@ async def test_advice_keeps_all_cited_segments_and_rejects_invalid_ranges():
 @pytest.mark.parametrize("layout_mode", ["flex", "fixed"])
 @pytest.mark.parametrize("page_count", [5, 10])
 async def test_search_to_advice_to_ppt_chain(monkeypatch, layout_mode, page_count):
-    from app.domain.content import Deck
-    from app.domain.export_check import run_export_check
-    from app.domain.theme import resolve_theme
-    from app.llm.slide import DeepSeekSlideGenerator
-    from app.workflows.slide import build_slide_workflow, run_slide_workflow
+    from app.engine.content.content import Deck
+    from app.engine.layout.theme import resolve_theme
+    from app.engine.quality.export_check import run_export_check
+    from app.infrastructure.llm.slide import DeepSeekSlideGenerator
+    from app.modules.decks.workflow import build_slide_workflow, run_slide_workflow
 
     async def respond(request):
         return httpx.Response(
@@ -483,7 +483,7 @@ async def test_search_to_advice_to_ppt_chain(monkeypatch, layout_mode, page_coun
 
 
 async def test_subtitle_failure_uses_local_asr_and_retains_timestamps(monkeypatch):
-    from app.services import travel_video
+    from app.modules.travel import video as travel_video
 
     actions = []
 
@@ -505,7 +505,7 @@ async def test_subtitle_failure_uses_local_asr_and_retains_timestamps(monkeypatc
 
 
 async def test_no_captions_or_audio_does_not_summarize_title(monkeypatch):
-    from app.services import travel_video
+    from app.modules.travel import video as travel_video
 
     async def worker(payload, timeout):
         return {"error_code": "access_restricted"}
@@ -519,7 +519,7 @@ async def test_no_captions_or_audio_does_not_summarize_title(monkeypatch):
 
 
 async def test_transcription_timeout_keeps_saved_evidence_and_marks_it_partial(monkeypatch):
-    from app.services import travel_video
+    from app.modules.travel import video as travel_video
 
     async def worker(payload, timeout):
         if payload["action"] == "transcribe":
@@ -542,7 +542,7 @@ async def test_transcription_timeout_keeps_saved_evidence_and_marks_it_partial(m
 
 @pytest.mark.parametrize("recover", [False, True])
 async def test_advice_failure_is_partial_or_recovers_after_one_retry(monkeypatch, recover):
-    from app.services import travel_video
+    from app.modules.travel import video as travel_video
 
     async def discover(*args, **kwargs):
         return [video(), video("7692431224540035507", title="北京住宿建议")]
@@ -583,7 +583,7 @@ async def test_advice_failure_is_partial_or_recovers_after_one_retry(monkeypatch
 
 
 async def test_platform_chapters_remain_labeled_as_ai_summary(monkeypatch):
-    from app.services import travel_video
+    from app.modules.travel import video as travel_video
 
     async def worker(payload, timeout):
         return {"error_code": "access_restricted"}
@@ -668,7 +668,7 @@ def test_douyin_structured_data_only_uses_current_video_and_milliseconds():
 
 @pytest.mark.parametrize("recover", [False, True])
 async def test_inspection_error_is_separate_from_filter_reason_and_recovers(monkeypatch, recover):
-    from app.services import travel_video
+    from app.modules.travel import video as travel_video
 
     async def platform(self, item):
         return {"error_code": "access_restricted"}
@@ -724,7 +724,7 @@ async def test_douyin_player_duration_and_structured_data_without_time_text():
 
 
 def test_province_plan_matches_verified_city_and_place_aliases():
-    from app.schemas.travel import TravelPlace
+    from app.modules.travel.schemas import TravelPlace
 
     conditions = TravelConditions(destination="山东", must_visit=["趵突泉景区"])
     data = ResearchData(
@@ -747,7 +747,7 @@ def test_province_plan_matches_verified_city_and_place_aliases():
 
 
 async def test_discovery_uses_city_date_filter_and_stops_on_rate_limit():
-    from app.schemas.travel import TravelPlace
+    from app.modules.travel.schemas import TravelPlace
 
     requests = []
 
@@ -808,7 +808,7 @@ async def test_discovery_timeout_preserves_found_candidates():
 
 
 async def test_research_refills_after_old_candidates_without_reinspecting_duplicates(monkeypatch):
-    from app.services import travel_video
+    from app.modules.travel import video as travel_video
 
     rounds, inspected = [], []
     old = video(published_at=datetime.now(UTC) - timedelta(days=400))
@@ -844,7 +844,7 @@ async def test_research_refills_after_old_candidates_without_reinspecting_duplic
 
 
 async def test_legacy_place_cities_are_resolved_by_exact_coordinates():
-    from app.schemas.travel import TravelPlace
+    from app.modules.travel.schemas import TravelPlace
 
     locations = []
 
@@ -869,7 +869,7 @@ async def test_legacy_place_cities_are_resolved_by_exact_coordinates():
 async def test_content_deadline_preserves_partial_transcript(monkeypatch):
     import asyncio
 
-    from app.services import travel_video
+    from app.modules.travel import video as travel_video
 
     async def worker(payload, timeout):
         if payload["action"] == "transcribe":

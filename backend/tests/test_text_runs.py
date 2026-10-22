@@ -4,9 +4,9 @@ from pptx import Presentation
 from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
-from app.domain.block_style import merge_text_style
-from app.domain.theme import get_theme
-from app.render.text import write_paragraph
+from app.engine.layout.block_style import merge_text_style
+from app.engine.layout.theme import get_theme
+from app.engine.pptx.text import write_paragraph
 
 THEME = get_theme("ivory")
 STYLE = merge_text_style(THEME, "body", None)

@@ -1,0 +1,1612 @@
+import logging
+from io import BytesIO
+from typing import NamedTuple
+
+from pptx import Presentation
+from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
+from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.oxml.xmlchemy import OxmlElement
+from pptx.parts.image import Image as PptxImage
+from pptx.presentation import Presentation as PresentationType
+from pptx.shapes.base import BaseShape
+from pptx.slide import Slide as PptxSlide
+from pptx.text.text import TextFrame
+from pptx.util import Emu, Pt
+
+from app.engine.content.content import (
+    Block,
+    BulletsBlock,
+    CalloutBlock,
+    CardsBlock,
+    ChartBlock,
+    ComboChartBlock,
+    Deck,
+    DiagramBlock,
+    DiagramEdge,
+    DiagramNode,
+    FinancialTableBlock,
+    ImageBlock,
+    KpiBlock,
+    Slide,
+    TableBlock,
+    TextBlock,
+    WaterfallBlock,
+)
+from app.engine.diagram.diagram_layout import resolve_diagram_geometry
+from app.engine.diagram.diagram_style import rounded_route, themed_flowchart_style
+from app.engine.diagram.mermaid import normalize_flow_edges
+from app.engine.layout.ambient import AMBIENT_SHAPE_PREFIX, AmbientShape, iter_ambient_shapes
+from app.engine.layout.block_style import BlockStyle, ResolvedBox, merge_text_style, resolve_box
+from app.engine.layout.card_layout import card_grid, card_header_inset, card_style, measure_cards
+from app.engine.layout.financial_tech import (
+    financial_tech_style,
+    panel_grid,
+    panel_header_height,
+)
+from app.engine.layout.flex_skin import BOX_RADIUS_PT, SkinDecoration, iter_skin_decorations
+from app.engine.layout.geometry import (
+    CANVAS_HEIGHT_PT,
+    CANVAS_WIDTH_PT,
+    EMU_PER_POINT,
+    BleedRect,
+    Rect,
+)
+from app.engine.layout.layout import get_layout
+from app.engine.layout.slide_geometry import placed_by_block_id
+from app.engine.layout.table_layout import layout_table
+from app.engine.layout.text_metrics import measure_bullets, measure_text
+from app.engine.layout.theme import TextStyle, Theme, get_theme
+from app.engine.pptx.chart import render_chart
+from app.engine.pptx.color import mix, to_rgb
+from app.engine.pptx.table import set_cell_borders, use_plain_style
+from app.engine.pptx.text import (
+    apply_bullet,
+    apply_text_style,
+    disable_autofit,
+    set_east_asian_font,
+    shrink_text_to_fit,
+    write_paragraph,
+)
+from app.infrastructure.storage.media import load_image, media_key_from_url
+
+logger = logging.getLogger(__name__)
+
+PPTX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
+# 空白版式。用空白版式而非内置的标题版式，是因为槽位几何完全由我们的
+# 布局数据决定，套用 PowerPoint 自带占位符反而会引入我们控制不了的位置。
+BLANK_LAYOUT_INDEX = 6
+
+BULLET_INDENT_PT = 18.0
+BULLET_GAP_PT = 12.0
+CARD_GAP_PT = 16.0
+CARD_PAD_PT = 12.0
+CARD_MIN_WIDTH_PT = 96.0
+# 卡片标题与描述、KPI 各行之间的段前距
+STACK_GAP_PT = 6.0
+KPI_GAP_PT = 6.0
+
+_ALIGN = {
+    "left": PP_ALIGN.LEFT,
+    "center": PP_ALIGN.CENTER,
+    "right": PP_ALIGN.RIGHT,
+}
+
+
+class _TextTarget(NamedTuple):
+    """一个已经摆好位置的文本框：写文字要 frame 和 align，算 autofit 要 rect。"""
+
+    frame: TextFrame
+    align: str | None
+    rect: Rect
+
+
+class PptxRenderer:
+    """把统一内容模型渲染为 PPTX。
+
+    它与 Web 渲染器读同一份布局与主题数据，做同一件事：
+    按槽位摆放内容块。因此两端不会因为各自演进而排版分叉。
+
+    所有输出都是 PowerPoint 原生对象（文本框、表格、形状），
+    不含任何位图截图，保证导出结果可以直接编辑。
+    """
+
+    def __init__(self, theme: Theme) -> None:
+        self.theme = theme
+
+    def render(self, deck: Deck) -> BytesIO:
+        presentation = Presentation()
+        self._set_canvas(presentation)
+
+        for index, slide in enumerate(deck.slides):
+            self._render_slide(presentation, slide, index)
+
+        buffer = BytesIO()
+        presentation.save(buffer)
+        buffer.seek(0)
+        return buffer
+
+    def _set_canvas(self, presentation: PresentationType) -> None:
+        presentation.slide_width = Pt(CANVAS_WIDTH_PT)
+        presentation.slide_height = Pt(CANVAS_HEIGHT_PT)
+
+    def _render_slide(
+        self, presentation: PresentationType, slide: Slide, slide_index: int = 0
+    ) -> None:
+        pptx_slide = presentation.slides.add_slide(presentation.slide_layouts[BLANK_LAYOUT_INDEX])
+
+        self._fill_background(pptx_slide)
+
+        placements = placed_by_block_id(slide)
+
+        # 主题氛围层压在最底层，两端读同一份展开结果
+        occupied = [placed.rect for placed in placements.values()]
+        for shape in iter_ambient_shapes(self.theme, slide.layout_id, slide_index, occupied):
+            self._render_ambient_shape(pptx_slide, shape)
+
+        # 固定布局装饰 vs flex preset 皮肤；均画在内容块之下
+        if slide.layout_mode == "flex" and slide.layout_tree is not None:
+            for decoration in iter_skin_decorations(slide.layout_tree):
+                self._render_skin_decoration(pptx_slide, decoration)
+        else:
+            try:
+                layout = get_layout(slide.layout_id)
+            except KeyError:
+                layout = None
+            if layout is not None:
+                for decoration in layout.decorations:
+                    self._add_filled_rect(
+                        pptx_slide, decoration.rect, self.theme.color(decoration.color)
+                    )
+
+        for block in slide.blocks:
+            placed = placements.get(block.id)
+            if placed is None:
+                continue
+            self._render_block(pptx_slide, block, rect=placed.rect, text_style=placed.text_style)
+
+        credits = [
+            f"{b.credit} {b.credit_url or ''}"
+            for b in slide.blocks
+            if b.type == "image" and b.credit
+        ]
+        notes = "\n\n".join(part for part in [slide.speaker_notes, *credits] if part)
+        if notes:
+            pptx_slide.notes_slide.notes_text_frame.text = notes
+
+    def _fill_background(self, pptx_slide: PptxSlide) -> None:
+        full_bleed = Rect(x=0, y=0, w=1, h=1)
+        shape = self._add_filled_rect(pptx_slide, full_bleed, self.theme.palette.background)
+        # 背景必须位于所有内容之下，新形状默认追加在末尾，因此显式前置
+        pptx_slide.shapes._spTree.remove(shape._element)
+        pptx_slide.shapes._spTree.insert(2, shape._element)
+
+    def _render_ambient_shape(self, pptx_slide: PptxSlide, shape: AmbientShape) -> None:
+        if shape.kind == "text":
+            self._add_ambient_text(pptx_slide, shape)
+            return
+        oval = shape.kind == "ellipse"
+        drawn = self._add_filled_rect(
+            pptx_slide, shape.rect, shape.color, MSO_SHAPE.OVAL if oval else MSO_SHAPE.RECTANGLE
+        )
+        drawn.name = f"{AMBIENT_SHAPE_PREFIX}{shape.kind}"
+
+    def _add_ambient_text(self, pptx_slide: PptxSlide, shape: AmbientShape) -> None:
+        family = self.theme.fonts.display if shape.font == "display" else self.theme.fonts.body
+        frame = self._add_textbox(pptx_slide, shape.rect, name=f"{AMBIENT_SHAPE_PREFIX}text")
+        frame.word_wrap = False
+        frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        paragraph = frame.paragraphs[0]
+        paragraph.line_spacing = 1.0
+        self._apply_align(paragraph, shape.align)
+        run = paragraph.add_run()
+        run.text = shape.text or ""
+        font = run.font
+        font.name = family.pptx_latin
+        font.size = Pt(shape.size_pt or 0)
+        font.bold = (shape.weight or 400) >= 600
+        font.color.rgb = to_rgb(shape.color)
+        set_east_asian_font(font, family.pptx_east_asian)
+        if shape.letter_spacing_pt:
+            font._rPr.set("spc", str(round(shape.letter_spacing_pt * 100)))
+
+    def _render_skin_decoration(self, pptx_slide: PptxSlide, decoration: SkinDecoration) -> None:
+        color = self.theme.color(decoration.color_token)
+        kind = decoration.kind
+        if kind == "fill_box":
+            shape_type = (
+                MSO_SHAPE.ROUNDED_RECTANGLE if decoration.radius_pt > 0 else MSO_SHAPE.RECTANGLE
+            )
+            self._add_filled_rect(
+                pptx_slide,
+                decoration.rect,
+                color,
+                shape_type,
+                radius_pt=decoration.radius_pt,
+            )
+            return
+        if kind == "outline_box":
+            self._add_outline_rect(
+                pptx_slide,
+                decoration.rect,
+                color,
+                radius_pt=decoration.radius_pt,
+                border_width_pt=1.5,
+            )
+            return
+        if kind in ("side_line", "timeline_axis"):
+            self._add_filled_rect(pptx_slide, decoration.rect, color)
+            return
+        if kind == "timeline_dot":
+            self._add_filled_rect(pptx_slide, decoration.rect, color, MSO_SHAPE.OVAL)
+            return
+        if kind == "number_badge":
+            self._add_number_badge(pptx_slide, decoration.rect, color, decoration.text or "")
+            return
+
+    def _add_outline_rect(
+        self,
+        pptx_slide: PptxSlide,
+        rect: Rect,
+        color: str,
+        *,
+        radius_pt: float = 0,
+        border_width_pt: float = 1.5,
+    ) -> BaseShape:
+        shape_type = MSO_SHAPE.ROUNDED_RECTANGLE if radius_pt > 0 else MSO_SHAPE.RECTANGLE
+        left, top, width, height = (Emu(value) for value in rect.to_emu())
+        shape = pptx_slide.shapes.add_shape(shape_type, left, top, width, height)
+        shape.fill.background()
+        shape.line.color.rgb = to_rgb(color)
+        shape.line.width = Pt(border_width_pt)
+        shape.shadow.inherit = False
+        if shape_type == MSO_SHAPE.ROUNDED_RECTANGLE and radius_pt > 0:
+            short_side = min(rect.w * CANVAS_WIDTH_PT, rect.h * CANVAS_HEIGHT_PT)
+            if short_side > 0:
+                shape.adjustments[0] = min(0.5, max(0.0, radius_pt / short_side))
+        return shape
+
+    def _add_number_badge(
+        self,
+        pptx_slide: PptxSlide,
+        rect: Rect,
+        fill: str,
+        text: str,
+    ) -> None:
+        left, top, width, height = (Emu(value) for value in rect.to_emu())
+        shape = pptx_slide.shapes.add_shape(MSO_SHAPE.OVAL, left, top, width, height)
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = to_rgb(fill)
+        shape.line.fill.background()
+        shape.shadow.inherit = False
+        frame = shape.text_frame
+        frame.word_wrap = False
+        frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        frame.margin_left = 0
+        frame.margin_right = 0
+        frame.margin_top = 0
+        frame.margin_bottom = 0
+        paragraph = frame.paragraphs[0]
+        paragraph.alignment = PP_ALIGN.CENTER
+        run = paragraph.add_run()
+        run.text = text
+        run.font.size = Pt(11)
+        run.font.bold = True
+        run.font.color.rgb = to_rgb(self.theme.palette.background)
+
+    def _add_filled_rect(
+        self,
+        pptx_slide: PptxSlide,
+        rect: BleedRect,
+        color: str,
+        shape_type: MSO_SHAPE = MSO_SHAPE.RECTANGLE,
+        *,
+        radius_pt: float = 0,
+        border_width_pt: float = 0,
+        border_color: str | None = None,
+    ) -> BaseShape:
+        left, top, width, height = (Emu(value) for value in rect.to_emu())
+        shape = pptx_slide.shapes.add_shape(shape_type, left, top, width, height)
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = to_rgb(color)
+        if border_width_pt > 0 and border_color is not None:
+            shape.line.color.rgb = to_rgb(border_color)
+            shape.line.width = Pt(border_width_pt)
+        else:
+            shape.line.fill.background()
+        shape.shadow.inherit = False
+        if shape_type == MSO_SHAPE.ROUNDED_RECTANGLE and radius_pt > 0:
+            # adjustments[0] 是相对短边的圆角比例，夹在 0–0.5
+            short_side = min(rect.w * CANVAS_WIDTH_PT, rect.h * CANVAS_HEIGHT_PT)
+            if short_side > 0:
+                shape.adjustments[0] = min(0.5, max(0.0, radius_pt / short_side))
+        return shape
+
+    def _add_box_chrome(self, pptx_slide: PptxSlide, rect: Rect, box: ResolvedBox) -> None:
+        if not box.has_chrome and box.radius_pt <= 0:
+            return
+        if not box.has_fill and not box.has_border:
+            return
+        shape_type = MSO_SHAPE.ROUNDED_RECTANGLE if box.radius_pt > 0 else MSO_SHAPE.RECTANGLE
+        fill = box.fill or self.theme.palette.background
+        # 无填充但有边框时用背景色铺底再画线，避免透明形状在部分客户端丢边框
+        if box.has_fill:
+            color = fill
+        else:
+            left, top, width, height = (Emu(value) for value in rect.to_emu())
+            shape = pptx_slide.shapes.add_shape(shape_type, left, top, width, height)
+            shape.fill.background()
+            if box.has_border:
+                shape.line.color.rgb = to_rgb(box.border_color)  # type: ignore[arg-type]
+                shape.line.width = Pt(box.border_width_pt)
+            else:
+                shape.line.fill.background()
+            shape.shadow.inherit = False
+            if shape_type == MSO_SHAPE.ROUNDED_RECTANGLE and box.radius_pt > 0:
+                short_side = min(rect.w * CANVAS_WIDTH_PT, rect.h * CANVAS_HEIGHT_PT)
+                if short_side > 0:
+                    shape.adjustments[0] = min(0.5, max(0.0, box.radius_pt / short_side))
+            return
+
+        self._add_filled_rect(
+            pptx_slide,
+            rect,
+            color,
+            shape_type,
+            radius_pt=box.radius_pt,
+            border_width_pt=box.border_width_pt,
+            border_color=box.border_color,
+        )
+
+    def _padded_rect(self, rect: Rect, padding_pt: float) -> Rect:
+        if padding_pt <= 0:
+            return rect
+        pad_x = padding_pt / CANVAS_WIDTH_PT
+        pad_y = padding_pt / CANVAS_HEIGHT_PT
+        # 内缩后仍保底一点尺寸，避免极端 padding 把文本框压成零
+        w = max(0.01, rect.w - pad_x * 2)
+        h = max(0.01, rect.h - pad_y * 2)
+        return Rect(x=rect.x + pad_x, y=rect.y + pad_y, w=w, h=h)
+
+    def _add_textbox(
+        self, pptx_slide: PptxSlide, rect: BleedRect, *, name: str | None = None
+    ) -> TextFrame:
+        left, top, width, height = (Emu(value) for value in rect.to_emu())
+        textbox = pptx_slide.shapes.add_textbox(left, top, width, height)
+        if name is not None:
+            textbox.name = name
+        frame = textbox.text_frame
+        frame.word_wrap = True
+        frame.vertical_anchor = MSO_ANCHOR.TOP
+        frame.margin_left = 0
+        frame.margin_right = 0
+        frame.margin_top = 0
+        frame.margin_bottom = 0
+        disable_autofit(frame)
+        return frame
+
+    def _apply_align(self, paragraph, align: str | None) -> None:
+        if align is None:
+            return
+        paragraph.alignment = _ALIGN.get(align)
+
+    def _styled_textbox(
+        self,
+        pptx_slide: PptxSlide,
+        rect: Rect,
+        style: BlockStyle | None,
+    ) -> _TextTarget:
+        box = resolve_box(self.theme, style)
+        self._add_box_chrome(pptx_slide, rect, box)
+        content_rect = self._padded_rect(rect, box.padding_pt)
+        return _TextTarget(
+            frame=self._add_textbox(pptx_slide, content_rect),
+            align=style.align if style else None,
+            rect=content_rect,
+        )
+
+    def _fit_stack(
+        self,
+        target: _TextTarget,
+        lines: list[tuple[TextStyle, str]],
+        *,
+        gap_pt: float = 0.0,
+    ) -> None:
+        """按实测高度给文本框写 normAutofit，兜住排不下的内容。
+
+        度量与溢出告警同源，所以"告警说溢出"和"导出后真的溢出"是一回事：
+        告警提醒作者删字，autofit 保证在他动手之前观众也不会看到文字压到框外。
+        """
+        width_pt = target.rect.w * CANVAS_WIDTH_PT
+        available_pt = target.rect.h * CANVAS_HEIGHT_PT
+        needed_pt = 0.0
+        for index, (style, content) in enumerate(lines):
+            if index > 0:
+                needed_pt += gap_pt
+            needed_pt += measure_text(
+                content, style=style, width_pt=width_pt, height_pt=available_pt
+            ).height_pt
+        shrink_text_to_fit(target.frame, needed_pt=needed_pt, available_pt=available_pt)
+
+    def _render_block(
+        self,
+        pptx_slide: PptxSlide,
+        block: Block,
+        *,
+        rect: Rect,
+        text_style: str | None,
+    ) -> None:
+        match block:
+            case TextBlock():
+                self._render_text(pptx_slide, block, rect=rect, text_style=text_style)
+            case BulletsBlock():
+                self._render_bullets(pptx_slide, block, rect=rect, text_style=text_style)
+            case KpiBlock():
+                self._render_kpi(pptx_slide, block, rect=rect)
+            case TableBlock():
+                self._render_table(pptx_slide, block, rect=rect)
+            case ImageBlock():
+                self._render_image(pptx_slide, block, rect=rect)
+            case ChartBlock():
+                self._render_chart(pptx_slide, block, rect=rect)
+            case FinancialTableBlock():
+                self._render_financial_table(pptx_slide, block, rect=rect)
+            case WaterfallBlock():
+                self._render_waterfall(pptx_slide, block, rect=rect)
+            case ComboChartBlock():
+                self._render_combo_chart(pptx_slide, block, rect=rect)
+            case DiagramBlock():
+                self._render_diagram(pptx_slide, block, rect=rect)
+            case CardsBlock():
+                self._render_cards(pptx_slide, block, rect=rect)
+            case CalloutBlock():
+                self._render_callout(pptx_slide, block, rect=rect)
+
+    def _render_text(
+        self,
+        pptx_slide: PptxSlide,
+        block: TextBlock,
+        *,
+        rect: Rect,
+        text_style: str | None,
+    ) -> None:
+        style = merge_text_style(self.theme, text_style or "body", block.style)
+        target = self._styled_textbox(pptx_slide, rect, block.style)
+        paragraph = target.frame.paragraphs[0]
+        write_paragraph(paragraph, block.text, self.theme, style)
+        align = target.align
+        if self.theme.visual_style == "financial-tech" and text_style in {"title", "display"}:
+            align = align or "center"
+        self._apply_align(paragraph, align)
+        self._fit_stack(target, [(style, block.text)])
+
+    def _render_bullets(
+        self,
+        pptx_slide: PptxSlide,
+        block: BulletsBlock,
+        *,
+        rect: Rect,
+        text_style: str | None,
+    ) -> None:
+        style = merge_text_style(self.theme, text_style or "bullet", block.style)
+        target = self._styled_textbox(pptx_slide, rect, block.style)
+
+        for index, item in enumerate(block.items):
+            paragraph = target.frame.paragraphs[0] if index == 0 else target.frame.add_paragraph()
+            if index > 0:
+                paragraph.space_before = Pt(BULLET_GAP_PT)
+            write_paragraph(paragraph, item, self.theme, style)
+            apply_bullet(paragraph, self.theme, BULLET_INDENT_PT)
+            self._apply_align(paragraph, target.align)
+
+        available_pt = target.rect.h * CANVAS_HEIGHT_PT
+        measured = measure_bullets(
+            block.items,
+            style=style,
+            width_pt=target.rect.w * CANVAS_WIDTH_PT,
+            height_pt=available_pt,
+        )
+        shrink_text_to_fit(target.frame, needed_pt=measured.height_pt, available_pt=available_pt)
+
+    def _render_kpi(self, pptx_slide: PptxSlide, block: KpiBlock, *, rect: Rect) -> None:
+        # 与 Web KpiView 默认内边距对齐，避免窄列衬线数字贴边被裁
+        style = block.style
+        if self.theme.visual_style == "financial-tech":
+            style = BlockStyle.model_validate(
+                {
+                    "fill": "surface",
+                    "border_color": "line",
+                    "border_width_pt": 0.75,
+                    "radius_pt": self.theme.shape.radius_pt,
+                    **(block.style.model_dump(exclude_none=True) if block.style else {}),
+                }
+            )
+        box = resolve_box(self.theme, style)
+        self._add_box_chrome(pptx_slide, rect, box)
+        if self.theme.visual_style == "financial-tech":
+            self._add_filled_rect(
+                pptx_slide,
+                Rect(x=rect.x, y=rect.y, w=rect.w, h=min(rect.h, 2 / CANVAS_HEIGHT_PT)),
+                self.theme.palette.accent,
+            )
+        pad_pt = max(box.padding_pt, 14.0)
+        content_rect = self._padded_rect(rect, pad_pt)
+        target = _TextTarget(
+            frame=self._add_textbox(pptx_slide, content_rect),
+            align=block.style.align if block.style else None,
+            rect=content_rect,
+        )
+
+        names = ["kpi_value", "kpi_label"]
+        contents = [block.value, block.label]
+        if block.note:
+            names.append("kpi_note")
+            contents.append(block.note)
+        # KPI 各行共用同一份元素覆盖（字号/颜色/粗斜体）
+        lines = [
+            (merge_text_style(self.theme, name, block.style), content)
+            for name, content in zip(names, contents, strict=True)
+        ]
+
+        for index, (style, content) in enumerate(lines):
+            paragraph = target.frame.paragraphs[0] if index == 0 else target.frame.add_paragraph()
+            if index > 0:
+                paragraph.space_before = Pt(KPI_GAP_PT)
+            write_paragraph(paragraph, content, self.theme, style)
+            self._apply_align(paragraph, target.align)
+
+        self._fit_stack(target, lines, gap_pt=KPI_GAP_PT)
+
+    def _render_cards(self, pptx_slide: PptxSlide, block: CardsBlock, *, rect: Rect) -> None:
+        """卡片网格：宽栏横排，窄栏自动折成多行，观感对齐 Web 端。"""
+        box = resolve_box(self.theme, block.style)
+        self._add_box_chrome(pptx_slide, rect, box)
+        rect = self._padded_rect(rect, box.padding_pt + box.border_width_pt)
+        if self.theme.visual_style == "financial-tech":
+            self._render_financial_cards(pptx_slide, block, rect=rect)
+            return
+        n = len(block.items)
+        if n == 0:
+            return
+        spec = card_style(self.theme.visual_style)
+        gap_pt = spec["gap_pt"]
+        pad_pt = spec["padding_pt"]
+        gap = gap_pt / CANVAS_WIDTH_PT
+        width_pt = rect.w * CANVAS_WIDTH_PT
+        columns, _, _ = card_grid(
+            n, width_pt, rect.h * CANVAS_HEIGHT_PT, visual_style=self.theme.visual_style
+        )
+        rows = (n + columns - 1) // columns
+        total_gap_x = gap * max(columns - 1, 0)
+        gap_y = gap_pt / CANVAS_HEIGHT_PT
+        total_gap_y = gap_y * max(rows - 1, 0)
+        card_w = max((rect.w - total_gap_x) / columns, 1e-6)
+        card_h = max((rect.h - total_gap_y) / rows, 1e-6)
+        pad_x = pad_pt / CANVAS_WIDTH_PT
+        pad_y = pad_pt / CANVAS_HEIGHT_PT
+        title_style = merge_text_style(self.theme, "subtitle", block.style)
+        body_style = merge_text_style(self.theme, "body", block.style)
+        align = block.style.align if block.style else None
+
+        for index, item in enumerate(block.items):
+            row = index // columns
+            column = index % columns
+            card = Rect(
+                x=rect.x + column * (card_w + gap),
+                y=rect.y + row * (card_h + gap_y),
+                w=card_w,
+                h=card_h,
+            )
+            panel = self._add_filled_rect(
+                pptx_slide,
+                card,
+                self.theme.palette.surface,
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                radius_pt=self.theme.shape.radius_pt,
+            )
+            panel.name = f"card-panel-{block.id}-{index}"
+            content = Rect(
+                x=card.x + pad_x,
+                y=card.y + pad_y,
+                w=max(card.w - 2 * pad_x, 1e-6),
+                h=max(card.h - 2 * pad_y, 1e-6),
+            )
+            target = _TextTarget(
+                frame=self._add_textbox(pptx_slide, content), align=align, rect=content
+            )
+            title_text = f"{item.icon} {item.title}".strip() if item.icon else item.title
+            paragraph = target.frame.paragraphs[0]
+            write_paragraph(paragraph, title_text, self.theme, title_style)
+            self._apply_align(paragraph, align)
+            desc = target.frame.add_paragraph()
+            desc.space_before = Pt(STACK_GAP_PT)
+            write_paragraph(desc, item.desc, self.theme, body_style)
+            self._apply_align(desc, align)
+            self._fit_stack(
+                target,
+                [(title_style, title_text), (body_style, item.desc)],
+                gap_pt=STACK_GAP_PT,
+            )
+
+    def _render_callout(self, pptx_slide: PptxSlide, block: CalloutBlock, *, rect: Rect) -> None:
+        """提示条：note 用 accent 浅底 + body；source 用弱底 + caption。"""
+        if block.variant == "source":
+            fill = mix(self.theme.palette.surface, self.theme.palette.background, 0.35)
+            style_name = "caption"
+        else:
+            fill = mix(self.theme.palette.accent, self.theme.palette.background, 0.18)
+            style_name = "body"
+        self._add_filled_rect(
+            pptx_slide,
+            rect,
+            fill,
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            radius_pt=BOX_RADIUS_PT,
+        )
+        pad_x = CARD_PAD_PT / CANVAS_WIDTH_PT
+        pad_y = (CARD_PAD_PT * 0.75) / CANVAS_HEIGHT_PT
+        content = Rect(
+            x=rect.x + pad_x,
+            y=rect.y + pad_y,
+            w=max(rect.w - 2 * pad_x, 1e-6),
+            h=max(rect.h - 2 * pad_y, 1e-6),
+        )
+        target = _TextTarget(
+            frame=self._add_textbox(pptx_slide, content),
+            align=block.style.align if block.style else None,
+            rect=content,
+        )
+        style = merge_text_style(self.theme, style_name, block.style)
+        text = f"{block.icon} {block.text}".strip() if block.icon else block.text
+        write_paragraph(target.frame.paragraphs[0], text, self.theme, style)
+        self._apply_align(target.frame.paragraphs[0], target.align)
+        self._fit_stack(target, [(style, text)])
+
+    def _render_table(self, pptx_slide: PptxSlide, block: TableBlock, *, rect: Rect) -> None:
+        self._render_measured_table(pptx_slide, block, rect=rect)
+
+    def _render_measured_table(
+        self, pptx_slide: PptxSlide, block: TableBlock | FinancialTableBlock, *, rect: Rect
+    ) -> None:
+        _, _, width_pt, height_pt = rect.to_points()
+        geometry = block.geometry or layout_table(block, width_pt, height_pt)
+        if geometry.height > height_pt + 0.5:
+            raise ValueError("Table overflows its slide; paginate the table before export")
+        left, top, width, height = (Emu(value) for value in rect.to_emu())
+        graphic_frame = pptx_slide.shapes.add_table(
+            len(geometry.cells),
+            len(geometry.column_widths),
+            left,
+            top,
+            width,
+            Pt(geometry.height),
+        )
+        table = graphic_frame.table
+        use_plain_style(table)
+        financial = isinstance(block, FinancialTableBlock)
+        for i, column_width in enumerate(geometry.column_widths):
+            table.columns[i].width = Pt(column_width)
+        for r, row in enumerate(geometry.cells):
+            table.rows[r].height = Pt(geometry.row_heights[r])
+            for c, value in enumerate(row):
+                style = merge_text_style(
+                    self.theme, "table_header" if r == 0 else "table_cell", block.style
+                ).model_copy(
+                    update={
+                        "size_pt": geometry.font_size,
+                        "line_height": 1.25,
+                        "letter_spacing_pt": 0,
+                    }
+                )
+                cell = table.cell(r, c)
+                self._write_cell(cell, value, style, (0.75, self.theme.palette.line), align="left")
+                cell.margin_left = cell.margin_right = Pt(geometry.padding)
+                cell.margin_top = cell.margin_bottom = Pt(geometry.padding)
+                cell.text_frame.word_wrap = False
+                cell.vertical_anchor = MSO_ANCHOR.TOP
+                if financial and r == 0:
+                    cell.fill.fore_color.rgb = to_rgb(self.theme.palette.accent)
+                    for run in cell.text_frame.paragraphs[0].runs:
+                        run.font.color.rgb = to_rgb("#FFFFFF")
+                elif financial and c - 1 in block.highlight_columns and c > 0:
+                    cell.fill.fore_color.rgb = to_rgb(self.theme.palette.accent_soft)
+                if financial and r > 0 and block.rows[r - 1].emphasis:
+                    for run in cell.text_frame.paragraphs[0].runs:
+                        run.font.bold = True
+
+    def _write_cell(
+        self,
+        cell,
+        content: str,
+        style,
+        bottom: tuple[float, str],
+        *,
+        align: str | None = None,
+    ) -> None:
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = to_rgb(self.theme.palette.background)
+        cell.margin_left = Pt(12)
+        cell.margin_right = Pt(12)
+        cell.margin_top = Pt(9)
+        cell.margin_bottom = Pt(9)
+        cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+        set_cell_borders(cell, bottom)
+
+        frame = cell.text_frame
+        frame.word_wrap = True
+        frame._bodyPr.set("latinLnBrk", "0")
+        paragraph = frame.paragraphs[0]
+        for index, line in enumerate(content.replace("\r\n", "\n").replace("\r", "\n").split("\n")):
+            if index:
+                paragraph.add_line_break()
+            write_paragraph(paragraph, line, self.theme, style)
+        self._apply_align(paragraph, align)
+
+    def _apply_image_border(self, picture, style: BlockStyle | None) -> None:
+        box = resolve_box(self.theme, style)
+        if not box.has_border:
+            return
+        picture.line.color.rgb = to_rgb(box.border_color)  # type: ignore[arg-type]
+        picture.line.width = Pt(box.border_width_pt)
+
+    def _render_image(self, pptx_slide: PptxSlide, block: ImageBlock, *, rect: Rect) -> None:
+        """插入真实图片，或在缺失时用形状拼出与 Web 端同构的占位图形。
+
+        真实图片本来就是位图对象，插入后在 PowerPoint 里仍可选中、移动和替换；
+        只有占位图用形状拼，避免把"没有图"这件事固化成一张不可编辑的图。
+        """
+        if block.url:
+            key = media_key_from_url(block.url)
+            if key is not None:
+                try:
+                    picture = self._add_cover_picture(pptx_slide, rect, load_image(key))
+                    self._apply_image_border(picture, block.style)
+                    return
+                except Exception as error:
+                    logger.warning("图片读取或解码失败，回退占位图：key=%s error=%s", key, error)
+
+        accent = self.theme.palette.accent
+        base = self.theme.palette.accent_soft
+
+        self._add_filled_rect(pptx_slide, rect, base)
+
+        outer = Rect(
+            x=rect.x + rect.w * 0.44,
+            y=rect.y + rect.h * 0.04,
+            w=rect.w * 0.6,
+            h=rect.h * 0.34,
+        )
+        inner = Rect(
+            x=rect.x + rect.w * 0.56,
+            y=rect.y + rect.h * 0.1,
+            w=rect.w * 0.36,
+            h=rect.h * 0.2,
+        )
+        # 圆形按 Web 端同一组比例摆放，会略微超出槽位；Web 由 viewBox 裁掉，这里显式收边
+        self._add_clipped_oval(pptx_slide, outer, rect, mix(accent, base, 0.22))
+        self._add_clipped_oval(pptx_slide, inner, rect, mix(accent, base, 0.32))
+        self._add_placeholder_ridge(pptx_slide, rect, mix(accent, base, 0.16))
+
+        rule = Rect(
+            x=rect.x + rect.w * 0.08,
+            y=rect.y + rect.h * 0.86,
+            w=rect.w * 0.18,
+            h=rect.h * 0.012,
+        )
+        self._add_filled_rect(pptx_slide, rule, accent)
+        # 占位图用外层 chrome 画边框
+        box = resolve_box(self.theme, block.style)
+        if box.has_border:
+            self._add_box_chrome(
+                pptx_slide,
+                rect,
+                ResolvedBox(
+                    fill=None,
+                    radius_pt=0,
+                    border_width_pt=box.border_width_pt,
+                    border_color=box.border_color,
+                    padding_pt=0,
+                ),
+            )
+
+    def _add_clipped_oval(
+        self,
+        pptx_slide: PptxSlide,
+        rect: Rect,
+        bounds: Rect,
+        color: str,
+    ) -> None:
+        clipped = rect.clipped_to(bounds)
+        if clipped is None:
+            return
+        self._add_filled_rect(pptx_slide, clipped, color, MSO_SHAPE.OVAL)
+
+    def _add_cover_picture(self, pptx_slide: PptxSlide, rect: Rect, data: bytes):
+        """覆盖式裁切，等价于 CSS object-fit: cover，两端观感才一致。"""
+        left_pt, top_pt, width_pt, height_pt = rect.to_points()
+        left, top, width, height = (Pt(value) for value in (left_pt, top_pt, width_pt, height_pt))
+        px_w, px_h = PptxImage.from_blob(data).size
+        slot_ratio = width_pt / height_pt
+        img_ratio = px_w / px_h
+
+        picture = pptx_slide.shapes.add_picture(BytesIO(data), left, top, width, height)
+        if img_ratio > slot_ratio:
+            crop = (1 - slot_ratio / img_ratio) / 2
+            picture.crop_left = crop
+            picture.crop_right = crop
+        else:
+            crop = (1 - img_ratio / slot_ratio) / 2
+            picture.crop_top = crop
+            picture.crop_bottom = crop
+        return picture
+
+    def _add_placeholder_ridge(self, pptx_slide: PptxSlide, rect: Rect, color: str) -> None:
+        """占位图下半部的折线剪影，与 Web 端 SVG 用的是同一组顶点"""
+        left, top, width, height = rect.to_points()
+
+        def point(x: float, y: float) -> tuple[int, int]:
+            return (
+                Emu(round((left + width * x) * EMU_PER_POINT)),
+                Emu(round((top + height * y) * EMU_PER_POINT)),
+            )
+
+        vertices = [(0.34, 0.52), (0.58, 0.7), (1.0, 0.4), (1.0, 1.0), (0.0, 1.0)]
+        builder = pptx_slide.shapes.build_freeform(*point(0.0, 0.78))
+        builder.add_line_segments([point(x, y) for x, y in vertices], close=True)
+
+        shape = builder.convert_to_shape()
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = to_rgb(color)
+        shape.line.fill.background()
+        shape.shadow.inherit = False
+
+    def _render_chart(self, pptx_slide: PptxSlide, block: ChartBlock, *, rect: Rect) -> None:
+        render_chart(pptx_slide, rect, block, self.theme)
+
+    def _render_financial_table(
+        self, pptx_slide: PptxSlide, block: FinancialTableBlock, *, rect: Rect
+    ) -> None:
+        self._render_measured_table(pptx_slide, block, rect=rect)
+
+    def _render_waterfall(
+        self, pptx_slide: PptxSlide, block: WaterfallBlock, *, rect: Rect
+    ) -> None:
+        if len(block.items) < 2:
+            return
+        values: list[tuple[float, float, float]] = []
+        running = 0.0
+        for item in block.items:
+            if item.kind in {"start", "total"}:
+                start = 0.0
+                end = item.value
+                running = item.value
+            else:
+                start = running
+                end = running + item.value
+                running = end
+            values.append((start, end, end - start))
+
+        min_v = min(0.0, *(min(start, end) for start, end, _delta in values))
+        max_v = max(0.0, *(max(start, end) for start, end, _delta in values))
+        if max_v - min_v <= 0:
+            max_v += 1
+        plot = Rect(
+            x=rect.x + rect.w * 0.03, y=rect.y + rect.h * 0.18, w=rect.w * 0.94, h=rect.h * 0.58
+        )
+        label_y = rect.y + rect.h * 0.78
+        n = len(block.items)
+        gap = plot.w / max(n, 1)
+        bar_w = gap * 0.58
+        accent = self.theme.palette.accent
+        good = self.theme.palette.chart_series[1 % len(self.theme.palette.chart_series)]
+        soft = self.theme.palette.line_strong
+        negative = self.theme.palette.chart_series[3 % len(self.theme.palette.chart_series)]
+
+        def y_of(value: float) -> float:
+            return plot.y + plot.h * (1.0 - (value - min_v) / (max_v - min_v))
+
+        zero_y = y_of(0)
+        self._add_filled_rect(
+            pptx_slide, Rect(x=plot.x, y=zero_y, w=plot.w, h=0.0025), self.theme.palette.line_strong
+        )
+        if block.unit:
+            self._add_small_text(pptx_slide, Rect(x=rect.x, y=rect.y, w=0.12, h=0.06), block.unit)
+
+        centers: list[tuple[float, float]] = []
+        for index, (item, (start, end, delta)) in enumerate(zip(block.items, values, strict=True)):
+            x = plot.x + gap * index + (gap - bar_w) / 2
+            top = min(y_of(start), y_of(end))
+            bottom = max(y_of(start), y_of(end))
+            color = accent if item.kind in {"start", "total"} else good if delta >= 0 else negative
+            if item.kind == "decrease":
+                color = negative
+            if item.kind not in {"start", "total"} and abs(delta) < 1e-9:
+                color = soft
+            bar = Rect(x=x, y=top, w=bar_w, h=max(bottom - top, 0.006))
+            self._add_filled_rect(pptx_slide, bar, color)
+            centers.append((x + bar_w / 2, top))
+            value = item.value if item.kind in {"start", "total"} else delta
+            self._add_small_text(
+                pptx_slide,
+                Rect(x=x - gap * 0.1, y=max(top - 0.055, rect.y), w=gap * 1.2, h=0.045),
+                _format_number(value),
+                bold=True,
+                align="center",
+            )
+            self._add_small_text(
+                pptx_slide,
+                Rect(x=x - gap * 0.22, y=label_y, w=gap * 1.45, h=0.11),
+                item.label,
+                align="center",
+            )
+            if index < len(values) - 1:
+                connector_y = y_of(end)
+                next_x = plot.x + gap * (index + 1) + (gap - bar_w) / 2
+                self._add_filled_rect(
+                    pptx_slide,
+                    Rect(x=x + bar_w, y=connector_y, w=max(next_x - (x + bar_w), 0.001), h=0.0018),
+                    self.theme.palette.line_strong,
+                )
+
+        for callout in block.callouts[:4]:
+            if callout.item_index < 0 or callout.item_index >= len(centers):
+                continue
+            cx, cy = centers[callout.item_index]
+            box = Rect(
+                x=min(max(cx - rect.w * 0.11, rect.x), rect.x + rect.w - rect.w * 0.24),
+                y=max(rect.y + 0.02, cy - rect.h * 0.18),
+                w=rect.w * 0.24,
+                h=rect.h * 0.16,
+            )
+            self._add_filled_rect(
+                pptx_slide,
+                box,
+                mix(self.theme.palette.surface, self.theme.palette.background, 0.72),
+                MSO_SHAPE.RECTANGLE,
+            )
+            text = "\n".join([item for item in [callout.title, *callout.lines] if item])
+            self._add_small_text(
+                pptx_slide, self._padded_rect(box, 8), text, bold=bool(callout.title)
+            )
+
+        if block.end_badge:
+            badge = Rect(
+                x=rect.x + rect.w * 0.78, y=rect.y + rect.h * 0.02, w=rect.w * 0.19, h=rect.h * 0.14
+            )
+            self._add_filled_rect(
+                pptx_slide,
+                badge,
+                mix(self.theme.palette.accent, self.theme.palette.background, 0.22),
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                radius_pt=10,
+            )
+            self._add_small_text(
+                pptx_slide, self._padded_rect(badge, 8), block.end_badge, bold=True, align="center"
+            )
+
+    def _render_combo_chart(
+        self, pptx_slide: PptxSlide, block: ComboChartBlock, *, rect: Rect
+    ) -> None:
+        if not block.categories or not block.bars:
+            return
+        bar_series = block.bars[0]
+        line_series = block.lines[:2]
+        count = min(len(block.categories), len(bar_series.values))
+        if count == 0:
+            return
+        values = bar_series.values[:count]
+        line_values = [series.values[:count] for series in line_series]
+        numeric = [*values, *(value for series in line_values for value in series)]
+        min_v = min(0.0, *numeric)
+        max_v = max(1.0, *numeric)
+        if max_v - min_v <= 0:
+            max_v += 1
+
+        plot = Rect(
+            x=rect.x + rect.w * 0.08, y=rect.y + rect.h * 0.13, w=rect.w * 0.84, h=rect.h * 0.64
+        )
+        base_y = plot.y + plot.h
+        step = plot.w / count
+        bar_w = step * 0.42
+        colors = self.theme.palette.chart_series
+
+        def y_of(value: float) -> float:
+            return plot.y + plot.h * (1 - (value - min_v) / (max_v - min_v))
+
+        self._add_filled_rect(
+            pptx_slide, Rect(x=plot.x, y=base_y, w=plot.w, h=0.002), self.theme.palette.line_strong
+        )
+        points_by_line: list[list[tuple[float, float]]] = []
+        for index, value in enumerate(values):
+            x = plot.x + step * index + (step - bar_w) / 2
+            y = y_of(value)
+            color = colors[index % 2] if count <= 2 else colors[0]
+            self._add_filled_rect(
+                pptx_slide, Rect(x=x, y=y, w=bar_w, h=max(base_y - y, 0.006)), color
+            )
+            self._add_small_text(
+                pptx_slide,
+                Rect(x=x - step * 0.12, y=max(y - 0.055, rect.y), w=step * 1.24, h=0.045),
+                _format_number(value),
+                bold=True,
+                align="center",
+            )
+            self._add_small_text(
+                pptx_slide,
+                Rect(x=plot.x + step * index, y=rect.y + rect.h * 0.80, w=step, h=0.06),
+                block.categories[index],
+                align="center",
+            )
+
+        for line_index, series in enumerate(line_values):
+            points: list[tuple[float, float]] = []
+            color = colors[(line_index + 2) % len(colors)]
+            for index, value in enumerate(series):
+                x = plot.x + step * index + step / 2
+                y = y_of(value)
+                points.append((x, y))
+                self._add_filled_rect(
+                    pptx_slide,
+                    Rect(x=x - 0.006, y=y - 0.006, w=0.012, h=0.012),
+                    color,
+                    MSO_SHAPE.OVAL,
+                )
+                self._add_small_text(
+                    pptx_slide,
+                    Rect(x=x - step * 0.35, y=y + 0.012, w=step * 0.7, h=0.04),
+                    _format_number(value) + (block.line_unit or ""),
+                    align="center",
+                )
+            points_by_line.append(points)
+            for left, right in zip(points, points[1:], strict=False):
+                self._add_connector_line(pptx_slide, left, right, color, width_pt=1.6)
+
+        for index, note in enumerate(block.annotations[:2]):
+            self._add_small_text(
+                pptx_slide,
+                Rect(
+                    x=rect.x + rect.w * (0.35 + index * 0.32),
+                    y=rect.y + rect.h * 0.02,
+                    w=rect.w * 0.26,
+                    h=rect.h * 0.08,
+                ),
+                note,
+                bold=True,
+                align="center",
+                color=self.theme.palette.accent,
+            )
+
+        legend_items = [bar_series.name, *(series.name for series in line_series)]
+        legend = "   ".join(legend_items)
+        self._add_small_text(
+            pptx_slide,
+            Rect(x=rect.x + rect.w * 0.22, y=rect.y + rect.h * 0.90, w=rect.w * 0.56, h=0.05),
+            legend,
+            align="center",
+        )
+
+    def _add_small_text(
+        self,
+        pptx_slide: PptxSlide,
+        rect: Rect,
+        text: str,
+        *,
+        bold: bool = False,
+        align: str = "left",
+        color: str | None = None,
+    ) -> None:
+        frame = self._add_textbox(pptx_slide, rect)
+        frame.word_wrap = True
+        paragraph = frame.paragraphs[0]
+        paragraph.alignment = _ALIGN.get(align, PP_ALIGN.LEFT)
+        paragraph.line_spacing = 1.0
+        lines = text.split("\n") if text else [""]
+        for index, line in enumerate(lines):
+            target = paragraph if index == 0 else frame.add_paragraph()
+            target.alignment = paragraph.alignment
+            run = target.add_run()
+            run.text = line
+            style = self.theme.text_style("caption")
+            apply_text_style(run, self.theme, style)
+            run.font.bold = bold or style.weight >= 600
+            if color is not None:
+                run.font.color.rgb = to_rgb(color)
+
+    def _add_connector_line(
+        self,
+        pptx_slide: PptxSlide,
+        start: tuple[float, float],
+        end: tuple[float, float],
+        color: str,
+        *,
+        width_pt: float = 1.0,
+    ) -> None:
+        connector = pptx_slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT,
+            Emu(round(start[0] * CANVAS_WIDTH_PT * EMU_PER_POINT)),
+            Emu(round(start[1] * CANVAS_HEIGHT_PT * EMU_PER_POINT)),
+            Emu(round(end[0] * CANVAS_WIDTH_PT * EMU_PER_POINT)),
+            Emu(round(end[1] * CANVAS_HEIGHT_PT * EMU_PER_POINT)),
+        )
+        connector.line.color.rgb = to_rgb(color)
+        connector.line.width = Pt(width_pt)
+
+    def _render_financial_cards(
+        self,
+        pptx_slide: PptxSlide,
+        block: CardsBlock,
+        *,
+        rect: Rect,
+    ) -> None:
+        spec = financial_tech_style()
+        columns, width, height = panel_grid(
+            len(block.items),
+            rect.w * CANVAS_WIDTH_PT,
+            rect.h * CANVAS_HEIGHT_PT,
+        )
+        title_style = merge_text_style(self.theme, "subtitle", block.style)
+        body_style = merge_text_style(self.theme, "body", block.style)
+        measurements = measure_cards(
+            block.model_copy(
+                update={
+                    "style": block.style.model_copy(update={"padding_pt": 0, "border_width_pt": 0})
+                    if block.style
+                    else None
+                }
+            ),
+            self.theme,
+            rect.w * CANVAS_WIDTH_PT,
+        )[1]
+        cyan = self.theme.palette.chart_series[1]
+        pad = spec["card_padding_pt"]
+        for index, item in enumerate(block.items):
+            header_height = max(
+                panel_header_height(height, title_style.size_pt, title_style.line_height),
+                measurements[index].title_height / card_style()["breathing"] + 12,
+            )
+            card = Rect(
+                x=rect.x + (index % columns) * (width + spec["card_gap_pt"]) / CANVAS_WIDTH_PT,
+                y=rect.y + (index // columns) * (height + spec["card_gap_pt"]) / CANVAS_HEIGHT_PT,
+                w=width / CANVAS_WIDTH_PT,
+                h=height / CANVAS_HEIGHT_PT,
+            )
+            panel = self._add_filled_rect(
+                pptx_slide,
+                card,
+                self.theme.palette.surface,
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                radius_pt=self.theme.shape.radius_pt,
+                border_width_pt=0.75,
+                border_color=self.theme.palette.line,
+            )
+            panel.name = f"financial-panel-{block.id}-{index}"
+            header_color = (
+                mix(
+                    self.theme.palette.accent,
+                    self.theme.palette.accent_soft,
+                    spec["secondary_header_accent_mix"],
+                )
+                if index % 2
+                else self.theme.palette.accent
+            )
+            builder = pptx_slide.shapes.build_freeform(0, 0, scale=EMU_PER_POINT)
+            builder.add_line_segments(
+                [
+                    (width * 0.94, 0),
+                    (width, header_height / 2),
+                    (width * 0.94, header_height),
+                    (0, header_height),
+                    (width * 0.06, header_height / 2),
+                ]
+            )
+            chevron = builder.convert_to_shape(
+                origin_x=Pt(card.x * CANVAS_WIDTH_PT), origin_y=Pt(card.y * CANVAS_HEIGHT_PT)
+            )
+            chevron.fill.gradient()
+            chevron.fill.gradient_angle = 270
+            chevron.fill.gradient_stops[0].color.rgb = to_rgb(
+                mix(cyan, header_color, spec["header_highlight_mix"])
+            )
+            chevron.fill.gradient_stops[1].color.rgb = to_rgb(
+                mix(self.theme.palette.background, header_color, spec["header_shade_mix"])
+            )
+            chevron.line.fill.background()
+            chevron.shadow.inherit = False
+            chevron.name = f"financial-chevron-{block.id}-{index}"
+            header_inset = card_header_inset(width)
+            icon_width = spec["header_icon_width_pt"]
+            title_offset = header_inset + icon_width + spec["header_icon_gap_pt"]
+            icon_rect = Rect(
+                x=card.x + header_inset / CANVAS_WIDTH_PT,
+                y=card.y + 6 / CANVAS_HEIGHT_PT,
+                w=icon_width / CANVAS_WIDTH_PT,
+                h=max(1, header_height - 12) / CANVAS_HEIGHT_PT,
+            )
+            icon = self._add_textbox(pptx_slide, icon_rect)
+            icon.vertical_anchor = MSO_ANCHOR.MIDDLE
+            icon_style = title_style.model_copy(update={"size_pt": 12})
+            write_paragraph(
+                icon.paragraphs[0], item.icon or str(index + 1).zfill(2), self.theme, icon_style
+            )
+            self._apply_align(icon.paragraphs[0], "center")
+            header_rect = Rect(
+                x=card.x + title_offset / CANVAS_WIDTH_PT,
+                y=card.y + 6 / CANVAS_HEIGHT_PT,
+                w=max(1, width - title_offset - header_inset) / CANVAS_WIDTH_PT,
+                h=max(1, header_height - 12) / CANVAS_HEIGHT_PT,
+            )
+            header = _TextTarget(
+                self._add_textbox(pptx_slide, header_rect),
+                block.style.align if block.style and block.style.align else "center",
+                header_rect,
+            )
+            header.frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+            write_paragraph(header.frame.paragraphs[0], item.title, self.theme, title_style)
+            self._apply_align(header.frame.paragraphs[0], header.align)
+            self._fit_stack(header, [(title_style, item.title)])
+            self._add_filled_rect(
+                pptx_slide,
+                Rect(
+                    x=card.x + pad / CANVAS_WIDTH_PT,
+                    y=card.y + (header_height + pad) / CANVAS_HEIGHT_PT,
+                    w=min(26, max(1, width - 2 * pad)) / CANVAS_WIDTH_PT,
+                    h=2 / CANVAS_HEIGHT_PT,
+                ),
+                cyan,
+            )
+            desc_rect = Rect(
+                x=card.x + pad / CANVAS_WIDTH_PT,
+                y=card.y + (header_height + pad + 14) / CANVAS_HEIGHT_PT,
+                w=max(1, width - 2 * pad) / CANVAS_WIDTH_PT,
+                h=max(1, height - header_height - 2 * pad - 18) / CANVAS_HEIGHT_PT,
+            )
+            body = _TextTarget(
+                self._add_textbox(pptx_slide, desc_rect),
+                block.style.align if block.style else None,
+                desc_rect,
+            )
+            write_paragraph(body.frame.paragraphs[0], item.desc, self.theme, body_style)
+            self._apply_align(body.frame.paragraphs[0], body.align)
+            self._fit_stack(body, [(body_style, item.desc)])
+            self._add_filled_rect(
+                pptx_slide,
+                Rect(
+                    x=card.x,
+                    y=card.y + card.h - 4 / CANVAS_HEIGHT_PT,
+                    w=card.w,
+                    h=4 / CANVAS_HEIGHT_PT,
+                ),
+                cyan if index % 2 else self.theme.palette.accent,
+            )
+
+    def _render_diagram(self, pptx_slide: PptxSlide, block: DiagramBlock, *, rect: Rect) -> None:
+        """用原生形状和连接线绘制流程/时间轴，导出后节点仍可单独编辑。"""
+        if not block.nodes:
+            return
+
+        if block.diagram_type != "timeline":
+            self._render_shared_diagram(pptx_slide, block, rect=rect)
+            return
+
+        edges = normalize_flow_edges(block.diagram_type, block.nodes, block.edges)
+        node_rects = self._diagram_node_rects(block, rect, edges)
+        by_id = {node.id: node for node in block.nodes}
+
+        if block.diagram_type != "timeline":
+            for edge in edges:
+                source = node_rects.get(edge.source)
+                target = node_rects.get(edge.target)
+                if source is None or target is None:
+                    continue
+                self._add_diagram_connector(pptx_slide, source, target)
+
+        for node in block.nodes:
+            node_rect = node_rects[node.id]
+            fill = {
+                "active": self.theme.palette.accent_soft,
+                "done": self.theme.palette.surface,
+                "risk": mix(self.theme.palette.accent, self.theme.palette.background, 0.12),
+            }.get(node.status, self.theme.palette.surface)
+            self._add_filled_rect(
+                pptx_slide,
+                node_rect,
+                fill,
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                radius_pt=BOX_RADIUS_PT,
+                border_width_pt=1.0,
+                border_color=self.theme.palette.line,
+            )
+            content = self._padded_rect(node_rect, 12.0)
+            target = _TextTarget(
+                frame=self._add_textbox(pptx_slide, content),
+                align=None,
+                rect=content,
+            )
+            title_style = merge_text_style(self.theme, "subtitle", block.style)
+            body_style = merge_text_style(self.theme, "body", block.style)
+            lines = [(title_style, node.title)]
+            if node.desc:
+                lines.append((body_style, node.desc))
+            for index, (style, text) in enumerate(lines):
+                paragraph = (
+                    target.frame.paragraphs[0] if index == 0 else target.frame.add_paragraph()
+                )
+                if index > 0:
+                    paragraph.space_before = Pt(STACK_GAP_PT)
+                write_paragraph(paragraph, text, self.theme, style)
+            self._fit_stack(target, lines, gap_pt=STACK_GAP_PT)
+
+        # 避免图边界处残留虚构节点被误以为是数据，变量只用于明确校验边引用。
+        _ = by_id
+
+    def _render_shared_diagram(self, slide: PptxSlide, block: DiagramBlock, *, rect: Rect) -> None:
+        _, _, width, height = rect.to_points()
+        reference = themed_flowchart_style(self.theme)
+        g = resolve_diagram_geometry(block, width, height)
+        if g.font_size < 10:
+            raise ValueError("Diagram text would be below 10 pt; give the diagram more space")
+        scale = g.font_size / (
+            block.style.size_pt if block.style and block.style.size_pt else reference["font_size"]
+        )
+        self._add_filled_rect(slide, rect, reference["background"])
+
+        def box(x, y, w, h):
+            return Rect(
+                x=rect.x + x / CANVAS_WIDTH_PT,
+                y=rect.y + y / CANVAS_HEIGHT_PT,
+                w=w / CANVAS_WIDTH_PT,
+                h=h / CANVAS_HEIGHT_PT,
+            )
+
+        def text(lines, bounds, size, *, bold=False, color=None):
+            frame = self._add_textbox(slide, bounds)
+            frame.word_wrap = False
+            style = self.theme.text_style("body").model_copy(
+                update={
+                    "size_pt": size,
+                    "line_height": 1.25,
+                    "weight": 600 if bold else 400,
+                    "letter_spacing_pt": 0,
+                    "color": color or reference["text"],
+                }
+            )
+            for i, line in enumerate(lines):
+                paragraph = frame.paragraphs[0] if i == 0 else frame.add_paragraph()
+                write_paragraph(paragraph, line, self.theme, style)
+                paragraph.alignment = PP_ALIGN.CENTER
+                paragraph.space_before = paragraph.space_after = Pt(0)
+
+        for index, edge in enumerate(g.edges):
+            # Use native custom geometry so each rounded route remains editable in PPTX.
+            coordinates = [(int(Pt(x)), int(Pt(y))) for x, y in edge.points]
+            builder = slide.shapes.build_freeform(*coordinates[0])
+            builder.add_line_segments(coordinates[1:], close=False)
+            connector = builder.convert_to_shape(
+                Pt(rect.x * CANVAS_WIDTH_PT), Pt(rect.y * CANVAS_HEIGHT_PT)
+            )
+            connector.name = f"diagram-edge-{index}"
+            path = connector._element.xpath(".//a:path")[0]
+            for child in list(path):
+                path.remove(child)
+            path.set("fill", "none")
+            left = min(x for x, _ in coordinates)
+            top = min(y for _, y in coordinates)
+            for command, values in rounded_route(edge.points):
+                element = OxmlElement({"M": "a:moveTo", "L": "a:lnTo", "Q": "a:quadBezTo"}[command])
+                for x, y in zip(values[::2], values[1::2], strict=True):
+                    point = OxmlElement("a:pt")
+                    point.set("x", str(int(Pt(x)) - left))
+                    point.set("y", str(int(Pt(y)) - top))
+                    element.append(point)
+                path.append(element)
+            connector.fill.background()
+            connector.line.color.rgb = to_rgb(reference["connector"])
+            connector.line.width = Pt(reference["stroke_width"])
+            arrow = OxmlElement("a:tailEnd")
+            arrow.set("type", "arrow")
+            connector.line._get_or_add_ln().append(arrow)
+            if edge.label:
+                bounds = box(edge.label_x, edge.label_y, edge.label_width, edge.label_height)
+                self._add_filled_rect(
+                    slide,
+                    bounds,
+                    reference["background"],
+                    MSO_SHAPE.ROUNDED_RECTANGLE,
+                    radius_pt=edge.label_height / 2,
+                    border_width_pt=reference["stroke_width"],
+                    border_color=reference["condition_border"],
+                )
+                label_bounds = box(
+                    edge.label_x,
+                    edge.label_y + reference["label_padding_y"] * scale,
+                    edge.label_width,
+                    edge.label_height,
+                )
+                text(
+                    edge.label.split("\n"),
+                    label_bounds,
+                    g.font_size * reference["label_font_ratio"],
+                    bold=True,
+                )
+        by_id = {node.id: node for node in block.nodes}
+        for node in g.nodes:
+            original = by_id[node.id]
+            bounds = box(node.x, node.y, node.width, node.height)
+            shape = self._add_filled_rect(
+                slide,
+                bounds,
+                reference["background"] if original.kind == "decision" else reference["node_fill"],
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                radius_pt=reference["radius"] * scale,
+                border_width_pt=reference["stroke_width"],
+                border_color=reference["condition_border"]
+                if original.kind == "decision"
+                else reference["node_border"],
+            )
+            shape.name = (
+                f"financial-platform-node-{node.id}"
+                if self.theme.visual_style == "financial-tech"
+                else f"diagram-node-{node.id}"
+            )
+            if original.kind == "decision" and shape is not None:
+                from pptx.enum.dml import MSO_LINE_DASH_STYLE
+
+                shape.line.dash_style = MSO_LINE_DASH_STYLE.DASH
+            lines = [*node.title_lines, *node.desc_lines]
+            text_height = len(lines) * g.font_size * 1.25
+            top = node.y + (node.height - text_height) / 2
+            for group, bold in ((node.title_lines, True), (node.desc_lines, False)):
+                if group:
+                    group_height = len(group) * g.font_size * reference["line_height"]
+                    text(
+                        group,
+                        box(node.x + 4, top, node.width - 8, group_height + 2),
+                        g.font_size,
+                        bold=bold,
+                    )
+                    top += group_height
+
+    def _diagram_node_rects(
+        self,
+        block: DiagramBlock,
+        rect: Rect,
+        edges: list[DiagramEdge],
+    ) -> dict[str, Rect]:
+        count = len(block.nodes)
+        gap_x = 18.0 / CANVAS_WIDTH_PT
+        gap_y = 16.0 / CANVAS_HEIGHT_PT
+        if block.diagram_type == "timeline":
+            columns = count if count <= 3 else 2 if count <= 4 else 3
+            rows = (count + columns - 1) // columns
+            node_w = max((rect.w - gap_x * (columns - 1)) / columns, 1e-6)
+            node_h = max((rect.h - gap_y * (rows - 1)) / rows, 1e-6)
+            result: dict[str, Rect] = {}
+            for index, node in enumerate(block.nodes):
+                row = index // columns
+                row_start = row * columns
+                row_count = min(columns, count - row_start)
+                row_width = row_count * node_w + (row_count - 1) * gap_x
+                start_x = (rect.w - row_width) / 2
+                result[node.id] = Rect(
+                    x=rect.x + start_x + (index - row_start) * (node_w + gap_x),
+                    y=rect.y + row * (node_h + gap_y),
+                    w=node_w,
+                    h=node_h,
+                )
+            return result
+        if block.diagram_type == "flow" and _has_branching_edges(block.nodes, edges):
+            return self._branch_flow_node_rects(block.nodes, rect, edges)
+        node_w = max((rect.w - gap_x * (count - 1)) / count, 0.12)
+        return {
+            node.id: Rect(
+                x=rect.x + index * (node_w + gap_x),
+                y=rect.y + 0.18 * rect.h,
+                w=node_w,
+                h=0.64 * rect.h,
+            )
+            for index, node in enumerate(block.nodes)
+        }
+
+    def _branch_flow_node_rects(
+        self,
+        nodes: list[DiagramNode],
+        rect: Rect,
+        edges: list[DiagramEdge],
+    ) -> dict[str, Rect]:
+        levels = _flow_levels(nodes, edges)
+        rows: dict[int, list[DiagramNode]] = {}
+        for node in nodes:
+            rows.setdefault(levels.get(node.id, 0), []).append(node)
+        row_count = max(rows, default=0) + 1
+        gap_x = 18.0 / CANVAS_WIDTH_PT
+        gap_y = 24.0 / CANVAS_HEIGHT_PT
+        row_h = max((rect.h - gap_y * (row_count - 1)) / row_count, 0.12)
+        result: dict[str, Rect] = {}
+        for level, row in rows.items():
+            node_w = max((rect.w - gap_x * (len(row) - 1)) / len(row), 0.16)
+            total_w = node_w * len(row) + gap_x * (len(row) - 1)
+            start_x = rect.x + (rect.w - total_w) / 2
+            y = rect.y + level * (row_h + gap_y)
+            for index, node in enumerate(row):
+                result[node.id] = Rect(
+                    x=start_x + index * (node_w + gap_x),
+                    y=y,
+                    w=node_w,
+                    h=row_h,
+                )
+        return result
+
+    def _add_diagram_connector(self, pptx_slide: PptxSlide, source: Rect, target: Rect) -> None:
+        if target.y >= source.y + source.h:
+            start = (source.x + source.w / 2, source.y + source.h)
+            end = (target.x + target.w / 2, target.y)
+        elif target.x >= source.x + source.w:
+            start = (source.x + source.w, source.y + source.h / 2)
+            end = (target.x, target.y + target.h / 2)
+        else:
+            start = (source.x + source.w / 2, source.y + source.h)
+            end = (target.x + target.w / 2, target.y)
+        connector = pptx_slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT,
+            Emu(round(start[0] * CANVAS_WIDTH_PT * EMU_PER_POINT)),
+            Emu(round(start[1] * CANVAS_HEIGHT_PT * EMU_PER_POINT)),
+            Emu(round(end[0] * CANVAS_WIDTH_PT * EMU_PER_POINT)),
+            Emu(round(end[1] * CANVAS_HEIGHT_PT * EMU_PER_POINT)),
+        )
+        connector.line.color.rgb = to_rgb(self.theme.palette.accent)
+        connector.line.width = Pt(1.5)
+        try:
+            connector.line.end_arrowhead = True
+        except AttributeError:
+            # 某些 python-pptx 版本没有公开箭头属性，连接线本身仍保留流程方向。
+            pass
+
+
+def _has_branching_edges(nodes: list[DiagramNode], edges: list[DiagramEdge]) -> bool:
+    outgoing = {node.id: 0 for node in nodes}
+    incoming = {node.id: 0 for node in nodes}
+    for edge in edges:
+        outgoing[edge.source] = outgoing.get(edge.source, 0) + 1
+        incoming[edge.target] = incoming.get(edge.target, 0) + 1
+    return any(value > 1 for value in outgoing.values()) or any(
+        value > 1 for value in incoming.values()
+    )
+
+
+def _flow_levels(nodes: list[DiagramNode], edges: list[DiagramEdge]) -> dict[str, int]:
+    incoming = {node.id: 0 for node in nodes}
+    outgoing: dict[str, list[str]] = {node.id: [] for node in nodes}
+    for edge in edges:
+        if edge.source not in outgoing or edge.target not in incoming:
+            continue
+        outgoing[edge.source].append(edge.target)
+        incoming[edge.target] += 1
+
+    levels = {node.id: 0 for node in nodes if incoming[node.id] == 0}
+    queue = list(levels)
+    while queue:
+        current = queue.pop(0)
+        for target in outgoing[current]:
+            levels[target] = max(levels.get(target, 0), levels[current] + 1)
+            incoming[target] -= 1
+            if incoming[target] == 0:
+                queue.append(target)
+    return levels
+
+
+def render_deck_to_pptx(
+    deck: Deck,
+    theme_id: str | None = None,
+    *,
+    theme: Theme | None = None,
+) -> BytesIO:
+    resolved = theme or get_theme(theme_id or deck.theme_id)
+    return PptxRenderer(resolved).render(deck)
+
+
+def _format_number(value: float) -> str:
+    if abs(value) >= 100:
+        return f"{value:,.0f}"
+    if abs(value) >= 10:
+        return f"{value:,.1f}".rstrip("0").rstrip(".")
+    return f"{value:,.2f}".rstrip("0").rstrip(".")

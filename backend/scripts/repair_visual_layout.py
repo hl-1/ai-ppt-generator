@@ -8,24 +8,31 @@ import json
 import re
 import uuid
 from datetime import datetime
-from pathlib import Path
 
-from app.core.db import async_session_factory
-from app.domain.block_style import BlockStyle
-from app.domain.content import BulletsBlock, Deck, DiagramBlock, Slide, TableBlock, TextBlock
-from app.domain.diagram_layout import parse_mermaid
-from app.domain.enterprise_layout import compose_report_slide
-from app.domain.flex_fit import fit_tree_to_content
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.domain.flow_policy import should_keep_flow_diagram
-from app.domain.theme import resolve_project_theme
-from app.domain.validation import validate_slide
-from app.domain.visual_layout import bind_source_diagram, prepare_visual_layout
-from app.models.project import Project
-from app.render.pptx import PptxRenderer
-from app.render.verify import verify_pptx
-from app.services.deck import load_slides, outline_pages, to_content_slide
-from app.services.quality import _section_index
+from app.core.paths import REPORTS_DIR
+from app.engine.content.content import (
+    BulletsBlock,
+    Deck,
+    DiagramBlock,
+    Slide,
+    TableBlock,
+    TextBlock,
+)
+from app.engine.diagram.diagram_layout import parse_mermaid
+from app.engine.diagram.flow_policy import should_keep_flow_diagram
+from app.engine.layout.block_style import BlockStyle
+from app.engine.layout.enterprise_layout import compose_report_slide
+from app.engine.layout.flex_fit import fit_tree_to_content
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.engine.layout.theme import resolve_project_theme
+from app.engine.layout.visual_layout import bind_source_diagram, prepare_visual_layout
+from app.engine.pptx.pptx import PptxRenderer
+from app.engine.pptx.verify import verify_pptx
+from app.engine.quality.validation import validate_slide
+from app.infrastructure.database.session import async_session_factory
+from app.modules.decks.quality import _section_index
+from app.modules.decks.service import load_slides, outline_pages, to_content_slide
+from app.modules.projects.models import Project
 
 
 def restore_text_visual(content, page, sections):
@@ -99,7 +106,7 @@ def restore_text_visual(content, page, sections):
 
 
 async def main(project_id: str, apply: bool) -> None:
-    output = Path("var/visual-repair") / project_id
+    output = REPORTS_DIR / "visual-repair" / project_id
     output.mkdir(parents=True, exist_ok=True)
     async with async_session_factory() as session:
         project = await session.get(Project, uuid.UUID(project_id))

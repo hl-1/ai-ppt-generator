@@ -6,20 +6,21 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.core.db import async_session_factory
-from app.domain.content import CardItem, CardsBlock, Slide, TextBlock
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.domain.theme import (
+from app.engine.content.content import CardItem, CardsBlock, Slide, TextBlock
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.engine.layout.theme import (
     ThemeOverrides,
     fonts_are_whitelisted,
     get_theme,
     merge_theme,
     resolve_theme,
 )
-from app.domain.theme_layout import reflow_slide_to_theme
+from app.engine.layout.theme_layout import reflow_slide_to_theme
+from app.infrastructure.database.session import async_session_factory
 from app.main import app
-from app.models.project import Project, ProjectOutline
-from app.models.slide import Slide as SlideRow
+from app.modules.decks.models import Slide as SlideRow
+from app.modules.outlines.models import ProjectOutline
+from app.modules.projects.models import Project
 
 
 @pytest.fixture

@@ -3,10 +3,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import api_router
+from app.api.router import api_router
 from app.core.config import get_settings
-from app.core.queue import close_arq_pool
-from app.core.redis import close_redis, get_redis
+from app.infrastructure.database import models  # noqa: F401  # 注册全部业务模型
+from app.infrastructure.redis.client import close_redis, get_redis
+from app.infrastructure.redis.queue import close_arq_pool
 
 
 @asynccontextmanager

@@ -6,13 +6,14 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.core.db import async_session_factory
-from app.domain.slide_patch import BulletsPatch, TextPatch
-from app.llm.base import SlideEditInput
-from app.llm.errors import LLMNotConfiguredError
+from app.engine.content.slide_patch import BulletsPatch, TextPatch
+from app.infrastructure.database.session import async_session_factory
+from app.infrastructure.llm.base import SlideEditInput
+from app.infrastructure.llm.errors import LLMNotConfiguredError
 from app.main import app
-from app.models.project import Project, ProjectOutline
-from app.models.slide import Slide as SlideRow
+from app.modules.decks.models import Slide as SlideRow
+from app.modules.outlines.models import ProjectOutline
+from app.modules.projects.models import Project
 
 
 @pytest.fixture
@@ -175,7 +176,7 @@ async def test_propose_instruct_requires_instruction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.api.v1.deck.ai_edit.create_slide_edit_generator",
+        "app.modules.decks.router.ai_edit.create_slide_edit_generator",
         lambda: ScriptedEditGenerator(),
     )
     headers = await _sign_up(client)
@@ -205,7 +206,7 @@ async def test_propose_instruct_returns_before_after(
         operations=[TextPatch(block_id="t1", text="按指令改过的标题")]
     )
     monkeypatch.setattr(
-        "app.api.v1.deck.ai_edit.create_slide_edit_generator",
+        "app.modules.decks.router.ai_edit.create_slide_edit_generator",
         lambda: generator,
     )
     headers = await _sign_up(client)
@@ -241,7 +242,7 @@ async def test_propose_on_flex_slide_skips_fixed_slot_check(
         operations=[TextPatch(block_id="pg-lead", text="七天行程、交通与预算参考")]
     )
     monkeypatch.setattr(
-        "app.api.v1.deck.ai_edit.create_slide_edit_generator",
+        "app.modules.decks.router.ai_edit.create_slide_edit_generator",
         lambda: generator,
     )
     headers = await _sign_up(client)
@@ -275,7 +276,7 @@ async def test_propose_returns_before_after(
 ) -> None:
     generator = ScriptedEditGenerator()
     monkeypatch.setattr(
-        "app.api.v1.deck.ai_edit.create_slide_edit_generator",
+        "app.modules.decks.router.ai_edit.create_slide_edit_generator",
         lambda: generator,
     )
     headers = await _sign_up(client)
@@ -303,7 +304,7 @@ async def test_propose_excludes_locked_blocks_from_model(
 ) -> None:
     generator = ScriptedEditGenerator(operations=[BulletsPatch(block_id="b1", items=["仅改正文"])])
     monkeypatch.setattr(
-        "app.api.v1.deck.ai_edit.create_slide_edit_generator",
+        "app.modules.decks.router.ai_edit.create_slide_edit_generator",
         lambda: generator,
     )
     headers = await _sign_up(client)
@@ -330,7 +331,7 @@ async def test_propose_revision_conflict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.api.v1.deck.ai_edit.create_slide_edit_generator",
+        "app.modules.decks.router.ai_edit.create_slide_edit_generator",
         lambda: ScriptedEditGenerator(),
     )
     headers = await _sign_up(client)
@@ -351,7 +352,7 @@ async def test_propose_rejects_while_generating(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.api.v1.deck.ai_edit.create_slide_edit_generator",
+        "app.modules.decks.router.ai_edit.create_slide_edit_generator",
         lambda: ScriptedEditGenerator(),
     )
     headers = await _sign_up(client)
@@ -372,7 +373,7 @@ async def test_propose_llm_not_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.api.v1.deck.ai_edit.create_slide_edit_generator",
+        "app.modules.decks.router.ai_edit.create_slide_edit_generator",
         lambda: ScriptedEditGenerator(
             error=LLMNotConfiguredError("未配置 LLM API Key，无法局部修改页面")
         ),
@@ -487,11 +488,9 @@ async def test_propose_passes_history(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    generator = ScriptedEditGenerator(
-        operations=[TextPatch(block_id="t1", text="更短的标题")]
-    )
+    generator = ScriptedEditGenerator(operations=[TextPatch(block_id="t1", text="更短的标题")])
     monkeypatch.setattr(
-        "app.api.v1.deck.ai_edit.create_slide_edit_generator",
+        "app.modules.decks.router.ai_edit.create_slide_edit_generator",
         lambda: generator,
     )
     headers = await _sign_up(client)
@@ -545,9 +544,7 @@ async def test_apply_add_on_flex_updates_tree(client: AsyncClient) -> None:
     body = response.json()
     assert [block["id"] for block in body["blocks"]] == ["pg-title", "pg-lead", "pg-extra"]
     leaf_ids = [
-        child["block_id"]
-        for child in body["layout_tree"]["children"]
-        if child["type"] == "block"
+        child["block_id"] for child in body["layout_tree"]["children"] if child["type"] == "block"
     ]
     assert "pg-extra" in leaf_ids
 
@@ -570,4 +567,3 @@ async def test_apply_add_on_fixed_is_rejected(client: AsyncClient) -> None:
         },
     )
     assert response.status_code == 422
-

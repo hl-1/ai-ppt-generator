@@ -18,26 +18,27 @@ from playwright.async_api import async_playwright
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.config import get_settings  # noqa: E402
-from app.domain.content import Deck  # noqa: E402
-from app.domain.export_check import run_export_check  # noqa: E402
-from app.domain.theme import resolve_theme  # noqa: E402
-from app.llm.base import OutlineGenerationInput, SlideGenerationInput  # noqa: E402
-from app.llm.client import StructuredChatClient, create_chat_model  # noqa: E402
-from app.llm.slide import DeepSeekSlideGenerator  # noqa: E402
-from app.render.pptx import render_deck_to_pptx  # noqa: E402
-from app.render.verify import verify_pptx  # noqa: E402
-from app.schemas.travel import ResearchData, TravelConditions  # noqa: E402
-from app.services.media import load_image, media_key_from_url  # noqa: E402
-from app.services.travel_assets import collect_travel_assets  # noqa: E402
-from app.services.travel_outline import build_travel_outline, travel_coverage_issues  # noqa: E402
-from app.services.travel_planning import (  # noqa: E402
+from app.core.paths import REPORTS_DIR
+from app.engine.content.content import Deck  # noqa: E402
+from app.engine.layout.theme import resolve_theme  # noqa: E402
+from app.engine.pptx.pptx import render_deck_to_pptx  # noqa: E402
+from app.engine.pptx.verify import verify_pptx  # noqa: E402
+from app.engine.quality.export_check import run_export_check  # noqa: E402
+from app.infrastructure.llm.base import OutlineGenerationInput, SlideGenerationInput  # noqa: E402
+from app.infrastructure.llm.client import StructuredChatClient, create_chat_model  # noqa: E402
+from app.infrastructure.llm.slide import DeepSeekSlideGenerator  # noqa: E402
+from app.infrastructure.providers.travel import TravelProviders  # noqa: E402
+from app.infrastructure.storage.media import load_image, media_key_from_url  # noqa: E402
+from app.modules.decks.workflow import build_slide_workflow, run_slide_workflow  # noqa: E402
+from app.modules.travel.assets import collect_travel_assets  # noqa: E402
+from app.modules.travel.outline import build_travel_outline, travel_coverage_issues  # noqa: E402
+from app.modules.travel.planning import (  # noqa: E402
     build_travel_plan,
     travel_context,
     validate_facts,
 )
-from app.services.travel_providers import TravelProviders  # noqa: E402
-from app.services.travel_research import extract_source_facts, source_ticket_facts  # noqa: E402
-from app.workflows.slide import build_slide_workflow, run_slide_workflow  # noqa: E402
+from app.modules.travel.research import extract_source_facts, source_ticket_facts  # noqa: E402
+from app.modules.travel.schemas import ResearchData, TravelConditions  # noqa: E402
 
 
 class SavedDataOnly:
@@ -408,7 +409,7 @@ async def render_saved_data(data, conditions, args, output):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--departure", type=date.fromisoformat, default=date(2026, 10, 9))
-    parser.add_argument("--output", default="var/travel-requirements-smoke")
+    parser.add_argument("--output", default=str(REPORTS_DIR / "travel-requirements-smoke"))
     parser.add_argument("--layout", choices=["flex", "fixed"], default="flex")
     parser.add_argument("--skip-extraction", action="store_true")
     parser.add_argument("--ui-url")

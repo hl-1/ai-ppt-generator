@@ -7,15 +7,15 @@ from pptx.enum.dml import MSO_FILL_TYPE
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.enum.text import PP_ALIGN
 
-from app.domain.content import DiagramEdge, DiagramNode
-from app.domain.financial_tech import panel_grid, platform_node_rects
-from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, Rect
-from app.domain.sample import load_financial_tech_sample, load_sample_deck
-from app.domain.theme import get_theme, resolve_theme
-from app.domain.validation import validate_deck
+from app.engine.content.content import DiagramEdge, DiagramNode
+from app.engine.content.sample import load_financial_tech_sample, load_sample_deck
+from app.engine.layout.financial_tech import panel_grid, platform_node_rects
+from app.engine.layout.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, Rect
+from app.engine.layout.theme import get_theme, resolve_theme
+from app.engine.pptx.pptx import render_deck_to_pptx
+from app.engine.pptx.verify import verify_pptx
+from app.engine.quality.validation import validate_deck
 from app.main import app
-from app.render.pptx import render_deck_to_pptx
-from app.render.verify import verify_pptx
 
 
 def test_financial_theme_overrides_keep_component_style() -> None:
@@ -85,7 +85,9 @@ def test_financial_export_is_editable_and_complete() -> None:
     names = [shape.name for slide in ppt.slides for shape in slide.shapes]
     assert sum(name.startswith("financial-chevron-") for name in names) == 4
     assert sum(name.startswith("financial-platform-node-") for name in names) == 12
-    headers = [shape for shape in ppt.slides[0].shapes if shape.name.startswith("financial-chevron-")]
+    headers = [
+        shape for shape in ppt.slides[0].shapes if shape.name.startswith("financial-chevron-")
+    ]
     for header in headers:
         assert header.fill.type == MSO_FILL_TYPE.GRADIENT
         assert header.fill.gradient_angle == 270

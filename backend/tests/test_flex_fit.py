@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from app.domain.content import Block, BulletsBlock, ImageBlock, TextBlock
-from app.domain.flex_fit import fit_tree_to_content
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.domain.flex_solve import solve
-from app.domain.geometry import CANVAS_HEIGHT_PT, SAFE_AREA
-from app.domain.theme import get_theme
+from app.engine.content.content import Block, BulletsBlock, ImageBlock, TextBlock
+from app.engine.layout.flex_fit import fit_tree_to_content
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.engine.layout.flex_solve import solve
+from app.engine.layout.geometry import CANVAS_HEIGHT_PT, SAFE_AREA
+from app.engine.layout.theme import get_theme
 
 THEME = get_theme("ivory")
 

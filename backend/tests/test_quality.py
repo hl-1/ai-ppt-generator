@@ -12,8 +12,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.core.db import async_session_factory
-from app.domain.content import (
+from app.engine.content.content import (
     BulletsBlock,
     CalloutBlock,
     CardsBlock,
@@ -25,30 +24,32 @@ from app.domain.content import (
     TableBlock,
     TextBlock,
 )
-from app.domain.export_check import (
-    allow_export,
-    check_images,
-    check_slot_bounds,
-    run_export_check,
-)
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.domain.quality import (
-    check_duplicate_pages,
-    check_evidence_alignment,
-    check_unsourced_numbers,
-    extract_numbers,
-)
-from app.domain.text_metrics import (
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.engine.layout.text_metrics import (
     clear_font_cache,
     fonts_available,
     measure_bullets,
     measure_text,
 )
-from app.domain.theme import get_theme
-from app.domain.validation import has_blocking_issue, validate_slide
+from app.engine.layout.theme import get_theme
+from app.engine.quality.export_check import (
+    allow_export,
+    check_images,
+    check_slot_bounds,
+    run_export_check,
+)
+from app.engine.quality.quality import (
+    check_duplicate_pages,
+    check_evidence_alignment,
+    check_unsourced_numbers,
+    extract_numbers,
+)
+from app.engine.quality.validation import has_blocking_issue, validate_slide
+from app.infrastructure.database.session import async_session_factory
 from app.main import app
-from app.models.project import Project, ProjectOutline, ProjectSource
-from app.models.slide import Slide as SlideRow
+from app.modules.decks.models import Slide as SlideRow
+from app.modules.outlines.models import ProjectOutline
+from app.modules.projects.models import Project, ProjectSource
 
 
 @pytest.fixture(autouse=True)
@@ -106,7 +107,7 @@ def test_precise_measure_detects_overflow() -> None:
 
 
 def test_estimate_measure_when_fonts_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.domain import text_metrics as tm
+    from app.engine.layout import text_metrics as tm
 
     monkeypatch.setattr(tm, "FONTS_DIR", Path("/tmp/aippt-no-fonts"))
     clear_font_cache()
@@ -118,7 +119,7 @@ def test_estimate_measure_when_fonts_missing(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_overflow_blocks_export_and_marks_estimate(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.domain import text_metrics as tm
+    from app.engine.layout import text_metrics as tm
 
     monkeypatch.setattr(tm, "FONTS_DIR", Path("/tmp/aippt-no-fonts"))
     clear_font_cache()
@@ -306,7 +307,7 @@ def test_evidence_alignment_accepts_actions_cards() -> None:
 
 
 def test_allow_export_blocks_on_error() -> None:
-    from app.domain.validation import StructureIssue
+    from app.engine.quality.validation import StructureIssue
 
     assert allow_export([]) is True
     assert (
@@ -322,7 +323,7 @@ def test_allow_export_blocks_on_error() -> None:
 
 
 def test_run_export_check_grades_and_fonts_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.domain import text_metrics as tm
+    from app.engine.layout import text_metrics as tm
 
     monkeypatch.setattr(tm, "FONTS_DIR", Path("/tmp/aippt-no-fonts"))
     clear_font_cache()

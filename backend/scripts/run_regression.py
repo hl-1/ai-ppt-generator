@@ -17,7 +17,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.regression.runner import format_report, run_regression  # noqa: E402
+from app.engine.quality.regression.runner import format_report, run_regression  # noqa: E402
 
 
 def main() -> int:

@@ -3,10 +3,10 @@
 import json
 
 from app.core.paths import SHARED_DIR
-from app.domain.content import DiagramBlock, DiagramEdge, DiagramNode
-from app.domain.financial_tech import panel_grid, platform_node_rects
-from app.domain.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, Rect
-from app.domain.sample import load_financial_tech_sample
+from app.engine.content.content import DiagramBlock, DiagramEdge, DiagramNode
+from app.engine.content.sample import load_financial_tech_sample
+from app.engine.layout.financial_tech import panel_grid, platform_node_rects
+from app.engine.layout.geometry import CANVAS_HEIGHT_PT, CANVAS_WIDTH_PT, Rect
 
 
 def main() -> None:

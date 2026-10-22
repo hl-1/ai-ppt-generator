@@ -5,14 +5,18 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from app.api.v1 import outlines
-from app.domain.layout import get_layout
-from app.llm.base import OutlineGenerationInput, OutlineSourceSection, SlideGenerationInput
-from app.llm.deepseek import DeepSeekOutlineGenerator
-from app.llm.slide import DeepSeekSlideGenerator
-from app.services.topic_material import build_topic_document, topic_request_from_sections
-from app.worker import tasks
-from app.workflows.outline import prepare_outline_input
+from app.engine.layout.layout import get_layout
+from app.infrastructure.llm.base import (
+    OutlineGenerationInput,
+    OutlineSourceSection,
+    SlideGenerationInput,
+)
+from app.infrastructure.llm.deepseek import DeepSeekOutlineGenerator
+from app.infrastructure.llm.slide import DeepSeekSlideGenerator
+from app.modules.outlines import router as outlines
+from app.modules.outlines import tasks
+from app.modules.outlines.topic_material import build_topic_document, topic_request_from_sections
+from app.modules.outlines.workflow import prepare_outline_input
 
 TOPIC = "春节去北京旅游规划"
 LONG_TOPIC = (

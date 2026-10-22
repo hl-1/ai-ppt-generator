@@ -7,10 +7,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import get_session
-from app.core.queue import get_arq_pool
-from app.core.security import decode_access_token
-from app.models.user import User
+from app.infrastructure.database.session import get_session
+from app.infrastructure.redis.queue import get_arq_pool
+from app.modules.auth.models import User
+from app.modules.auth.security import decode_access_token
 
 # 关闭 HTTPBearer 默认的缺凭证自动报错（默认 403 且英文 detail），
 # 改由本模块统一抛 401，前端只需识别一种未登录状态。

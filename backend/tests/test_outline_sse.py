@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.api.sse import event_stream_response
-from app.schemas.outline import OutlineEvent
+from app.modules.outlines.schemas import OutlineEvent
 
 
 @pytest.mark.parametrize("stale_snapshot", [False, True])

@@ -141,9 +141,7 @@ async def test_travel_category_is_saved_and_returned(client: AsyncClient) -> Non
         "goal": "亲子出游，减少跨区域往返",
         "decision_request": "确认出行日期和住宿区域",
     }
-    project = await _create_project(
-        client, headers, title="春节去北京旅游规划", report_brief=brief
-    )
+    project = await _create_project(client, headers, title="春节去北京旅游规划", report_brief=brief)
     assert project["report_brief"] == brief
 
     response = await client.get(f"/api/v1/projects/{project['id']}", headers=headers)

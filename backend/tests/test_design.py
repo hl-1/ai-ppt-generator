@@ -1,10 +1,10 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.domain.layout import load_layouts
-from app.domain.sample import load_sample_deck
-from app.domain.theme import load_themes
-from app.domain.validation import has_blocking_issue, validate_deck
+from app.engine.content.sample import load_sample_deck
+from app.engine.layout.layout import load_layouts
+from app.engine.layout.theme import load_themes
+from app.engine.quality.validation import has_blocking_issue, validate_deck
 from app.main import app
 
 

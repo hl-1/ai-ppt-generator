@@ -1,10 +1,12 @@
 """Include the domain deck contract used by the browser renderer."""
 
+import argparse
 import json
+from pathlib import Path
 
-from app.domain.content import Deck
+from app.engine.content.content import Deck
 from app.main import app
-from app.schemas.outline import OutlineEvent
+from app.modules.outlines.schemas import OutlineEvent
 
 schema = app.openapi()
 deck = Deck.model_json_schema(ref_template="#/components/schemas/{model}")
@@ -27,5 +29,14 @@ def omit_null_defaults(value):
             omit_null_defaults(child)
 
 
-omit_null_defaults(schema)
-print(json.dumps(schema, ensure_ascii=False))
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    omit_null_defaults(schema)
+    result = json.dumps(schema, ensure_ascii=False)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(result + "\n", encoding="utf-8")
+    else:
+        print(result)

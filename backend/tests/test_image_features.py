@@ -12,34 +12,35 @@ from sqlalchemy import select
 
 from app.api.deps import get_queue
 from app.core.config import get_settings
-from app.core.db import async_session_factory
-from app.domain.content import Deck, ImageBlock, Slide, TextBlock
-from app.domain.enterprise_layout import bind_planned_evidence, compose_report_slide
-from app.domain.evidence import prepare_page_plan
-from app.domain.flex_layout import iter_leaf_block_ids
-from app.domain.image_planning import bind_page_image, plan_page_image, search_queries
-from app.domain.outline import ImagePlan, OutlinePageDraft
-from app.images.bailian import BailianImageProvider
-from app.images.base import ImageAsset, ImageCandidate, ImageRequest
-from app.images.errors import ImageFetchError
-from app.images.pipeline import ImagePipeline
-from app.images.unsplash import UnsplashImageProvider
+from app.engine.content.content import Deck, ImageBlock, Slide, TextBlock
+from app.engine.content.evidence import prepare_page_plan
+from app.engine.content.outline import ImagePlan, OutlinePageDraft
+from app.engine.layout.enterprise_layout import bind_planned_evidence, compose_report_slide
+from app.engine.layout.flex_layout import iter_leaf_block_ids
+from app.engine.layout.image_planning import bind_page_image, plan_page_image, search_queries
+from app.engine.pptx.pptx import render_deck_to_pptx
+from app.infrastructure.database.session import async_session_factory
+from app.infrastructure.providers.images.bailian import BailianImageProvider
+from app.infrastructure.providers.images.base import ImageAsset, ImageCandidate, ImageRequest
+from app.infrastructure.providers.images.errors import ImageFetchError
+from app.infrastructure.providers.images.pipeline import ImagePipeline
+from app.infrastructure.providers.images.unsplash import UnsplashImageProvider
+from app.infrastructure.storage.media import media_url, store_image
 from app.main import app
-from app.models.project import ProjectOutline
-from app.models.slide import Slide as SlideRow
-from app.render.pptx import render_deck_to_pptx
-from app.services.image_candidates import load_candidate
-from app.services.media import media_url, store_image
-from app.worker.deck_tasks import generate_deck
-from app.worker.image_tasks import _save_result, generate_slide_images
+from app.modules.decks.models import Slide as SlideRow
+from app.modules.decks.tasks import generate_deck
+from app.modules.media.candidates import load_candidate
+from app.modules.media.tasks import _save_result, generate_slide_images
+from app.modules.outlines.models import ProjectOutline
 from tests.test_decks_api import FakeSlideGenerator, _confirmed_project
 from tests.test_images import MINIMAL_PNG, _project_with_image_slide, _sign_up
 
 
 @pytest.fixture
 async def client():
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
-                                 base_url="http://test") as value:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as value:
         yield value
 
 
@@ -141,11 +142,16 @@ def test_photo_plan_does_not_replace_explicit_timeline():
 
 
 def test_generic_photo_prefers_stock_and_allows_ai_fallback():
-    planned = plan_page_image(OutlinePageDraft(
-        title="AI 算力基础设施", objective="介绍计算机行业", key_points=["算力需求增长", "建设机房"],
-        layout_id="image-right",
-        visual_type="photo", visual="数据中心机房内 GPU 服务器阵列与蓝色灯光",
-    ))
+    planned = plan_page_image(
+        OutlinePageDraft(
+            title="AI 算力基础设施",
+            objective="介绍计算机行业",
+            key_points=["算力需求增长", "建设机房"],
+            layout_id="image-right",
+            visual_type="photo",
+            visual="数据中心机房内 GPU 服务器阵列与蓝色灯光",
+        )
+    )
     assert planned.image_plan.source == "stock"
     assert not planned.image_plan.require_real
     assert planned.image_plan.queries[0] == "server rack"
@@ -153,39 +159,70 @@ def test_generic_photo_prefers_stock_and_allows_ai_fallback():
 
 @pytest.mark.parametrize("subject", ["故宫建筑", "iPhone 17 产品实拍"])
 def test_specific_photo_remains_real_even_when_plan_relaxes_requirement(subject):
-    planned = plan_page_image(OutlinePageDraft(
-        title="对象介绍", objective="介绍图片主体", key_points=["展示外观", "介绍特点"],
-        layout_id="image-right",
-        visual_type="photo", image_plan=ImagePlan(subject=subject, require_real=False),
-    ))
+    planned = plan_page_image(
+        OutlinePageDraft(
+            title="对象介绍",
+            objective="介绍图片主体",
+            key_points=["展示外观", "介绍特点"],
+            layout_id="image-right",
+            visual_type="photo",
+            image_plan=ImagePlan(subject=subject, require_real=False),
+        )
+    )
     assert planned.image_plan.source == "stock" and planned.image_plan.require_real
 
 
 def test_search_queries_use_concrete_objects_and_preserve_product_identity():
     assert search_queries("AI PC 笔记本电脑与 AI 手机并排展示的产品实拍")[0] == "laptop smartphone"
-    assert search_queries("iPhone 17 手机", ["iPhone 17 product photo"])[0] == "iPhone 17 product photo"
+    assert (
+        search_queries("iPhone 17 手机", ["iPhone 17 product photo"])[0]
+        == "iPhone 17 product photo"
+    )
 
 
-@pytest.mark.parametrize(("subject", "description", "matched"), [
-    ("数据中心机房内 GPU 服务器阵列与蓝色灯光", "Rows of servers in a data centre", True),
-    ("数据中心机房内 GPU 服务器阵列与蓝色灯光", "A blue coat on a clothing rack", False),
-    ("AI PC 笔记本电脑与 AI 手机并排展示的产品实拍", "A notebook computer and cell phone", True),
-    ("AI PC 笔记本电脑与 AI 手机并排展示的产品实拍", "A laptop on an office desk", False),
-    ("iPhone 17 手机", "iPhone 16 smartphone product photo", False),
-    ("iPhone 17 手机", "iPhone 17 smartphone product photo", True),
-    ("服务器机房", "3D rendered server racks", False),
-])
+@pytest.mark.parametrize(
+    ("subject", "description", "matched"),
+    [
+        ("数据中心机房内 GPU 服务器阵列与蓝色灯光", "Rows of servers in a data centre", True),
+        ("数据中心机房内 GPU 服务器阵列与蓝色灯光", "A blue coat on a clothing rack", False),
+        (
+            "AI PC 笔记本电脑与 AI 手机并排展示的产品实拍",
+            "A notebook computer and cell phone",
+            True,
+        ),
+        ("AI PC 笔记本电脑与 AI 手机并排展示的产品实拍", "A laptop on an office desk", False),
+        ("iPhone 17 手机", "iPhone 16 smartphone product photo", False),
+        ("iPhone 17 手机", "iPhone 17 smartphone product photo", True),
+        ("服务器机房", "3D rendered server racks", False),
+    ],
+)
 async def test_stock_match_checks_core_objects_and_specific_identity(subject, description, matched):
     def handler(request):
-        return httpx.Response(200, json={"results": [{
-            "id": "photo", "description": description, "width": 1800, "height": 1200,
-            "urls": {"regular": "https://images.unsplash.com/photo"},
-        }]})
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "id": "photo",
+                        "description": description,
+                        "width": 1800,
+                        "height": 1200,
+                        "urls": {"regular": "https://images.unsplash.com/photo"},
+                    }
+                ]
+            },
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as transport:
         candidates = await UnsplashImageProvider(client=transport, access_key="test").search(
-            ImageRequest(prompt="", query=subject, subject=subject, aspect_ratio=1.5,
-                         preferred_source="stock", queries=["smartphone"] if "iPhone" in subject else [])
+            ImageRequest(
+                prompt="",
+                query=subject,
+                subject=subject,
+                aspect_ratio=1.5,
+                preferred_source="stock",
+                queries=["smartphone"] if "iPhone" in subject else [],
+            )
         )
     assert candidates[0].metadata_matched is matched
 
@@ -197,14 +234,25 @@ async def test_stock_search_time_budget_falls_back_to_ai():
 
     generated = Provider()
     generated.source = "generated"
-    generated.fetch = AsyncMock(return_value=ImageAsset(
-        data=MINIMAL_PNG, content_type="image/png", source="generated",
-    ))
+    generated.fetch = AsyncMock(
+        return_value=ImageAsset(
+            data=MINIMAL_PNG,
+            content_type="image/png",
+            source="generated",
+        )
+    )
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as transport:
-        stock = UnsplashImageProvider(client=transport, access_key="test", search_timeout_seconds=0.01)
-        result = await ImagePipeline([generated, stock]).fetch(ImageRequest(
-            prompt="p", query="server rack", aspect_ratio=1.5, preferred_source="stock",
-        ))
+        stock = UnsplashImageProvider(
+            client=transport, access_key="test", search_timeout_seconds=0.01
+        )
+        result = await ImagePipeline([generated, stock]).fetch(
+            ImageRequest(
+                prompt="p",
+                query="server rack",
+                aspect_ratio=1.5,
+                preferred_source="stock",
+            )
+        )
     assert result.source == "generated" and generated.fetch.await_count == 1
 
 
@@ -216,22 +264,34 @@ async def test_stock_search_keeps_partial_candidates_on_timeout():
         calls += 1
         if calls > 1:
             await asyncio.sleep(0.1)
-        return httpx.Response(200, json={"results": [{
-            "id": "photo", "description": "office desk",
-            "urls": {"regular": "https://images.unsplash.com/photo"},
-        }]})
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "id": "photo",
+                        "description": "office desk",
+                        "urls": {"regular": "https://images.unsplash.com/photo"},
+                    }
+                ]
+            },
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as transport:
         candidates = await UnsplashImageProvider(
-            client=transport, access_key="test", search_timeout_seconds=0.01,
-        ).search(ImageRequest(prompt="", query="server rack", aspect_ratio=1.5, preferred_source="stock"))
+            client=transport,
+            access_key="test",
+            search_timeout_seconds=0.01,
+        ).search(
+            ImageRequest(prompt="", query="server rack", aspect_ratio=1.5, preferred_source="stock")
+        )
     assert len(candidates) == 1 and not candidates[0].metadata_matched
 
 
 async def test_wanx_submits_once_and_polls_correct_endpoint(monkeypatch):
     submissions = []
     polls = []
-    monkeypatch.setattr("app.images.bailian.asyncio.sleep", AsyncMock())
+    monkeypatch.setattr("app.infrastructure.providers.images.bailian.asyncio.sleep", AsyncMock())
 
     def handler(request):
         if request.method == "POST":
@@ -330,14 +390,29 @@ async def test_real_photo_does_not_fall_back_to_ai():
 
 async def test_landmark_search_prefers_building_description_over_portrait():
     def handler(_request):
-        return httpx.Response(200, json={"results": [
-            {"id": "guard", "description": "A palace guard at Forbidden City Beijing",
-             "width": 1800, "height": 1200,
-             "urls": {"regular": "https://images.unsplash.com/guard"}, "user": {}},
-            {"id": "building", "description": "Hall of Supreme Harmony in Forbidden City Beijing",
-             "width": 2400, "height": 1700,
-             "urls": {"regular": "https://images.unsplash.com/building"}, "user": {}},
-        ]})
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "id": "guard",
+                        "description": "A palace guard at Forbidden City Beijing",
+                        "width": 1800,
+                        "height": 1200,
+                        "urls": {"regular": "https://images.unsplash.com/guard"},
+                        "user": {},
+                    },
+                    {
+                        "id": "building",
+                        "description": "Hall of Supreme Harmony in Forbidden City Beijing",
+                        "width": 2400,
+                        "height": 1700,
+                        "urls": {"regular": "https://images.unsplash.com/building"},
+                        "user": {},
+                    },
+                ]
+            },
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as transport:
         candidates = await UnsplashImageProvider(client=transport, access_key="test").search(
@@ -354,20 +429,40 @@ async def test_real_landmark_search_relaxes_orientation_when_no_metadata_match()
     def handler(request):
         orientations.append(request.url.params.get("orientation"))
         if "orientation" in request.url.params:
-            return httpx.Response(200, json={"results": [
-                {"id": "unrelated", "description": "An office building",
-                 "urls": {"regular": "https://images.unsplash.com/office"}, "user": {}},
-            ]})
-        return httpx.Response(200, json={"results": [
-            {"id": "landmark", "description": "Forbidden City Beijing palace",
-             "width": 2400, "height": 1600,
-             "urls": {"regular": "https://images.unsplash.com/palace"}, "user": {}},
-        ]})
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "id": "unrelated",
+                            "description": "An office building",
+                            "urls": {"regular": "https://images.unsplash.com/office"},
+                            "user": {},
+                        },
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "id": "landmark",
+                        "description": "Forbidden City Beijing palace",
+                        "width": 2400,
+                        "height": 1600,
+                        "urls": {"regular": "https://images.unsplash.com/palace"},
+                        "user": {},
+                    },
+                ]
+            },
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as transport:
         candidates = await UnsplashImageProvider(client=transport, access_key="test").search(
-            ImageRequest(prompt="", query="故宫", subject="故宫", aspect_ratio=0.6,
-                         require_real=True)
+            ImageRequest(
+                prompt="", query="故宫", subject="故宫", aspect_ratio=0.6, require_real=True
+            )
         )
     assert candidates[0].id == "landmark" and candidates[0].metadata_matched
     assert orientations[-1] is None and len(orientations) <= 5
@@ -474,8 +569,9 @@ async def test_stale_result_clears_job_without_overwriting_user_edit(client, que
     async with async_session_factory() as session:
         row = await session.get(SlideRow, slide.id)
         row.revision += 1
-        row.blocks = [{**b, "alt": "User edit"} if b.get("type") == "image" else b
-                      for b in row.blocks]
+        row.blocks = [
+            {**b, "alt": "User edit"} if b.get("type") == "image" else b for b in row.blocks
+        ]
         await session.commit()
     await _save_result(
         uuid.UUID(project["id"]),
@@ -550,12 +646,15 @@ async def test_failed_replacement_keeps_old_image_and_public_error(client, queue
     old_url = "/media/previous.png"
     async with async_session_factory() as session:
         row = await session.get(SlideRow, slide.id)
-        row.blocks = [{**b, "url": old_url, "source": "stock"}
-                      if b.get("type") == "image" else b for b in row.blocks]
+        row.blocks = [
+            {**b, "url": old_url, "source": "stock"} if b.get("type") == "image" else b
+            for b in row.blocks
+        ]
         await session.commit()
     response = await client.post(
         f"/api/v1/projects/{project['id']}/deck/slides/{slide.id}/blocks/img-1/image/generate",
-        headers=headers, json={"revision": 1, "source": "stock"},
+        headers=headers,
+        json={"revision": 1, "source": "stock"},
     )
     assert response.status_code == 200
     provider = Provider()
@@ -574,9 +673,16 @@ async def test_concurrent_image_workers_reserve_different_stock_assets(client, q
     project, first = await _project_with_image_slide(client, headers)
     async with async_session_factory() as session:
         second = SlideRow(
-            project_id=first.project_id, outline_page_id=uuid.uuid4(), position=2,
-            layout_id=first.layout_id, layout_mode="fixed", title="Second page",
-            status="ready", blocks=first.blocks, issues=[], revision=1,
+            project_id=first.project_id,
+            outline_page_id=uuid.uuid4(),
+            position=2,
+            layout_id=first.layout_id,
+            layout_mode="fixed",
+            title="Second page",
+            status="ready",
+            blocks=first.blocks,
+            issues=[],
+            revision=1,
         )
         session.add(second)
         await session.commit()
@@ -588,14 +694,16 @@ async def test_concurrent_image_workers_reserve_different_stock_assets(client, q
 
     async def download(_self, selected):
         await asyncio.sleep(0)
-        return ImageAsset(data=MINIMAL_PNG, content_type="image/png",
-                          source="stock", asset_id=selected.id)
+        return ImageAsset(
+            data=MINIMAL_PNG, content_type="image/png", source="stock", asset_id=selected.id
+        )
 
     monkeypatch.setattr(UnsplashImageProvider, "download", download)
     for row in [first, second]:
         response = await client.post(
             f"/api/v1/projects/{project['id']}/deck/slides/{row.id}/blocks/img-1/image/generate",
-            headers=headers, json={"revision": 1, "source": "stock", "query": "故宫"},
+            headers=headers,
+            json={"revision": 1, "source": "stock", "query": "故宫"},
         )
         assert response.status_code == 200
     await asyncio.gather(*(generate_slide_images({}, *call[1:]) for call in queue.calls))
@@ -603,7 +711,8 @@ async def test_concurrent_image_workers_reserve_different_stock_assets(client, q
         rows = [await session.get(SlideRow, row.id) for row in [first, second]]
         assert all(image(row.blocks)["image_status"] == "ready" for row in rows)
         assert {image(row.blocks)["image_asset_id"] for row in rows} == {
-            "forbidden-city", "second-photo"
+            "forbidden-city",
+            "second-photo",
         }
 
 
@@ -624,9 +733,13 @@ async def test_apply_rechecks_revision_after_remote_download(client, monkeypatch
     monkeypatch.setattr(UnsplashImageProvider, "download", download)
     found = await client.post(f"{path}/images/search", headers=headers, json={"query": "故宫"})
     result = await client.post(
-        f"{path}/slides/{slide.id}/blocks/img-1/image/apply", headers=headers,
-        json={"revision": 1, "search_id": found.json()["search_id"],
-              "candidate_id": candidate().id},
+        f"{path}/slides/{slide.id}/blocks/img-1/image/apply",
+        headers=headers,
+        json={
+            "revision": 1,
+            "search_id": found.json()["search_id"],
+            "candidate_id": candidate().id,
+        },
     )
     assert result.status_code == 409
     async with async_session_factory() as session:
@@ -639,16 +752,29 @@ async def test_deck_queues_images_only_after_body_ready(client, queue):
     headers = await _sign_up(client)
     project = await _confirmed_project(client, headers, layout_mode="flex")
     async with async_session_factory() as session:
-        outline = await session.scalar(select(ProjectOutline).where(
-            ProjectOutline.project_id == uuid.UUID(project["id"])
-        ))
-        outline.pages = [{**p, "visual_type": "photo", "image_plan": {
-            "subject": "故宫", "queries": ["Beijing Forbidden City"],
-            "source": "stock", "require_real": True,
-        }} if index == 1 else p for index, p in enumerate(outline.pages)]
+        outline = await session.scalar(
+            select(ProjectOutline).where(ProjectOutline.project_id == uuid.UUID(project["id"]))
+        )
+        outline.pages = [
+            {
+                **p,
+                "visual_type": "photo",
+                "image_plan": {
+                    "subject": "故宫",
+                    "queries": ["Beijing Forbidden City"],
+                    "source": "stock",
+                    "require_real": True,
+                },
+            }
+            if index == 1
+            else p
+            for index, p in enumerate(outline.pages)
+        ]
         await session.commit()
     started = await client.post(
-        f"/api/v1/projects/{project['id']}/deck/generate", headers=headers, json={},
+        f"/api/v1/projects/{project['id']}/deck/generate",
+        headers=headers,
+        json={},
     )
     assert started.status_code == 202
     ids = queue.calls[0][2]
@@ -667,22 +793,44 @@ async def test_deck_queues_images_only_after_body_ready(client, queue):
         {"slide_generator": FakeSlideGenerator(), "redis": queue}, project["id"], ids
     )
     assert observed and all(status == "ready" for status, _ in observed)
-    planned = [b for _, blocks in observed for b in blocks
-               if b.get("type") == "image" and (b.get("image_plan") or {}).get("require_real")]
+    planned = [
+        b
+        for _, blocks in observed
+        for b in blocks
+        if b.get("type") == "image" and (b.get("image_plan") or {}).get("require_real")
+    ]
     assert planned and planned[0]["image_plan"]["queries"] == ["Beijing Forbidden City"]
     assert planned[0]["image_status"] == "queued"
 
 
 def test_export_keeps_stock_picture_and_attribution():
-    key = store_image(user_id=uuid.uuid4(), project_id=uuid.uuid4(),
-                      data=MINIMAL_PNG, extension=".png")
-    deck = Deck(id="deck", title="故宫", theme_id="midnight", slides=[Slide(
-        id="slide", layout_id="image-right", speaker_notes="讲解故宫",
-        blocks=[TextBlock(id="title", slot_id="title", text="故宫"), ImageBlock(
-            id="photo", slot_id="image", alt="故宫", source="stock", url=media_url(key),
-            credit=candidate().credit, credit_url=candidate().credit_url,
-        )],
-    )])
+    key = store_image(
+        user_id=uuid.uuid4(), project_id=uuid.uuid4(), data=MINIMAL_PNG, extension=".png"
+    )
+    deck = Deck(
+        id="deck",
+        title="故宫",
+        theme_id="midnight",
+        slides=[
+            Slide(
+                id="slide",
+                layout_id="image-right",
+                speaker_notes="讲解故宫",
+                blocks=[
+                    TextBlock(id="title", slot_id="title", text="故宫"),
+                    ImageBlock(
+                        id="photo",
+                        slot_id="image",
+                        alt="故宫",
+                        source="stock",
+                        url=media_url(key),
+                        credit=candidate().credit,
+                        credit_url=candidate().credit_url,
+                    ),
+                ],
+            )
+        ],
+    )
     presentation = Presentation(render_deck_to_pptx(deck))
     page = presentation.slides[0]
     assert any(shape.shape_type == MSO_SHAPE_TYPE.PICTURE for shape in page.shapes)

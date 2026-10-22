@@ -7,15 +7,21 @@ import pytest
 from sqlalchemy import select
 
 from app.api.deps import get_queue
-from app.core.db import async_session_factory
-from app.llm.slide import DeepSeekSlideGenerator
+from app.infrastructure.database.session import async_session_factory
+from app.infrastructure.llm.slide import DeepSeekSlideGenerator
 from app.main import app
-from app.models.project import Project
-from app.schemas.travel import ResearchData, TravelConditions, TravelFact, TravelPlace, TravelSource
-from app.services.travel_planning import build_travel_plan
-from app.services.travel_research import create_research, execute_research
-from app.worker.deck_tasks import generate_deck
-from app.worker.tasks import generate_outline
+from app.modules.decks.tasks import generate_deck
+from app.modules.outlines.tasks import generate_outline
+from app.modules.projects.models import Project
+from app.modules.travel.planning import build_travel_plan
+from app.modules.travel.research import create_research, execute_research
+from app.modules.travel.schemas import (
+    ResearchData,
+    TravelConditions,
+    TravelFact,
+    TravelPlace,
+    TravelSource,
+)
 
 
 @pytest.fixture
@@ -107,7 +113,7 @@ async def test_missing_confirmation_blocks_outline_and_research(client):
 
 async def test_partial_research_finishes_without_configured_providers(client, monkeypatch):
     from app.core.config import Settings
-    from app.services import travel_research
+    from app.modules.travel import research as travel_research
 
     monkeypatch.setattr(
         travel_research,
@@ -154,10 +160,10 @@ async def test_research_queries_only_attractions_within_page_budget(
     client, monkeypatch, page_count, expected
 ):
     from app.core.config import Settings
-    from app.services.travel_providers import TravelProviders
+    from app.infrastructure.providers.travel import TravelProviders
 
     monkeypatch.setattr(
-        "app.services.travel_research.get_settings",
+        "app.modules.travel.research.get_settings",
         lambda: Settings(
             _env_file=None,
             llm_api_key="",
@@ -216,7 +222,7 @@ async def test_research_queries_only_attractions_within_page_budget(
 
 
 async def test_refresh_version_invalidates_outline_signature(client):
-    from app.services.outline_inputs import project_input_signature
+    from app.modules.outlines.inputs import project_input_signature
 
     _, project = await create_trip(client)
     async with async_session_factory() as session:
@@ -235,8 +241,8 @@ async def test_refresh_version_invalidates_outline_signature(client):
 async def test_travel_workers_render_compact_pages_from_saved_research(client, monkeypatch):
     queue = AsyncMock()
     app.dependency_overrides[get_queue] = lambda: queue
-    monkeypatch.setattr("app.api.v1.outlines.publish_outline_event", AsyncMock())
-    monkeypatch.setattr("app.worker.tasks.publish_outline_event", AsyncMock())
+    monkeypatch.setattr("app.modules.outlines.router.publish_outline_event", AsyncMock())
+    monkeypatch.setattr("app.modules.outlines.tasks.publish_outline_event", AsyncMock())
     try:
         headers, project = await create_trip(client)
         project_id = project["id"]

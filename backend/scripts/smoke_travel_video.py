@@ -9,10 +9,10 @@ from pathlib import Path
 import httpx
 
 from app.core.config import get_settings
-from app.llm.client import StructuredChatClient, create_chat_model
-from app.schemas.travel import ResearchData, TravelConditions, TravelVideo
-from app.services.travel_providers import TravelProviders
-from app.services.travel_video import VideoReader, research_videos, video_url
+from app.infrastructure.llm.client import StructuredChatClient, create_chat_model
+from app.infrastructure.providers.travel import TravelProviders
+from app.modules.travel.schemas import ResearchData, TravelConditions, TravelVideo
+from app.modules.travel.video import VideoReader, research_videos, video_url
 
 
 async def main():

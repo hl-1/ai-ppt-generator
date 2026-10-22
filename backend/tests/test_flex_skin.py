@@ -1,6 +1,6 @@
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.domain.flex_skin import iter_skin_decorations
-from app.domain.flex_solve import solve_with_frames
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.engine.layout.flex_skin import iter_skin_decorations
+from app.engine.layout.flex_solve import solve_with_frames
 
 
 def _two_column_tree(*, preset: str | None) -> FlexContainer:

@@ -14,21 +14,29 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
-from app.core.db import async_session_factory
-from app.domain.content import Deck, ImageBlock, Slide, TextBlock
-from app.images.bailian import BailianImageProvider, _closest_size, _resolve_base_url
-from app.images.base import ImageAsset, ImageRequest
-from app.images.generated import GeneratedImageProvider
-from app.images.pipeline import ImagePipeline
-from app.images.unsplash import UnsplashImageProvider, sanitize_unsplash_query
-from app.images.validate import ImageRejected, validate_image
+from app.engine.content.content import Deck, ImageBlock, Slide, TextBlock
+from app.engine.pptx.pptx import render_deck_to_pptx
+from app.infrastructure.database.session import async_session_factory
+from app.infrastructure.providers.images.bailian import (
+    BailianImageProvider,
+    _closest_size,
+    _resolve_base_url,
+)
+from app.infrastructure.providers.images.base import ImageAsset, ImageRequest
+from app.infrastructure.providers.images.generated import GeneratedImageProvider
+from app.infrastructure.providers.images.pipeline import ImagePipeline
+from app.infrastructure.providers.images.unsplash import (
+    UnsplashImageProvider,
+    sanitize_unsplash_query,
+)
+from app.infrastructure.providers.images.validate import ImageRejected, validate_image
+from app.infrastructure.storage import get_storage
+from app.infrastructure.storage.media import MEDIA_PREFIX, media_url, store_image
 from app.main import app
-from app.models.project import Project, ProjectOutline
-from app.models.slide import Slide as SlideRow
-from app.render.pptx import render_deck_to_pptx
-from app.services.media import MEDIA_PREFIX, media_url, store_image
-from app.services.slide_images import resolve_slide_images
-from app.storage import get_storage
+from app.modules.decks.models import Slide as SlideRow
+from app.modules.media.slide_images import resolve_slide_images
+from app.modules.outlines.models import ProjectOutline
+from app.modules.projects.models import Project
 
 
 def _chunk(tag: bytes, data: bytes) -> bytes:
@@ -327,9 +335,7 @@ async def test_bailian_provider_posts_native_payload_and_downloads_image() -> No
                                 "finish_reason": "stop",
                                 "message": {
                                     "role": "assistant",
-                                    "content": [
-                                        {"image": "https://cdn.example.com/bailian.png"}
-                                    ],
+                                    "content": [{"image": "https://cdn.example.com/bailian.png"}],
                                 },
                             }
                         ]

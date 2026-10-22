@@ -7,8 +7,8 @@ from fastapi import Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.core.redis import get_redis
-from app.services.events import EventStream
+from app.infrastructure.redis.client import get_redis
+from app.infrastructure.redis.events import EventStream
 
 HEARTBEAT_TIMEOUT_SECONDS = 15
 

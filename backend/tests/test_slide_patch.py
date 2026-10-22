@@ -1,5 +1,5 @@
-from app.domain.content import BulletsBlock, TextBlock
-from app.domain.slide_patch import (
+from app.engine.content.content import BulletsBlock, TextBlock
+from app.engine.content.slide_patch import (
     BulletsPatch,
     TextPatch,
     apply_patches,

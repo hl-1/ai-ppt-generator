@@ -1,6 +1,6 @@
-from app.domain.layout import get_layout
-from app.llm.base import SlideEditBlockInput, SlideEditInput
-from app.llm.slide_edit import DeepSeekSlideEditGenerator
+from app.engine.layout.layout import get_layout
+from app.infrastructure.llm.base import SlideEditBlockInput, SlideEditInput
+from app.infrastructure.llm.slide_edit import DeepSeekSlideEditGenerator
 
 
 def _generator() -> DeepSeekSlideEditGenerator:

@@ -4,24 +4,24 @@ from pathlib import Path
 import pytest
 from pptx import Presentation
 
-from app.domain.content import Deck, DiagramBlock, FinancialTableBlock, Slide, TableBlock
-from app.domain.diagram_layout import layout_diagram, parse_mermaid
-from app.domain.diagram_style import themed_flowchart_style
-from app.domain.enterprise_layout import bind_planned_evidence, compose_report_slide
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.domain.outline import OutlinePageDraft
-from app.domain.table_layout import layout_table
-from app.domain.table_pagination import split_table_slide
-from app.domain.text_metrics import wrap_text
-from app.domain.theme import get_theme, load_themes
-from app.domain.theme_layout import reflow_slide_to_theme
-from app.domain.validation import validate_slide
-from app.domain.visual_layout import bind_source_diagram
-from app.ingest.markdown import MarkdownParser
-from app.llm.base import SlideGenerationInput
-from app.render.pptx import render_deck_to_pptx
-from app.render.verify import verify_pptx
-from app.workflows.slide import prepare_slide_input
+from app.engine.content.content import Deck, DiagramBlock, FinancialTableBlock, Slide, TableBlock
+from app.engine.content.outline import OutlinePageDraft
+from app.engine.diagram.diagram_layout import layout_diagram, parse_mermaid
+from app.engine.diagram.diagram_style import themed_flowchart_style
+from app.engine.layout.enterprise_layout import bind_planned_evidence, compose_report_slide
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.engine.layout.table_layout import layout_table
+from app.engine.layout.table_pagination import split_table_slide
+from app.engine.layout.text_metrics import wrap_text
+from app.engine.layout.theme import get_theme, load_themes
+from app.engine.layout.theme_layout import reflow_slide_to_theme
+from app.engine.layout.visual_layout import bind_source_diagram
+from app.engine.pptx.pptx import render_deck_to_pptx
+from app.engine.pptx.verify import verify_pptx
+from app.engine.quality.validation import validate_slide
+from app.infrastructure.llm.base import SlideGenerationInput
+from app.modules.decks.workflow import prepare_slide_input
+from app.modules.projects.ingest.markdown import MarkdownParser
 
 SOURCE = Path(__file__).parent / "fixtures/music_execution.mmd"
 
@@ -233,7 +233,7 @@ def test_wrapped_branches_and_cycles_stay_attached_in_each_direction(direction):
 
 
 def test_parser_preserves_bidirectional_edges_and_legacy_boundaries():
-    from app.ingest.models import SourceSection
+    from app.engine.content.source import SourceSection
 
     section = SourceSection(
         level=1,

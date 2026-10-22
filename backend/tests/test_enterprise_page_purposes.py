@@ -3,7 +3,7 @@ from collections import Counter
 import pytest
 from pptx import Presentation
 
-from app.domain.content import (
+from app.engine.content.content import (
     BulletsBlock,
     CardsBlock,
     ChartBlock,
@@ -14,20 +14,20 @@ from app.domain.content import (
     Slide,
     TextBlock,
 )
-from app.domain.enterprise_layout import bind_planned_evidence, compose_report_slide
-from app.domain.enterprise_quality import check_planned_data
-from app.domain.evidence import prepare_page_plan
-from app.domain.flex_fit import fit_tree_to_content
-from app.domain.flex_layout import FlexContainer, FlexLeaf, iter_leaf_block_ids
-from app.domain.flex_width import fit_row_widths
-from app.domain.outline import EvidenceItem, OutlinePageDraft
-from app.domain.page_rhythm import assign_layout_templates
-from app.domain.quality import check_evidence_alignment
-from app.domain.slide_geometry import placed_by_block_id
-from app.domain.theme import get_theme
-from app.domain.topic_visuals import normalize_topic_pages
-from app.domain.validation import validate_slide
-from app.render.pptx import render_deck_to_pptx
+from app.engine.content.evidence import prepare_page_plan
+from app.engine.content.outline import EvidenceItem, OutlinePageDraft
+from app.engine.layout.enterprise_layout import bind_planned_evidence, compose_report_slide
+from app.engine.layout.flex_fit import fit_tree_to_content
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf, iter_leaf_block_ids
+from app.engine.layout.flex_width import fit_row_widths
+from app.engine.layout.page_rhythm import assign_layout_templates
+from app.engine.layout.slide_geometry import placed_by_block_id
+from app.engine.layout.theme import get_theme
+from app.engine.layout.topic_visuals import normalize_topic_pages
+from app.engine.pptx.pptx import render_deck_to_pptx
+from app.engine.quality.enterprise_quality import check_planned_data
+from app.engine.quality.quality import check_evidence_alignment
+from app.engine.quality.validation import validate_slide
 
 
 def trend_evidence():

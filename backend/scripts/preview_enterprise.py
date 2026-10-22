@@ -14,14 +14,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.domain.content import Deck  # noqa: E402
-from app.domain.outline import DeckBlueprint, EvidenceItem  # noqa: E402
-from app.domain.slide_draft import FlexSlideDraft  # noqa: E402
-from app.domain.theme import get_theme  # noqa: E402
-from app.llm.base import OutlineSourceSection, SlideGenerationInput  # noqa: E402
-from app.render.pptx import render_deck_to_pptx  # noqa: E402
-from app.render.verify import verify_pptx  # noqa: E402
-from app.workflows.slide import build_slide_workflow, run_slide_workflow  # noqa: E402
+from app.core.paths import REPORTS_DIR
+from app.engine.content.content import Deck  # noqa: E402
+from app.engine.content.outline import DeckBlueprint, EvidenceItem  # noqa: E402
+from app.engine.content.slide_draft import FlexSlideDraft  # noqa: E402
+from app.engine.layout.theme import get_theme  # noqa: E402
+from app.engine.pptx.pptx import render_deck_to_pptx  # noqa: E402
+from app.engine.pptx.verify import verify_pptx  # noqa: E402
+from app.infrastructure.llm.base import OutlineSourceSection, SlideGenerationInput  # noqa: E402
+from app.modules.decks.workflow import build_slide_workflow, run_slide_workflow  # noqa: E402
 
 
 def text(block_id, value):
@@ -196,7 +197,7 @@ class FixtureGenerator:
 
 
 async def main():
-    output = Path(__file__).resolve().parents[1] / "var" / "enterprise-qa"
+    output = REPORTS_DIR / "enterprise-qa"
     output.mkdir(parents=True, exist_ok=True)
     for theme_id in ("enterprise", "enterprise-dark"):
         slides, issues = [], []

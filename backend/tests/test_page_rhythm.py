@@ -1,6 +1,6 @@
 """跨页节奏：骨架轮换与 callout 限频。"""
 
-from app.domain.page_rhythm import CALLOUT_EVERY, allows_callout, skeleton_hint
+from app.engine.layout.page_rhythm import CALLOUT_EVERY, allows_callout, skeleton_hint
 
 
 def test_content_pages_rotate_through_every_skeleton() -> None:

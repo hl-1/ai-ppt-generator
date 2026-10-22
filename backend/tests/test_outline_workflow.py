@@ -6,15 +6,15 @@ from typing import Any
 import pytest
 
 from app.core.config import Settings
-from app.domain.outline import OutlineDraft, OutlinePage, OutlinePageDraft
-from app.llm.base import OutlineGenerationInput, OutlineSourceSection
-from app.llm.client import create_chat_model
-from app.llm.deepseek import (
+from app.engine.content.outline import OutlineDraft, OutlinePage, OutlinePageDraft
+from app.infrastructure.llm.base import OutlineGenerationInput, OutlineSourceSection
+from app.infrastructure.llm.client import create_chat_model
+from app.infrastructure.llm.deepseek import (
     DeepSeekOutlineGenerator,
     InvalidOutlineOutputError,
     LLMNotConfiguredError,
 )
-from app.workflows.outline import (
+from app.modules.outlines.workflow import (
     MAX_SECTION_CHARS,
     MAX_TOTAL_SOURCE_CHARS,
     build_outline_workflow,
@@ -187,7 +187,7 @@ def test_prepare_keeps_all_travel_refs_within_excerpt_budget(budget) -> None:
     "quote, valid", [("Advance booking is required.", True), ("Invented rule.", False)]
 )
 async def test_workflow_checks_trimmed_travel_evidence_against_original(monkeypatch, quote, valid):
-    from app.services import travel_outline
+    from app.modules.travel import outline as travel_outline
 
     page = OutlinePageDraft(
         title="Booking requirements",
@@ -356,9 +356,7 @@ async def test_workflow_preserves_recovered_image_plan() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "visual", [{"description": "unrecognized image plan"}, {"subject": 42}]
-)
+@pytest.mark.parametrize("visual", [{"description": "unrecognized image plan"}, {"subject": 42}])
 async def test_deepseek_rejects_unrecognized_visual_objects(visual, caplog) -> None:
     response = json.loads(_valid_outline_json(page_count=1))
     response["pages"][0]["visual"] = visual

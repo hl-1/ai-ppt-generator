@@ -7,9 +7,11 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.config import Settings
-from app.domain.outline import OutlinePageDraft
-from app.domain.topic_uniqueness import find_duplicate_topic_pages
-from app.schemas.travel import (
+from app.engine.content.outline import OutlinePageDraft
+from app.engine.quality.topic_uniqueness import find_duplicate_topic_pages
+from app.infrastructure.providers.travel import TravelProviders, normalize_weather
+from app.modules.travel.planning import build_travel_plan, travel_context, validate_facts
+from app.modules.travel.schemas import (
     ResearchData,
     TravelConditions,
     TravelFact,
@@ -17,8 +19,6 @@ from app.schemas.travel import (
     TravelRoute,
     TravelSource,
 )
-from app.services.travel_planning import build_travel_plan, travel_context, validate_facts
-from app.services.travel_providers import TravelProviders, normalize_weather
 
 
 def conditions(**changes):
@@ -346,14 +346,14 @@ async def test_named_amap_search_does_not_exclude_museums_and_prefers_matching_n
 
 
 def test_model_conditions_accept_wrapped_fields_without_guessing_dates():
-    from app.services.travel_research import ModelTravelConditions
+    from app.modules.travel.research import ModelTravelConditions
 
     result = ModelTravelConditions.model_validate({"conditions": {"destination_city": "北京"}})
     assert result.destination == "北京" and result.departure_date is None
 
 
 def test_exact_claims_reject_unfounded_prices_and_times():
-    from app.services.travel_planning import travel_claim_issues
+    from app.modules.travel.planning import travel_claim_issues
 
     plan = build_travel_plan(ResearchData(places=[place()]), conditions())
     context = {
@@ -366,8 +366,8 @@ def test_exact_claims_reject_unfounded_prices_and_times():
 
 @pytest.mark.parametrize("page_count", [5, 10, 20])
 def test_travel_outline_uses_saved_plan_at_requested_page_count(page_count):
-    from app.llm.base import OutlineGenerationInput
-    from app.services.travel_outline import build_travel_outline
+    from app.infrastructure.llm.base import OutlineGenerationInput
+    from app.modules.travel.outline import build_travel_outline
 
     plan = build_travel_plan(ResearchData(places=[place()]), conditions())
     context = {
@@ -443,8 +443,8 @@ async def test_travel_outline_confirmation_checks_itinerary_scope(monkeypatch, d
 
     from fastapi import HTTPException
 
-    from app.api.v1 import outlines
-    from app.schemas.outline import OutlineRevisionRequest
+    from app.modules.outlines import router as outlines
+    from app.modules.outlines.schemas import OutlineRevisionRequest
 
     pages = [itinerary_page(1, "2027-02-10"), itinerary_page(2, "2027-02-11")]
     if duplicate:
@@ -482,8 +482,8 @@ async def test_travel_outline_confirmation_checks_itinerary_scope(monkeypatch, d
 
 @pytest.mark.asyncio
 async def test_multi_day_travel_workflow_does_not_repair_shared_reminders():
-    from app.llm.base import OutlineGenerationInput, OutlineSourceSection
-    from app.workflows.outline import build_outline_workflow, run_outline_workflow
+    from app.infrastructure.llm.base import OutlineGenerationInput, OutlineSourceSection
+    from app.modules.outlines.workflow import build_outline_workflow, run_outline_workflow
 
     trip = conditions().model_copy(update={"return_date": date(2027, 2, 13)})
     plan = build_travel_plan(ResearchData(places=[place()]), trip)
@@ -518,12 +518,12 @@ async def test_multi_day_travel_workflow_does_not_repair_shared_reminders():
 async def test_travel_budget_slide_has_no_model_generated_prices_and_can_export(layout_mode):
     import uuid
 
-    from app.domain.content import Deck
-    from app.domain.export_check import run_export_check
-    from app.domain.theme import resolve_theme
-    from app.llm.base import SlideGenerationInput
-    from app.worker.context import create_slide_generator
-    from app.workflows.slide import build_slide_workflow, run_slide_workflow
+    from app.engine.content.content import Deck
+    from app.engine.layout.theme import resolve_theme
+    from app.engine.quality.export_check import run_export_check
+    from app.infrastructure.llm.base import SlideGenerationInput
+    from app.infrastructure.llm.factory import create_slide_generator
+    from app.modules.decks.workflow import build_slide_workflow, run_slide_workflow
 
     plan = build_travel_plan(ResearchData(places=[place()]), conditions())
     context = {
@@ -562,7 +562,7 @@ async def test_travel_budget_slide_has_no_model_generated_prices_and_can_export(
 
 
 async def test_fact_extraction_binds_original_quote_and_ignores_invalid_excerpt_numbers():
-    from app.services.travel_research import SourceFactSelections, extract_source_facts
+    from app.modules.travel.research import SourceFactSelections, extract_source_facts
 
     class Chat:
         async def complete(self, schema, **kwargs):
@@ -657,7 +657,7 @@ def test_generation_context_uses_current_booking_status_without_changing_fact_ve
 
 
 def test_official_season_ticket_prices_remain_available_without_model_extraction():
-    from app.services.travel_research import source_ticket_facts
+    from app.modules.travel.research import source_ticket_facts
 
     text = (
         "每年4月1日至10月31日，门票60元/人；\n"
@@ -674,12 +674,12 @@ def test_official_season_ticket_prices_remain_available_without_model_extraction
 async def test_travel_itinerary_slide_preserves_days_and_exports(layout_mode):
     import uuid
 
-    from app.domain.content import Deck
-    from app.domain.export_check import run_export_check
-    from app.domain.theme import resolve_theme
-    from app.llm.base import SlideGenerationInput
-    from app.worker.context import create_slide_generator
-    from app.workflows.slide import build_slide_workflow, run_slide_workflow
+    from app.engine.content.content import Deck
+    from app.engine.layout.theme import resolve_theme
+    from app.engine.quality.export_check import run_export_check
+    from app.infrastructure.llm.base import SlideGenerationInput
+    from app.infrastructure.llm.factory import create_slide_generator
+    from app.modules.decks.workflow import build_slide_workflow, run_slide_workflow
 
     plan = build_travel_plan(ResearchData(places=[place()]), conditions())
     payload = SlideGenerationInput(
@@ -718,13 +718,13 @@ async def test_travel_itinerary_slide_preserves_days_and_exports(layout_mode):
 async def test_travel_cover_keeps_real_image_placeholder_without_overlapping_text():
     import uuid
 
-    from app.domain.content import Deck
-    from app.domain.export_check import run_export_check
-    from app.domain.outline import ImagePlan
-    from app.domain.theme import resolve_theme
-    from app.llm.base import SlideGenerationInput
-    from app.worker.context import create_slide_generator
-    from app.workflows.slide import build_slide_workflow, run_slide_workflow
+    from app.engine.content.content import Deck
+    from app.engine.content.outline import ImagePlan
+    from app.engine.layout.theme import resolve_theme
+    from app.engine.quality.export_check import run_export_check
+    from app.infrastructure.llm.base import SlideGenerationInput
+    from app.infrastructure.llm.factory import create_slide_generator
+    from app.modules.decks.workflow import build_slide_workflow, run_slide_workflow
 
     plan = build_travel_plan(ResearchData(), conditions())
     payload = SlideGenerationInput(
@@ -765,13 +765,13 @@ async def test_travel_cover_keeps_real_image_placeholder_without_overlapping_tex
 async def test_core_travel_deck_uses_saved_plan_and_has_distinct_exportable_layouts():
     import uuid
 
-    from app.domain.content import Deck
-    from app.domain.export_check import run_export_check
-    from app.domain.theme import resolve_theme
-    from app.llm.base import OutlineGenerationInput, SlideGenerationInput
-    from app.services.travel_outline import build_travel_outline
-    from app.worker.context import create_slide_generator
-    from app.workflows.slide import build_slide_workflow, run_slide_workflow
+    from app.engine.content.content import Deck
+    from app.engine.layout.theme import resolve_theme
+    from app.engine.quality.export_check import run_export_check
+    from app.infrastructure.llm.base import OutlineGenerationInput, SlideGenerationInput
+    from app.infrastructure.llm.factory import create_slide_generator
+    from app.modules.decks.workflow import build_slide_workflow, run_slide_workflow
+    from app.modules.travel.outline import build_travel_outline
 
     plan = build_travel_plan(ResearchData(places=[place()]), conditions())
     context = {

@@ -1,4 +1,11 @@
 .git/
+.local/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.cache/
+**/*.log
+**/.idea/
+**/target/
 **/AGENTS.md
 **/AGENTS.override.md
 **/.env
@@ -6,7 +13,9 @@
 **/*.key
 **/*.pem
 certs/
-deploy/
+deploy/certs/
+backend/var/
+java-backend/target/
 **/node_modules/
 **/.venv/
 **/__pycache__/

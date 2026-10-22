@@ -13,8 +13,8 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright
 
-from app.domain.card_layout import card_grid
-from app.domain.content import (
+from app.core.paths import REPORTS_DIR
+from app.engine.content.content import (
     BulletsBlock,
     CardItem,
     CardsBlock,
@@ -23,17 +23,18 @@ from app.domain.content import (
     Slide,
     TextBlock,
 )
-from app.domain.content_pagination import split_generated_slide
-from app.domain.diagram_layout import parse_mermaid
-from app.domain.enterprise_layout import compose_report_slide
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.domain.generated_layout import normalize_generated_diagrams
-from app.domain.outline import OutlinePageDraft
-from app.domain.theme import load_themes
-from app.domain.theme_layout import reflow_slide_to_theme
-from app.domain.validation import validate_slide
-from app.render.pptx import render_deck_to_pptx
-from app.render.verify import verify_pptx
+from app.engine.content.content_pagination import split_generated_slide
+from app.engine.content.outline import OutlinePageDraft
+from app.engine.diagram.diagram_layout import parse_mermaid
+from app.engine.layout.card_layout import card_grid
+from app.engine.layout.enterprise_layout import compose_report_slide
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.engine.layout.generated_layout import normalize_generated_diagrams
+from app.engine.layout.theme import load_themes
+from app.engine.layout.theme_layout import reflow_slide_to_theme
+from app.engine.pptx.pptx import render_deck_to_pptx
+from app.engine.pptx.verify import verify_pptx
+from app.engine.quality.validation import validate_slide
 
 
 def fixture_slide(count: int, *, split: bool = False, long_title: bool = False) -> Slide:
@@ -376,6 +377,6 @@ def preview_route(deck: Deck):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="http://127.0.0.1:39173")
-    parser.add_argument("--output", type=Path, default=Path("var/theme-layout-qa"))
+    parser.add_argument("--output", type=Path, default=REPORTS_DIR / "theme-layout-qa")
     args = parser.parse_args()
     asyncio.run(check(args.url.rstrip("/"), args.output.resolve()))

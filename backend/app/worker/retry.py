@@ -8,7 +8,7 @@ from typing import Any
 
 from arq import Retry
 
-from app.llm.errors import LLMNotConfiguredError
+from app.infrastructure.llm.errors import LLMNotConfiguredError
 
 __all__ = ["MAX_TRIES", "retry_after_failure"]
 

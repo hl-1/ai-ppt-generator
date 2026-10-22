@@ -1,13 +1,13 @@
 import asyncio
 import uuid
 
-from app.core.db import async_session_factory
-from app.domain.content import BulletsBlock, Slide, TextBlock
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.models.project import Project
-from app.services.deck import load_slides
-from app.services.quality import build_quality_report
-from app.worker.deck_tasks import _finish, _save_ready
+from app.engine.content.content import BulletsBlock, Slide, TextBlock
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.infrastructure.database.session import async_session_factory
+from app.modules.decks.quality import build_quality_report
+from app.modules.decks.service import load_slides
+from app.modules.decks.tasks import _finish, _save_ready
+from app.modules.projects.models import Project
 from tests.test_deck_pages_api import _project_with_pages, _sign_up
 from tests.test_deck_pages_api import client as client
 

@@ -4,10 +4,10 @@ from pathlib import Path
 import pytest
 
 from app.core.paths import REPO_ROOT
-from app.domain.flex_layout import FlexContainer, FlexLeaf, insert_leaf
-from app.domain.flex_normalize import normalize
-from app.domain.flex_solve import solve
-from app.domain.geometry import (
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf, insert_leaf
+from app.engine.layout.flex_normalize import normalize
+from app.engine.layout.flex_solve import solve
+from app.engine.layout.geometry import (
     CANVAS_HEIGHT_PT,
     CANVAS_WIDTH_PT,
     FULL_CANVAS,
@@ -17,7 +17,7 @@ from app.domain.geometry import (
     SAFE_AREA,
     Rect,
 )
-from app.domain.slide_geometry import PlacedBlock
+from app.engine.layout.slide_geometry import PlacedBlock
 
 
 def solve_full(tree: FlexContainer) -> list[PlacedBlock]:

@@ -3,8 +3,8 @@
 import json
 
 from app.core.paths import SHARED_DIR
-from app.domain.content import DiagramBlock
-from app.domain.diagram_layout import layout_diagram, parse_mermaid
+from app.engine.content.content import DiagramBlock
+from app.engine.diagram.diagram_layout import layout_diagram, parse_mermaid
 
 SOURCES = [
     "flowchart LR\n A[接收请求] --> B[处理任务] --> C[完成交付]",

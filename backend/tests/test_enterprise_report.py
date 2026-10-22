@@ -6,7 +6,7 @@ from io import BytesIO
 import pytest
 from pptx import Presentation
 
-from app.domain.content import (
+from app.engine.content.content import (
     CalloutBlock,
     CardsBlock,
     ChartBlock,
@@ -16,13 +16,9 @@ from app.domain.content import (
     TableBlock,
     TextBlock,
 )
-from app.domain.enterprise_layout import bind_planned_evidence, compose_report_slide
-from app.domain.enterprise_quality import check_planned_data, check_report_quality
-from app.domain.evidence import comparable_series, evidence_problem, prepare_page_plan
-from app.domain.flex_layout import FlexContainer, FlexLeaf, iter_leaf_block_ids
-from app.domain.mermaid import ensure_mermaid, mermaid_for_diagram
-from app.domain.outline import DeckBlueprint, EvidenceItem, OutlinePage, ReportBrief
-from app.domain.slide_draft import (
+from app.engine.content.evidence import comparable_series, evidence_problem, prepare_page_plan
+from app.engine.content.outline import DeckBlueprint, EvidenceItem, OutlinePage, ReportBrief
+from app.engine.content.slide_draft import (
     CalloutContent,
     CardsContent,
     FlexCalloutContent,
@@ -33,10 +29,14 @@ from app.domain.slide_draft import (
     draft_to_slide,
     flex_draft_to_slide,
 )
-from app.domain.theme import get_theme
-from app.render.pptx import render_deck_to_pptx
-from app.render.verify import verify_pptx
-from app.services.preview import load_preview_status, preview_fingerprint, save_preview_status
+from app.engine.diagram.mermaid import ensure_mermaid, mermaid_for_diagram
+from app.engine.layout.enterprise_layout import bind_planned_evidence, compose_report_slide
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf, iter_leaf_block_ids
+from app.engine.layout.theme import get_theme
+from app.engine.pptx.pptx import render_deck_to_pptx
+from app.engine.pptx.verify import verify_pptx
+from app.engine.quality.enterprise_quality import check_planned_data, check_report_quality
+from app.modules.decks.preview import load_preview_status, preview_fingerprint, save_preview_status
 
 
 def fact(value="120", period="Q1", **changes):
@@ -902,7 +902,7 @@ def test_preview_timeout_is_retryable(monkeypatch):
     key = f"previews/test/{uuid.uuid4()}"
     save_preview_status(key, "queued")
     assert load_preview_status(key)["status"] == "queued"
-    monkeypatch.setattr("app.services.preview.time.time", lambda: 10**12)
+    monkeypatch.setattr("app.modules.decks.preview.time.time", lambda: 10**12)
     assert load_preview_status(key)["status"] == "failed"
 
 

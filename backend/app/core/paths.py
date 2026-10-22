@@ -1,6 +1,13 @@
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+BACKEND_DIR = REPO_ROOT / "backend"
+TOOLS_DIR = REPO_ROOT / "tools"
+DIAGRAM_ENGINE = TOOLS_DIR / "diagram-engine" / "engine.mjs"
+FONTS_DIR = BACKEND_DIR / "fonts"
+LOCAL_DIR = REPO_ROOT / ".local"
+RUNTIME_DIR = LOCAL_DIR / "runtime"
+REPORTS_DIR = LOCAL_DIR / "reports"
 
 # 布局与主题的单一真源。Web 端与 PPTX 端加载的是同一批文件，
 # 两端各自维护一套排版规则的可能性从物理上被排除。

@@ -1,7 +1,0 @@
-.env
-.env.*
-var/
-__pycache__/
-.venv/
-*.pyc
-diagram_engine/node_modules/

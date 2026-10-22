@@ -2,7 +2,7 @@
 
 import asyncio
 
-from app.api.v1.travel import connectivity
+from app.modules.travel.router import connectivity
 
 
 async def main():

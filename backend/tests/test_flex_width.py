@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-from app.domain.card_layout import card_grid
-from app.domain.content import Block, BulletsBlock, CardItem, CardsBlock, ImageBlock, TextBlock
-from app.domain.flex_layout import FlexContainer, FlexLeaf
-from app.domain.flex_solve import solve
-from app.domain.flex_width import MIN_CHARS_PER_LINE, fit_row_widths
-from app.domain.geometry import CANVAS_WIDTH_PT
-from app.domain.theme import get_theme
+from app.engine.content.content import (
+    Block,
+    BulletsBlock,
+    CardItem,
+    CardsBlock,
+    ImageBlock,
+    TextBlock,
+)
+from app.engine.layout.card_layout import card_grid
+from app.engine.layout.flex_layout import FlexContainer, FlexLeaf
+from app.engine.layout.flex_solve import solve
+from app.engine.layout.flex_width import MIN_CHARS_PER_LINE, fit_row_widths
+from app.engine.layout.geometry import CANVAS_WIDTH_PT
+from app.engine.layout.theme import get_theme
 
 THEME = get_theme("ivory")
 BODY_SIZE_PT = THEME.text_styles["body"].size_pt

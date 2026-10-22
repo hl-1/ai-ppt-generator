@@ -6,17 +6,17 @@ from pathlib import Path
 
 import pytest
 
-from app.domain.content import Slide
-from app.domain.content_format import has_temporal_sequence, unnumber_heading
-from app.domain.content_pagination import split_generated_slide
-from app.domain.enterprise_layout import compose_report_slide
-from app.domain.generated_layout import fit_generated_slide, normalize_generated_diagrams
-from app.domain.outline import OutlinePageDraft
-from app.domain.slide_draft import FlexSlideDraft
-from app.domain.theme import get_theme, load_themes
-from app.domain.validation import validate_slide
-from app.llm.base import OutlineSourceSection, SlideGenerationInput
-from app.workflows.slide import build_slide_workflow, run_slide_workflow
+from app.engine.content.content import Slide
+from app.engine.content.content_format import has_temporal_sequence, unnumber_heading
+from app.engine.content.content_pagination import split_generated_slide
+from app.engine.content.outline import OutlinePageDraft
+from app.engine.content.slide_draft import FlexSlideDraft
+from app.engine.layout.enterprise_layout import compose_report_slide
+from app.engine.layout.generated_layout import fit_generated_slide, normalize_generated_diagrams
+from app.engine.layout.theme import get_theme, load_themes
+from app.engine.quality.validation import validate_slide
+from app.infrastructure.llm.base import OutlineSourceSection, SlideGenerationInput
+from app.modules.decks.workflow import build_slide_workflow, run_slide_workflow
 
 CASES = json.loads(
     (Path(__file__).parent / "fixtures/generated_format_slides.json").read_text(encoding="utf-8")

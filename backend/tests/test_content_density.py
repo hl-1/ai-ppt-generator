@@ -1,5 +1,5 @@
-from app.domain.content import BulletsBlock, Slide, TextBlock
-from app.domain.content_density import (
+from app.engine.content.content import BulletsBlock, Slide, TextBlock
+from app.engine.content.content_density import (
     DEFAULT_CONTENT_DENSITY,
     contains_empty_phrase,
     density_prompt_block,
@@ -7,8 +7,8 @@ from app.domain.content_density import (
     get_profile,
     normalize_density,
 )
-from app.domain.quality import check_empty_phrases, check_thin_content, is_repair_worthy
-from app.domain.validation import StructureIssue
+from app.engine.quality.quality import check_empty_phrases, check_thin_content, is_repair_worthy
+from app.engine.quality.validation import StructureIssue
 
 
 def test_normalize_density_defaults() -> None:
@@ -82,15 +82,18 @@ def test_fixed_layout_skips_block_count_thin_check() -> None:
 
 
 def test_document_repair_includes_overflow_capacity() -> None:
-    assert is_repair_worthy(
-        StructureIssue(
-            severity="warning",
-            slide_id="s",
-            slot_id="body",
-            message="溢出",
-            code="overflow",
+    assert (
+        is_repair_worthy(
+            StructureIssue(
+                severity="warning",
+                slide_id="s",
+                slot_id="body",
+                message="溢出",
+                code="overflow",
+            )
         )
-    ) is True
+        is True
+    )
     assert is_repair_worthy(
         StructureIssue(
             severity="warning",

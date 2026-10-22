@@ -4,8 +4,7 @@ import json
 
 import pytest
 
-from app.domain.layout import get_layout
-from app.domain.slide_draft import (
+from app.engine.content.slide_draft import (
     DiagramContent,
     FlexDiagramContent,
     FlexSlideDraft,
@@ -13,8 +12,9 @@ from app.domain.slide_draft import (
     draft_to_slide,
     flex_draft_to_slide,
 )
-from app.llm.base import SlideGenerationInput
-from app.llm.slide import DeepSeekSlideGenerator
+from app.engine.layout.layout import get_layout
+from app.infrastructure.llm.base import SlideGenerationInput
+from app.infrastructure.llm.slide import DeepSeekSlideGenerator
 
 
 def _generator() -> DeepSeekSlideGenerator:
